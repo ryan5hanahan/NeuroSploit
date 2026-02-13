@@ -120,6 +120,16 @@ async def health_check():
     elif openai_key and openai_key not in ["", "your-openai-api-key"]:
         llm_status = "configured"
         llm_provider = "openai"
+    else:
+        # Check AWS Bedrock availability
+        try:
+            import boto3
+            sts = boto3.client('sts', region_name=os.getenv("AWS_BEDROCK_REGION", "us-east-1"))
+            sts.get_caller_identity()
+            llm_status = "configured"
+            llm_provider = "bedrock"
+        except Exception:
+            pass
 
     return {
         "status": "healthy",
@@ -128,7 +138,7 @@ async def health_check():
         "llm": {
             "status": llm_status,
             "provider": llm_provider,
-            "message": "AI agent ready" if llm_status == "configured" else "Set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable AI features"
+            "message": "AI agent ready" if llm_status == "configured" else "Set an LLM API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) or configure AWS Bedrock credentials to enable AI features"
         }
     }
 

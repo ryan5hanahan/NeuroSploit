@@ -163,6 +163,8 @@ class LLMManager:
                 raw_response = self._generate_lmstudio(prompt, system_prompt)
             elif self.provider == 'openrouter':
                 raw_response = self._generate_openrouter(prompt, system_prompt)
+            elif self.provider == 'bedrock':
+                raw_response = self._generate_bedrock(prompt, system_prompt)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}")
         except Exception as e:
@@ -715,6 +717,82 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
                 raise ValueError(f"Cannot connect to OpenRouter API: {e}")
 
         raise ValueError(f"OpenRouter API failed after {MAX_RETRIES} retries: {last_error}")
+
+    def _generate_bedrock(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """Generate using AWS Bedrock Converse API (Claude models via AWS)"""
+        try:
+            import boto3
+            from botocore.exceptions import ClientError, NoCredentialsError, BotoCoreError
+        except ImportError:
+            raise ValueError("boto3 is not installed. Run: pip install boto3")
+
+        region = self.active_profile.get('region') or os.getenv('AWS_BEDROCK_REGION', 'us-east-1')
+
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                logger.debug(f"Bedrock API request attempt {attempt + 1}/{MAX_RETRIES}")
+                client = boto3.client('bedrock-runtime', region_name=region)
+
+                converse_params = {
+                    "modelId": self.model,
+                    "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                    "inferenceConfig": {
+                        "maxTokens": self.max_tokens,
+                        "temperature": self.temperature
+                    }
+                }
+
+                if system_prompt:
+                    converse_params["system"] = [{"text": system_prompt}]
+
+                response = client.converse(**converse_params)
+                return response["output"]["message"]["content"][0]["text"]
+
+            except NoCredentialsError:
+                raise ValueError(
+                    "AWS credentials not found. Configure via environment variables "
+                    "(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), ~/.aws/credentials, IAM role, or SSO."
+                )
+
+            except ClientError as e:
+                error_code = e.response['Error']['Code']
+                error_msg = e.response['Error']['Message']
+
+                if error_code == 'ThrottlingException':
+                    last_error = f"Rate limit: {error_msg}"
+                    logger.warning(f"Bedrock rate limit (attempt {attempt + 1}/{MAX_RETRIES})")
+                    if attempt < MAX_RETRIES - 1:
+                        sleep_time = RETRY_DELAY * (RETRY_MULTIPLIER ** (attempt + 1))
+                        logger.info(f"Rate limited. Retrying in {sleep_time:.1f}s...")
+                        time.sleep(sleep_time)
+
+                elif error_code in ('ServiceUnavailableException', 'InternalServerException'):
+                    last_error = f"Server error: {error_msg}"
+                    logger.warning(f"Bedrock server error (attempt {attempt + 1}/{MAX_RETRIES})")
+                    if attempt < MAX_RETRIES - 1:
+                        sleep_time = RETRY_DELAY * (RETRY_MULTIPLIER ** attempt)
+                        logger.info(f"Retrying in {sleep_time:.1f}s...")
+                        time.sleep(sleep_time)
+
+                elif error_code == 'AccessDeniedException':
+                    raise ValueError(f"Access denied to Bedrock model {self.model}: {error_msg}")
+
+                elif error_code == 'ValidationException':
+                    raise ValueError(f"Bedrock validation error: {error_msg}")
+
+                else:
+                    raise ValueError(f"Bedrock API error ({error_code}): {error_msg}")
+
+            except BotoCoreError as e:
+                last_error = e
+                logger.warning(f"Bedrock connection error (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                if attempt < MAX_RETRIES - 1:
+                    sleep_time = RETRY_DELAY * (RETRY_MULTIPLIER ** attempt)
+                    logger.info(f"Retrying in {sleep_time:.1f}s...")
+                    time.sleep(sleep_time)
+
+        raise ConnectionError(f"Failed to connect to Bedrock API after {MAX_RETRIES} attempts: {last_error}")
 
     def analyze_vulnerability(self, vulnerability_data: Dict) -> Dict:
         """Analyze vulnerability and suggest exploits"""

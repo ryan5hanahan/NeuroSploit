@@ -23,7 +23,7 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
 - **WAF Detection & Bypass** - 16 WAF signatures, 12 bypass techniques
 - **Smart Strategy Adaptation** - Dead endpoint detection, diminishing returns, priority recomputation
-- **Multi-Provider LLM** - Claude, GPT, Gemini, Ollama, LMStudio, OpenRouter
+- **Multi-Provider LLM** - Claude, GPT, Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter
 - **Real-Time Dashboard** - WebSocket-powered live scan progress, findings, and reports
 - **Sandbox Dashboard** - Monitor running Kali containers, tools, health checks in real-time
 
@@ -56,7 +56,7 @@ cd NeuroSploitv2
 
 # Copy environment file and add your API keys
 cp .env.example .env
-nano .env  # Add ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY
+nano .env  # Add an LLM API key or configure AWS Bedrock credentials
 
 # Build the Kali sandbox image (first time only, ~5 min)
 ./scripts/build-kali.sh
@@ -510,11 +510,19 @@ Interactive docs available at:
 ANTHROPIC_API_KEY=your-key
 OPENAI_API_KEY=your-key
 GEMINI_API_KEY=your-key
+OPENROUTER_API_KEY=your-key
+
+# AWS Bedrock (uses AWS credential chain - no API key needed)
+# Authenticate via env vars, ~/.aws/credentials, IAM role, or SSO
+AWS_BEDROCK_REGION=us-east-1
+AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-20250514-v1:0
+# AWS_ACCESS_KEY_ID=your-access-key
+# AWS_SECRET_ACCESS_KEY=your-secret-key
+# AWS_PROFILE=default
 
 # Local LLM (optional)
 OLLAMA_BASE_URL=http://localhost:11434
 LMSTUDIO_BASE_URL=http://localhost:1234
-OPENROUTER_API_KEY=your-key
 
 # Database
 DATABASE_URL=sqlite+aiosqlite:///./data/neurosploit.db
@@ -524,6 +532,17 @@ HOST=0.0.0.0
 PORT=8000
 DEBUG=false
 ```
+
+### AWS Bedrock Setup
+
+AWS Bedrock lets you use Claude models through your AWS account with no separate API key. Authentication uses the standard AWS credential chain:
+
+1. **Environment variables** - `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`
+2. **Shared credentials** - `~/.aws/credentials` (set `AWS_PROFILE` if not default)
+3. **IAM role** - Automatic on EC2/ECS/Lambda
+4. **SSO** - `aws sso login --profile your-profile`
+
+Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock as the default provider, set `default_profile` to `bedrock_claude_default` in `config/config.json`.
 
 ### config/config.json
 
@@ -615,7 +634,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 |-------|-------------|
 | **Backend** | Python, FastAPI, SQLAlchemy, Pydantic, aiohttp |
 | **Frontend** | React 18, TypeScript, TailwindCSS, Vite |
-| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, Ollama, LMStudio, OpenRouter |
+| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter |
 | **Sandbox** | Docker, Kali Linux, ProjectDiscovery suite, Nmap, SQLMap, Nikto |
 | **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, FFuf, Gobuster, Dalfox |
 | **Infra** | Docker Compose, MCP Protocol, Playwright, APScheduler |

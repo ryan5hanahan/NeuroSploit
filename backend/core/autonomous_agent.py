@@ -61,6 +61,14 @@ except ImportError:
     OPENAI_AVAILABLE = False
     openai = None
 
+# Try to import boto3 for AWS Bedrock
+try:
+    import boto3
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+    boto3 = None
+
 # Security sandbox (Docker-based real tools)
 try:
     from core.sandbox_manager import get_sandbox, SandboxManager
@@ -216,6 +224,23 @@ class LLMClient:
             print("[LLM] Gemini API initialized")
             return
 
+        # 3.5. Try AWS Bedrock
+        if BOTO3_AVAILABLE:
+            try:
+                bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+                bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
+                # Verify credentials are available by calling get_caller_identity
+                sts = boto3.client('sts', region_name=bedrock_region)
+                sts.get_caller_identity()
+                self.client = bedrock_client
+                self.provider = "bedrock"
+                self.bedrock_model = os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+                self.bedrock_region = bedrock_region
+                print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
+                return
+            except Exception as e:
+                print(f"[LLM] AWS Bedrock initialization failed: {e}")
+
         # 4. Try Ollama (local)
         if self._check_ollama():
             self.client = "ollama"  # Placeholder - uses HTTP requests
@@ -277,6 +302,7 @@ class LLMClient:
             "error": self.error_message,
             "anthropic_lib": ANTHROPIC_AVAILABLE,
             "openai_lib": OPENAI_AVAILABLE,
+            "boto3_available": BOTO3_AVAILABLE,
             "ollama_available": self._check_ollama(),
             "lmstudio_available": self._check_lmstudio(),
             "has_google_key": bool(self.google_key)
@@ -327,6 +353,9 @@ class LLMClient:
 
             elif self.provider == "gemini":
                 return await self._generate_gemini(prompt, system or default_system, max_tokens)
+
+            elif self.provider == "bedrock":
+                return await self._generate_bedrock(prompt, system or default_system, max_tokens)
 
             elif self.provider == "ollama":
                 return await self._generate_ollama(prompt, system or default_system)
@@ -402,6 +431,29 @@ class LLMClient:
                     raise LLMConnectionError(f"LM Studio error ({response.status}): {error_text}")
                 data = await response.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    async def _generate_bedrock(self, prompt: str, system: str, max_tokens: int) -> str:
+        """Generate using AWS Bedrock Converse API (runs boto3 sync call in thread)"""
+
+        def _call_bedrock():
+            converse_params = {
+                "modelId": self.bedrock_model,
+                "messages": [{"role": "user", "content": [{"text": prompt}]}],
+                "inferenceConfig": {
+                    "maxTokens": max_tokens,
+                    "temperature": 0.7
+                }
+            }
+            if system:
+                converse_params["system"] = [{"text": system}]
+
+            response = self.client.converse(**converse_params)
+            return response["output"]["message"]["content"][0]["text"]
+
+        try:
+            return await asyncio.to_thread(_call_bedrock)
+        except Exception as e:
+            raise LLMConnectionError(f"Bedrock API error: {e}")
 
 
 class LLMConnectionError(Exception):

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+    AWS_BEDROCK_REGION: Optional[str] = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+    AWS_BEDROCK_MODEL: Optional[str] = os.getenv("AWS_BEDROCK_MODEL")
     DEFAULT_LLM_PROVIDER: str = "claude"
     DEFAULT_LLM_MODEL: str = "claude-sonnet-4-20250514"
     MAX_OUTPUT_TOKENS: Optional[int] = None
