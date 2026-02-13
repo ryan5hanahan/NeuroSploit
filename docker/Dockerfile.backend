@@ -81,6 +81,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY backend/ ./backend/
+COPY core/ ./core/
 COPY prompts/ ./prompts/
 
 # Create data directories

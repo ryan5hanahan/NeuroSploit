@@ -32,7 +32,14 @@ class Settings(BaseSettings):
     # LLM Settings
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+
+    # AWS Settings
+    AWS_PROFILE: Optional[str] = os.getenv("AWS_PROFILE")
+    AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_SESSION_TOKEN: Optional[str] = os.getenv("AWS_SESSION_TOKEN")
     AWS_BEDROCK_REGION: Optional[str] = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
     AWS_BEDROCK_MODEL: Optional[str] = os.getenv("AWS_BEDROCK_MODEL")
     DEFAULT_LLM_PROVIDER: str = "claude"

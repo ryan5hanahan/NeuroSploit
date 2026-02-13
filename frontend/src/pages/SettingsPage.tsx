@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye } from 'lucide-react'
+import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye, Zap } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
@@ -9,6 +9,7 @@ interface Settings {
   has_anthropic_key: boolean
   has_openai_key: boolean
   has_openrouter_key: boolean
+  has_aws_bedrock_config: boolean
   max_concurrent_scans: number
   aggressive_mode: boolean
   default_scan_type: string
@@ -17,6 +18,8 @@ interface Settings {
   enable_knowledge_augmentation: boolean
   enable_browser_validation: boolean
   max_output_tokens: number | null
+  aws_bedrock_region: string
+  aws_bedrock_model: string
 }
 
 interface DbStats {
@@ -26,12 +29,26 @@ interface DbStats {
   reports: number
 }
 
+interface LlmTestResult {
+  success: boolean
+  provider: string
+  model: string
+  response_time_ms: number
+  response_preview: string
+  error: string | null
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [dbStats, setDbStats] = useState<DbStats | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [openaiKey, setOpenaiKey] = useState('')
   const [openrouterKey, setOpenrouterKey] = useState('')
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('')
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('')
+  const [awsSessionToken, setAwsSessionToken] = useState('')
+  const [awsBedrockRegion, setAwsBedrockRegion] = useState('us-east-1')
+  const [awsBedrockModel, setAwsBedrockModel] = useState('')
   const [llmProvider, setLlmProvider] = useState('claude')
   const [maxConcurrentScans, setMaxConcurrentScans] = useState('3')
   const [maxOutputTokens, setMaxOutputTokens] = useState('')
@@ -41,6 +58,8 @@ export default function SettingsPage() {
   const [enableBrowserValidation, setEnableBrowserValidation] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<LlmTestResult | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
@@ -62,6 +81,8 @@ export default function SettingsPage() {
         setEnableKnowledgeAugmentation(data.enable_knowledge_augmentation ?? false)
         setEnableBrowserValidation(data.enable_browser_validation ?? false)
         setMaxOutputTokens(data.max_output_tokens ? String(data.max_output_tokens) : '')
+        setAwsBedrockRegion(data.aws_bedrock_region || 'us-east-1')
+        setAwsBedrockModel(data.aws_bedrock_model || '')
       }
     } catch (error) {
       console.error('Failed to fetch settings:', error)
@@ -93,6 +114,11 @@ export default function SettingsPage() {
           anthropic_api_key: apiKey || undefined,
           openai_api_key: openaiKey || undefined,
           openrouter_api_key: openrouterKey || undefined,
+          aws_access_key_id: awsAccessKeyId || undefined,
+          aws_secret_access_key: awsSecretAccessKey || undefined,
+          aws_session_token: awsSessionToken || undefined,
+          aws_bedrock_region: llmProvider === 'bedrock' ? awsBedrockRegion : undefined,
+          aws_bedrock_model: llmProvider === 'bedrock' ? awsBedrockModel : undefined,
           max_concurrent_scans: parseInt(maxConcurrentScans),
           aggressive_mode: aggressiveMode,
           enable_model_routing: enableModelRouting,
@@ -108,6 +134,9 @@ export default function SettingsPage() {
         setApiKey('')
         setOpenaiKey('')
         setOpenrouterKey('')
+        setAwsAccessKeyId('')
+        setAwsSecretAccessKey('')
+        setAwsSessionToken('')
         setMessage({ type: 'success', text: 'Settings saved successfully!' })
       } else {
         setMessage({ type: 'error', text: 'Failed to save settings' })
@@ -143,6 +172,28 @@ export default function SettingsPage() {
     }
   }
 
+  const handleTestConnection = async () => {
+    setIsTesting(true)
+    setTestResult(null)
+
+    try {
+      const response = await fetch('/api/v1/settings/test-llm', { method: 'POST' })
+      const data: LlmTestResult = await response.json()
+      setTestResult(data)
+    } catch (error) {
+      setTestResult({
+        success: false,
+        provider: llmProvider,
+        model: '',
+        response_time_ms: 0,
+        response_preview: '',
+        error: 'Failed to reach the backend. Is the server running?',
+      })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
   const ToggleSwitch = ({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) => (
     <button
       onClick={onToggle}
@@ -169,13 +220,13 @@ export default function SettingsPage() {
               LLM Provider
             </label>
             <div className="flex gap-2 flex-wrap">
-              {['claude', 'openai', 'openrouter', 'ollama'].map((provider) => (
+              {['claude', 'openai', 'openrouter', 'ollama', 'bedrock'].map((provider) => (
                 <Button
                   key={provider}
                   variant={llmProvider === provider ? 'primary' : 'secondary'}
-                  onClick={() => setLlmProvider(provider)}
+                  onClick={() => { setLlmProvider(provider); setTestResult(null) }}
                 >
-                  {provider === 'openrouter' ? 'OpenRouter' : provider.charAt(0).toUpperCase() + provider.slice(1)}
+                  {provider === 'openrouter' ? 'OpenRouter' : provider === 'bedrock' ? 'AWS Bedrock' : provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </Button>
               ))}
             </div>
@@ -212,6 +263,94 @@ export default function SettingsPage() {
               onChange={(e) => setOpenrouterKey(e.target.value)}
               helperText={settings?.has_openrouter_key ? 'API key is configured. Enter a new key to update.' : 'Required for OpenRouter model access'}
             />
+          )}
+
+          {llmProvider === 'bedrock' && (
+            <div className="space-y-4">
+              <Input
+                label="AWS Access Key ID"
+                type="password"
+                placeholder={settings?.has_aws_bedrock_config ? '••••••••••••••••' : 'AKIA...'}
+                value={awsAccessKeyId}
+                onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                helperText={settings?.has_aws_bedrock_config ? 'AWS credentials configured. Enter new values to update.' : 'Optional if using AWS profile, IAM role, or SSO'}
+              />
+              <Input
+                label="AWS Secret Access Key"
+                type="password"
+                placeholder={settings?.has_aws_bedrock_config ? '••••••••••••••••' : 'Secret key...'}
+                value={awsSecretAccessKey}
+                onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+                helperText="Required if using access key authentication"
+              />
+              <Input
+                label="AWS Session Token (Optional)"
+                type="password"
+                placeholder="Session token for temporary credentials..."
+                value={awsSessionToken}
+                onChange={(e) => setAwsSessionToken(e.target.value)}
+                helperText="Only needed for temporary/assumed role credentials"
+              />
+              <Input
+                label="AWS Region"
+                placeholder="us-east-1"
+                value={awsBedrockRegion}
+                onChange={(e) => setAwsBedrockRegion(e.target.value)}
+                helperText="AWS region where Bedrock is enabled (e.g., us-east-1, us-west-2)"
+              />
+              <Input
+                label="Bedrock Model ID"
+                placeholder="us.anthropic.claude-sonnet-4-20250514-v1:0"
+                value={awsBedrockModel}
+                onChange={(e) => setAwsBedrockModel(e.target.value)}
+                helperText="Model ID for Bedrock Converse API (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)"
+              />
+            </div>
+          )}
+
+          {/* Test Connection */}
+          <div className="pt-2">
+            <Button
+              variant="secondary"
+              onClick={handleTestConnection}
+              isLoading={isTesting}
+              className="w-full"
+            >
+              <Zap className="w-4 h-4 mr-2" />
+              {isTesting ? 'Testing Connection...' : 'Test Connection'}
+            </Button>
+          </div>
+
+          {testResult && (
+            <div className={`p-4 rounded-lg text-sm ${
+              testResult.success
+                ? 'bg-green-500/15 border border-green-500/30'
+                : 'bg-red-500/15 border border-red-500/30'
+            }`}>
+              {testResult.success ? (
+                <div className="space-y-1">
+                  <p className="font-medium text-green-400">Connection successful</p>
+                  <p className="text-dark-300">
+                    <span className="text-dark-400">Provider:</span> {testResult.provider}
+                    {' / '}
+                    <span className="text-dark-400">Model:</span> {testResult.model}
+                  </p>
+                  <p className="text-dark-300">
+                    <span className="text-dark-400">Response time:</span> {testResult.response_time_ms}ms
+                  </p>
+                  {testResult.response_preview && (
+                    <p className="text-dark-400 mt-1 break-words">
+                      <span className="text-dark-500">Response:</span> {testResult.response_preview.slice(0, 200)}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <p className="font-medium text-red-400">Connection failed</p>
+                  <p className="text-dark-300 break-words">{testResult.error}</p>
+                </div>
+              )}
+            </div>
           )}
 
           <Input
@@ -380,7 +519,7 @@ export default function SettingsPage() {
           <div className="text-sm text-dark-400 space-y-1">
             <p>Dynamic vulnerability testing driven by AI prompts</p>
             <p>50+ vulnerability types across 10 categories</p>
-            <p>Multi-provider LLM support (Claude, GPT, OpenRouter, Ollama)</p>
+            <p>Multi-provider LLM support (Claude, GPT, OpenRouter, Ollama, AWS Bedrock)</p>
             <p>Task-type model routing and knowledge augmentation</p>
             <p>Playwright browser validation with screenshot capture</p>
             <p>OHVR-structured PoC reporting</p>

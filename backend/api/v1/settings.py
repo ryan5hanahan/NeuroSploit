@@ -1,8 +1,10 @@
 """
 NeuroSploit v3 - Settings API Endpoints
 """
+import asyncio
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException
@@ -70,6 +72,11 @@ class SettingsUpdate(BaseModel):
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+    aws_bedrock_region: Optional[str] = None
+    aws_bedrock_model: Optional[str] = None
     max_concurrent_scans: Optional[int] = None
     aggressive_mode: Optional[bool] = None
     default_scan_type: Optional[str] = None
@@ -86,6 +93,7 @@ class SettingsResponse(BaseModel):
     has_anthropic_key: bool = False
     has_openai_key: bool = False
     has_openrouter_key: bool = False
+    has_aws_bedrock_config: bool = False
     max_concurrent_scans: int = 3
     aggressive_mode: bool = False
     default_scan_type: str = "full"
@@ -94,6 +102,8 @@ class SettingsResponse(BaseModel):
     enable_knowledge_augmentation: bool = False
     enable_browser_validation: bool = False
     max_output_tokens: Optional[int] = None
+    aws_bedrock_region: str = "us-east-1"
+    aws_bedrock_model: str = ""
 
 
 def _load_settings_from_env() -> dict:
@@ -123,20 +133,30 @@ def _load_settings_from_env() -> dict:
                 pass
         return default
 
-    # Detect provider from which keys are set
-    provider = "claude"
-    if os.getenv("ANTHROPIC_API_KEY"):
-        provider = "claude"
-    elif os.getenv("OPENAI_API_KEY"):
-        provider = "openai"
-    elif os.getenv("OPENROUTER_API_KEY"):
-        provider = "openrouter"
+    # Detect provider from env override or from which keys are set
+    provider = os.getenv("DEFAULT_LLM_PROVIDER", "").strip().lower()
+    if not provider:
+        if os.getenv("ANTHROPIC_API_KEY"):
+            provider = "claude"
+        elif os.getenv("OPENAI_API_KEY"):
+            provider = "openai"
+        elif os.getenv("OPENROUTER_API_KEY"):
+            provider = "openrouter"
+        elif os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE"):
+            provider = "bedrock"
+        else:
+            provider = "claude"
 
     return {
         "llm_provider": provider,
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
         "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
         "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
+        "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID", ""),
+        "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+        "aws_session_token": os.getenv("AWS_SESSION_TOKEN", ""),
+        "aws_bedrock_region": os.getenv("AWS_BEDROCK_REGION", "us-east-1"),
+        "aws_bedrock_model": os.getenv("AWS_BEDROCK_MODEL", ""),
         "max_concurrent_scans": _env_int("MAX_CONCURRENT_SCANS", 3),
         "aggressive_mode": _env_bool("AGGRESSIVE_MODE", False),
         "default_scan_type": os.getenv("DEFAULT_SCAN_TYPE", "full"),
@@ -161,6 +181,9 @@ async def get_settings():
         has_anthropic_key=bool(_settings["anthropic_api_key"] or os.getenv("ANTHROPIC_API_KEY")),
         has_openai_key=bool(_settings["openai_api_key"] or os.getenv("OPENAI_API_KEY")),
         has_openrouter_key=bool(_settings["openrouter_api_key"] or os.getenv("OPENROUTER_API_KEY")),
+        has_aws_bedrock_config=bool(
+            _settings.get("aws_access_key_id") or os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")
+        ),
         max_concurrent_scans=_settings["max_concurrent_scans"],
         aggressive_mode=_settings["aggressive_mode"],
         default_scan_type=_settings["default_scan_type"],
@@ -168,7 +191,9 @@ async def get_settings():
         enable_model_routing=_settings["enable_model_routing"],
         enable_knowledge_augmentation=_settings["enable_knowledge_augmentation"],
         enable_browser_validation=_settings["enable_browser_validation"],
-        max_output_tokens=_settings["max_output_tokens"]
+        max_output_tokens=_settings["max_output_tokens"],
+        aws_bedrock_region=_settings.get("aws_bedrock_region", "us-east-1"),
+        aws_bedrock_model=_settings.get("aws_bedrock_model", ""),
     )
 
 
@@ -179,6 +204,8 @@ async def update_settings(settings_data: SettingsUpdate):
 
     if settings_data.llm_provider is not None:
         _settings["llm_provider"] = settings_data.llm_provider
+        os.environ["DEFAULT_LLM_PROVIDER"] = settings_data.llm_provider
+        env_updates["DEFAULT_LLM_PROVIDER"] = settings_data.llm_provider
 
     if settings_data.anthropic_api_key is not None:
         _settings["anthropic_api_key"] = settings_data.anthropic_api_key
@@ -197,6 +224,35 @@ async def update_settings(settings_data: SettingsUpdate):
         if settings_data.openrouter_api_key:
             os.environ["OPENROUTER_API_KEY"] = settings_data.openrouter_api_key
             env_updates["OPENROUTER_API_KEY"] = settings_data.openrouter_api_key
+
+    if settings_data.aws_access_key_id is not None:
+        _settings["aws_access_key_id"] = settings_data.aws_access_key_id
+        if settings_data.aws_access_key_id:
+            os.environ["AWS_ACCESS_KEY_ID"] = settings_data.aws_access_key_id
+            env_updates["AWS_ACCESS_KEY_ID"] = settings_data.aws_access_key_id
+
+    if settings_data.aws_secret_access_key is not None:
+        _settings["aws_secret_access_key"] = settings_data.aws_secret_access_key
+        if settings_data.aws_secret_access_key:
+            os.environ["AWS_SECRET_ACCESS_KEY"] = settings_data.aws_secret_access_key
+            env_updates["AWS_SECRET_ACCESS_KEY"] = settings_data.aws_secret_access_key
+
+    if settings_data.aws_session_token is not None:
+        _settings["aws_session_token"] = settings_data.aws_session_token
+        if settings_data.aws_session_token:
+            os.environ["AWS_SESSION_TOKEN"] = settings_data.aws_session_token
+            env_updates["AWS_SESSION_TOKEN"] = settings_data.aws_session_token
+
+    if settings_data.aws_bedrock_region is not None:
+        _settings["aws_bedrock_region"] = settings_data.aws_bedrock_region
+        os.environ["AWS_BEDROCK_REGION"] = settings_data.aws_bedrock_region
+        env_updates["AWS_BEDROCK_REGION"] = settings_data.aws_bedrock_region
+
+    if settings_data.aws_bedrock_model is not None:
+        _settings["aws_bedrock_model"] = settings_data.aws_bedrock_model
+        if settings_data.aws_bedrock_model:
+            os.environ["AWS_BEDROCK_MODEL"] = settings_data.aws_bedrock_model
+            env_updates["AWS_BEDROCK_MODEL"] = settings_data.aws_bedrock_model
 
     if settings_data.max_concurrent_scans is not None:
         _settings["max_concurrent_scans"] = settings_data.max_concurrent_scans
@@ -239,6 +295,158 @@ async def update_settings(settings_data: SettingsUpdate):
         _update_env_file(env_updates)
 
     return await get_settings()
+
+
+# Provider name mapping: settings UI name -> LLMManager provider name
+_PROVIDER_MAP = {
+    "claude": "claude",
+    "openai": "gpt",
+    "openrouter": "openrouter",
+    "ollama": "ollama",
+    "bedrock": "bedrock",
+}
+
+# Default models per provider (used when no model is configured)
+_DEFAULT_MODELS = {
+    "claude": "claude-sonnet-4-20250514",
+    "gpt": "gpt-4o",
+    "openrouter": "anthropic/claude-sonnet-4-20250514",
+    "ollama": "llama3.2",
+    "bedrock": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+}
+
+# Which env var holds the API key for each settings provider
+_API_KEY_ENV = {
+    "claude": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
+@router.post("/test-llm")
+async def test_llm_connection():
+    """Test the current LLM configuration by sending a simple prompt."""
+    provider_ui = _settings.get("llm_provider", "claude")
+    llm_provider = _PROVIDER_MAP.get(provider_ui, provider_ui)
+    default_model = _DEFAULT_MODELS.get(llm_provider, "")
+
+    # Resolve API key from in-memory settings or env
+    api_key = ""
+    if provider_ui in _API_KEY_ENV:
+        env_var = _API_KEY_ENV[provider_ui]
+        key_map = {
+            "claude": "anthropic_api_key",
+            "openai": "openai_api_key",
+            "openrouter": "openrouter_api_key",
+        }
+        api_key = _settings.get(key_map.get(provider_ui, ""), "") or os.getenv(env_var, "")
+        if not api_key:
+            return {
+                "success": False,
+                "provider": provider_ui,
+                "model": "",
+                "response_time_ms": 0,
+                "response_preview": "",
+                "error": f"No API key configured. Set {env_var} or enter it in settings.",
+            }
+
+    # For bedrock, check AWS credentials
+    if provider_ui == "bedrock":
+        has_creds = (
+            _settings.get("aws_access_key_id") or os.getenv("AWS_ACCESS_KEY_ID")
+            or os.getenv("AWS_PROFILE")
+        )
+        if not has_creds:
+            return {
+                "success": False,
+                "provider": provider_ui,
+                "model": "",
+                "response_time_ms": 0,
+                "response_preview": "",
+                "error": "No AWS credentials configured. Set AWS_ACCESS_KEY_ID or AWS_PROFILE.",
+            }
+
+    # Build model name
+    if provider_ui == "bedrock":
+        model = _settings.get("aws_bedrock_model") or os.getenv("AWS_BEDROCK_MODEL", "") or default_model
+    else:
+        model = default_model
+
+    # Resolve max_output_tokens
+    max_output_tokens = _settings.get("max_output_tokens") or None
+
+    # Build LLMManager config
+    profile_config = {
+        "provider": llm_provider,
+        "model": model,
+        "api_key": api_key,
+        "temperature": 0.1,
+        "max_tokens": 256,
+        "input_token_limit": 1024,
+        "output_token_limit": max_output_tokens or 256,
+    }
+    if provider_ui == "bedrock":
+        profile_config["region"] = _settings.get("aws_bedrock_region") or os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+
+    config = {
+        "llm": {
+            "default_profile": "connection_test",
+            "profiles": {
+                "connection_test": profile_config,
+            },
+        }
+    }
+
+    def _run_test():
+        from core.llm_manager import LLMManager
+        mgr = LLMManager(config)
+        start = time.monotonic()
+        response = mgr.generate("Respond with exactly: CONNECTION_OK")
+        elapsed_ms = round((time.monotonic() - start) * 1000)
+        return response, elapsed_ms
+
+    try:
+        response, elapsed_ms = await asyncio.to_thread(_run_test)
+
+        # LLMManager sometimes returns error strings instead of raising
+        if response and response.strip().lower().startswith("error:"):
+            return {
+                "success": False,
+                "provider": provider_ui,
+                "model": model,
+                "response_time_ms": elapsed_ms,
+                "response_preview": "",
+                "error": response.strip(),
+            }
+
+        return {
+            "success": True,
+            "provider": provider_ui,
+            "model": model,
+            "response_time_ms": elapsed_ms,
+            "response_preview": response[:500] if response else "",
+            "error": None,
+        }
+    except Exception as e:
+        error_msg = str(e)
+        # Provide friendlier messages for common errors
+        lower_err = error_msg.lower()
+        if "401" in error_msg or "unauthorized" in lower_err or "authentication" in lower_err:
+            error_msg = f"Authentication failed. Check your API key. ({error_msg})"
+        elif "403" in error_msg or "forbidden" in lower_err:
+            error_msg = f"Access denied. Check your credentials and permissions. ({error_msg})"
+        elif "timeout" in lower_err or "timed out" in lower_err:
+            error_msg = f"Connection timed out. Check network connectivity and provider status. ({error_msg})"
+        elif "connection" in lower_err and ("refused" in lower_err or "error" in lower_err):
+            error_msg = f"Connection refused. Is the provider endpoint reachable? ({error_msg})"
+        return {
+            "success": False,
+            "provider": provider_ui,
+            "model": model,
+            "response_time_ms": 0,
+            "response_preview": "",
+            "error": error_msg,
+        }
 
 
 @router.post("/clear-database")
