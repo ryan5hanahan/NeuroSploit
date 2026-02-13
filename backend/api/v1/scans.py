@@ -17,6 +17,111 @@ from backend.services.scan_service import run_scan_task, skip_to_phase as _skip_
 router = APIRouter()
 
 
+# --- Diff helper functions for scan comparison ---
+
+def _vuln_match_key(vuln):
+    """Generate a matching key for vulnerability comparison."""
+    endpoint = (vuln.affected_endpoint or vuln.url or "").strip().lower()
+    param = (vuln.parameter or vuln.poc_parameter or "").strip().lower()
+    vtype = (vuln.vulnerability_type or "").strip().lower()
+    return (vtype, endpoint, param)
+
+
+def _endpoint_match_key(endpoint):
+    """Generate a matching key for endpoint comparison."""
+    return (endpoint.url.strip().lower(), endpoint.method.strip().upper())
+
+
+def _compute_vulnerability_diff(vulns_a, vulns_b):
+    """Compute diff between two sets of vulnerabilities."""
+    map_a = {}
+    for v in vulns_a:
+        key = _vuln_match_key(v)
+        map_a[key] = v
+
+    map_b = {}
+    for v in vulns_b:
+        key = _vuln_match_key(v)
+        map_b[key] = v
+
+    new_items = []
+    resolved = []
+    persistent = []
+    changed = []
+
+    keys_a = set(map_a.keys())
+    keys_b = set(map_b.keys())
+
+    for key in keys_b - keys_a:
+        new_items.append(map_b[key].to_dict())
+
+    for key in keys_a - keys_b:
+        resolved.append(map_a[key].to_dict())
+
+    for key in keys_a & keys_b:
+        va = map_a[key]
+        vb = map_b[key]
+        severity_changed = va.severity != vb.severity
+        cvss_changed = (va.cvss_score or 0) != (vb.cvss_score or 0)
+
+        if severity_changed or cvss_changed:
+            entry = vb.to_dict()
+            entry["severity_changed"] = {"from": va.severity, "to": vb.severity} if severity_changed else None
+            entry["cvss_changed"] = {"from": va.cvss_score, "to": vb.cvss_score} if cvss_changed else None
+            changed.append(entry)
+        else:
+            persistent.append(vb.to_dict())
+
+    return {"new": new_items, "resolved": resolved, "persistent": persistent, "changed": changed}
+
+
+def _compute_endpoint_diff(endpoints_a, endpoints_b):
+    """Compute diff between two sets of endpoints."""
+    map_a = {}
+    for e in endpoints_a:
+        key = _endpoint_match_key(e)
+        map_a[key] = e
+
+    map_b = {}
+    for e in endpoints_b:
+        key = _endpoint_match_key(e)
+        map_b[key] = e
+
+    new_items = []
+    removed = []
+    changed = []
+    stable = []
+
+    keys_a = set(map_a.keys())
+    keys_b = set(map_b.keys())
+
+    for key in keys_b - keys_a:
+        new_items.append(map_b[key].to_dict())
+
+    for key in keys_a - keys_b:
+        removed.append(map_a[key].to_dict())
+
+    for key in keys_a & keys_b:
+        ea = map_a[key]
+        eb = map_b[key]
+        changes = {}
+        if ea.response_status != eb.response_status:
+            changes["response_status"] = {"from": ea.response_status, "to": eb.response_status}
+        if set(ea.technologies or []) != set(eb.technologies or []):
+            changes["technologies"] = {"from": ea.technologies, "to": eb.technologies}
+        if (ea.parameters or []) != (eb.parameters or []):
+            changes["parameters"] = {"from": ea.parameters, "to": eb.parameters}
+
+        if changes:
+            entry = eb.to_dict()
+            entry["changes"] = changes
+            changed.append(entry)
+        else:
+            stable.append(eb.to_dict())
+
+    return {"new": new_items, "removed": removed, "changed": changed, "stable": stable}
+
+
 @router.get("", response_model=ScanListResponse)
 async def list_scans(
     page: int = 1,
@@ -126,6 +231,85 @@ async def create_scan(
     return ScanResponse(**scan_dict)
 
 
+@router.get("/compare/{scan_id_a}/{scan_id_b}")
+async def compare_scans(
+    scan_id_a: str,
+    scan_id_b: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Compare two scans and return a structured diff"""
+    if scan_id_a == scan_id_b:
+        raise HTTPException(status_code=400, detail="Cannot compare a scan with itself")
+
+    result_a = await db.execute(select(Scan).where(Scan.id == scan_id_a))
+    scan_a = result_a.scalar_one_or_none()
+    result_b = await db.execute(select(Scan).where(Scan.id == scan_id_b))
+    scan_b = result_b.scalar_one_or_none()
+
+    if not scan_a:
+        raise HTTPException(status_code=404, detail=f"Scan A not found: {scan_id_a}")
+    if not scan_b:
+        raise HTTPException(status_code=404, detail=f"Scan B not found: {scan_id_b}")
+
+    # Load vulnerabilities for both scans
+    vulns_a = (await db.execute(
+        select(Vulnerability).where(Vulnerability.scan_id == scan_id_a)
+    )).scalars().all()
+    vulns_b = (await db.execute(
+        select(Vulnerability).where(Vulnerability.scan_id == scan_id_b)
+    )).scalars().all()
+
+    # Load endpoints for both scans
+    endpoints_a = (await db.execute(
+        select(Endpoint).where(Endpoint.scan_id == scan_id_a)
+    )).scalars().all()
+    endpoints_b = (await db.execute(
+        select(Endpoint).where(Endpoint.scan_id == scan_id_b)
+    )).scalars().all()
+
+    vuln_diff = _compute_vulnerability_diff(vulns_a, vulns_b)
+    endpoint_diff = _compute_endpoint_diff(endpoints_a, endpoints_b)
+
+    def scan_summary(scan):
+        return {
+            "id": scan.id,
+            "name": scan.name,
+            "status": scan.status,
+            "scan_type": scan.scan_type,
+            "created_at": scan.created_at.isoformat() if scan.created_at else None,
+            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
+            "duration": scan.duration,
+            "total_endpoints": scan.total_endpoints,
+            "total_vulnerabilities": scan.total_vulnerabilities,
+            "critical_count": scan.critical_count,
+            "high_count": scan.high_count,
+            "medium_count": scan.medium_count,
+            "low_count": scan.low_count,
+            "info_count": scan.info_count,
+        }
+
+    return {
+        "summary": {
+            "scan_a": scan_summary(scan_a),
+            "scan_b": scan_summary(scan_b),
+            "vuln_summary": {
+                "new": len(vuln_diff["new"]),
+                "resolved": len(vuln_diff["resolved"]),
+                "persistent": len(vuln_diff["persistent"]),
+                "changed": len(vuln_diff["changed"]),
+            },
+            "endpoint_summary": {
+                "new": len(endpoint_diff["new"]),
+                "removed": len(endpoint_diff["removed"]),
+                "changed": len(endpoint_diff["changed"]),
+                "stable": len(endpoint_diff["stable"]),
+            },
+        },
+        "vulnerabilities": vuln_diff,
+        "endpoints": endpoint_diff,
+    }
+
+
 @router.get("/{scan_id}", response_model=ScanResponse)
 async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     """Get scan details by ID"""
@@ -172,6 +356,78 @@ async def start_scan(
     background_tasks.add_task(run_scan_task, scan_id)
 
     return {"message": "Scan started", "scan_id": scan_id}
+
+
+@router.post("/{scan_id}/repeat", response_model=ScanResponse)
+async def repeat_scan(
+    scan_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Clone a completed/stopped/failed scan's config and immediately start a new scan"""
+    result = await db.execute(select(Scan).where(Scan.id == scan_id))
+    original = result.scalar_one_or_none()
+    if not original:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    if original.status not in ("completed", "stopped", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only repeat completed, stopped, or failed scans. Current status: {original.status}"
+        )
+
+    # Load original targets
+    targets_result = await db.execute(select(Target).where(Target.scan_id == scan_id))
+    original_targets = targets_result.scalars().all()
+    if not original_targets:
+        raise HTTPException(status_code=400, detail="Original scan has no targets")
+
+    # Create new scan cloning config
+    new_scan = Scan(
+        name=f"Repeat: {original.name or 'Unnamed Scan'}",
+        scan_type=original.scan_type,
+        recon_enabled=original.recon_enabled,
+        custom_prompt=original.custom_prompt,
+        prompt_id=original.prompt_id,
+        config=original.config or {},
+        auth_type=original.auth_type,
+        auth_credentials=original.auth_credentials,
+        custom_headers=original.custom_headers,
+        repeated_from_id=original.id,
+        status="pending"
+    )
+    db.add(new_scan)
+    await db.flush()
+
+    # Clone targets
+    new_targets = []
+    for t in original_targets:
+        new_target = Target(
+            scan_id=new_scan.id,
+            url=t.url,
+            hostname=t.hostname,
+            port=t.port,
+            protocol=t.protocol,
+            path=t.path
+        )
+        db.add(new_target)
+        new_targets.append(new_target)
+
+    await db.commit()
+    await db.refresh(new_scan)
+
+    # Auto-start the new scan
+    new_scan.status = "running"
+    new_scan.started_at = datetime.utcnow()
+    new_scan.current_phase = "initializing"
+    new_scan.progress = 0
+    await db.commit()
+
+    background_tasks.add_task(run_scan_task, new_scan.id)
+
+    scan_dict = new_scan.to_dict()
+    scan_dict["targets"] = [t.to_dict() for t in new_targets]
+    return ScanResponse(**scan_dict)
 
 
 @router.post("/{scan_id}/stop")

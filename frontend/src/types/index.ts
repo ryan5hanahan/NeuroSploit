@@ -22,6 +22,7 @@ export interface Scan {
   medium_count: number
   low_count: number
   info_count: number
+  repeated_from_id: string | null
   targets: Target[]
 }
 
@@ -490,6 +491,30 @@ export interface SandboxPoolStatus {
 }
 
 // Activity Feed types
+// Scan Comparison types
+export interface ScanComparisonSummary {
+  scan_a: Record<string, unknown>
+  scan_b: Record<string, unknown>
+  vuln_summary: { new: number; resolved: number; persistent: number; changed: number }
+  endpoint_summary: { new: number; removed: number; changed: number; stable: number }
+}
+
+export interface ScanComparisonResponse {
+  summary: ScanComparisonSummary
+  vulnerabilities: {
+    new: (Vulnerability & { severity_changed?: { from: string; to: string } | null; cvss_changed?: { from: number | null; to: number | null } | null })[]
+    resolved: Vulnerability[]
+    persistent: Vulnerability[]
+    changed: (Vulnerability & { severity_changed?: { from: string; to: string } | null; cvss_changed?: { from: number | null; to: number | null } | null })[]
+  }
+  endpoints: {
+    new: Endpoint[]
+    removed: Endpoint[]
+    changed: (Endpoint & { changes?: Record<string, { from: unknown; to: unknown }> })[]
+    stable: Endpoint[]
+  }
+}
+
 export interface ActivityFeedItem {
   type: 'scan' | 'vulnerability' | 'agent_task' | 'report'
   action: string

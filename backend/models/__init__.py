@@ -6,6 +6,7 @@ from backend.models.vulnerability import Vulnerability, VulnerabilityTest
 from backend.models.report import Report
 from backend.models.agent_task import AgentTask
 from backend.models.vuln_lab import VulnLabChallenge
+from backend.models.llm_test_result import LlmTestResult
 
 __all__ = [
     "Scan",
@@ -16,5 +17,6 @@ __all__ = [
     "VulnerabilityTest",
     "Report",
     "AgentTask",
-    "VulnLabChallenge"
+    "VulnLabChallenge",
+    "LlmTestResult"
 ]

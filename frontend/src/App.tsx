@@ -14,6 +14,7 @@ import AutoPentestPage from './pages/AutoPentestPage'
 import VulnLabPage from './pages/VulnLabPage'
 import TerminalAgentPage from './pages/TerminalAgentPage'
 import SandboxDashboardPage from './pages/SandboxDashboardPage'
+import CompareScanPage from './pages/CompareScanPage'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
         <Route path="/terminal" element={<TerminalAgentPage />} />
         <Route path="/scan/new" element={<NewScanPage />} />
         <Route path="/scan/:scanId" element={<ScanDetailsPage />} />
+        <Route path="/compare" element={<CompareScanPage />} />
         <Route path="/agent/:agentId" element={<AgentStatusPage />} />
         <Route path="/tasks" element={<TaskLibraryPage />} />
         <Route path="/realtime" element={<RealtimeTaskPage />} />

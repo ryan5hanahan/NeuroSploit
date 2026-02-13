@@ -4,7 +4,7 @@ import type {
   AgentTask, AgentRequest, AgentResponse, AgentStatus, AgentLog, AgentMode,
   ScanAgentTask, ActivityFeedItem, ScheduleJob, ScheduleJobRequest, AgentRole,
   VulnLabChallenge, VulnLabRunRequest, VulnLabRunResponse, VulnLabRealtimeStatus,
-  VulnTypeCategory, VulnLabStats, SandboxPoolStatus
+  VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse
 } from '../types'
 
 const api = axios.create({
@@ -79,6 +79,16 @@ export const scansApi = {
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) })
     if (severity) params.append('severity', severity)
     const response = await api.get(`/scans/${scanId}/vulnerabilities?${params}`)
+    return response.data
+  },
+
+  repeat: async (scanId: string): Promise<Scan> => {
+    const response = await api.post(`/scans/${scanId}/repeat`)
+    return response.data
+  },
+
+  compare: async (scanIdA: string, scanIdB: string): Promise<ScanComparisonResponse> => {
+    const response = await api.get(`/scans/compare/${scanIdA}/${scanIdB}`)
     return response.data
   },
 }

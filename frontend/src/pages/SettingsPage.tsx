@@ -30,12 +30,19 @@ interface DbStats {
 }
 
 interface LlmTestResult {
+  id?: string
+  created_at?: string
   success: boolean
   provider: string
   model: string
   response_time_ms: number
   response_preview: string
   error: string | null
+}
+
+interface LlmTestResponse {
+  current: LlmTestResult
+  previous: LlmTestResult | null
 }
 
 export default function SettingsPage() {
@@ -60,6 +67,7 @@ export default function SettingsPage() {
   const [isClearing, setIsClearing] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<LlmTestResult | null>(null)
+  const [previousResult, setPreviousResult] = useState<LlmTestResult | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
@@ -175,11 +183,13 @@ export default function SettingsPage() {
   const handleTestConnection = async () => {
     setIsTesting(true)
     setTestResult(null)
+    setPreviousResult(null)
 
     try {
       const response = await fetch('/api/v1/settings/test-llm', { method: 'POST' })
-      const data: LlmTestResult = await response.json()
-      setTestResult(data)
+      const data: LlmTestResponse = await response.json()
+      setTestResult(data.current)
+      setPreviousResult(data.previous)
     } catch (error) {
       setTestResult({
         success: false,
@@ -189,6 +199,7 @@ export default function SettingsPage() {
         response_preview: '',
         error: 'Failed to reach the backend. Is the server running?',
       })
+      setPreviousResult(null)
     } finally {
       setIsTesting(false)
     }
@@ -224,7 +235,7 @@ export default function SettingsPage() {
                 <Button
                   key={provider}
                   variant={llmProvider === provider ? 'primary' : 'secondary'}
-                  onClick={() => { setLlmProvider(provider); setTestResult(null) }}
+                  onClick={() => { setLlmProvider(provider); setTestResult(null); setPreviousResult(null) }}
                 >
                   {provider === 'openrouter' ? 'OpenRouter' : provider === 'bedrock' ? 'AWS Bedrock' : provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </Button>
@@ -322,32 +333,67 @@ export default function SettingsPage() {
           </div>
 
           {testResult && (
-            <div className={`p-4 rounded-lg text-sm ${
+            <div className={`rounded-lg text-sm ${
               testResult.success
                 ? 'bg-green-500/15 border border-green-500/30'
                 : 'bg-red-500/15 border border-red-500/30'
             }`}>
-              {testResult.success ? (
-                <div className="space-y-1">
-                  <p className="font-medium text-green-400">Connection successful</p>
-                  <p className="text-dark-300">
-                    <span className="text-dark-400">Provider:</span> {testResult.provider}
-                    {' / '}
-                    <span className="text-dark-400">Model:</span> {testResult.model}
-                  </p>
-                  <p className="text-dark-300">
-                    <span className="text-dark-400">Response time:</span> {testResult.response_time_ms}ms
-                  </p>
-                  {testResult.response_preview && (
-                    <p className="text-dark-400 mt-1 break-words">
-                      <span className="text-dark-500">Response:</span> {testResult.response_preview.slice(0, 200)}
+              <div className="p-4">
+                {testResult.success ? (
+                  <div className="space-y-1">
+                    <p className="font-medium text-green-400">Connection successful</p>
+                    <p className="text-dark-300">
+                      <span className="text-dark-400">Provider:</span> {testResult.provider}
+                      {' / '}
+                      <span className="text-dark-400">Model:</span> {testResult.model}
                     </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="font-medium text-red-400">Connection failed</p>
-                  <p className="text-dark-300 break-words">{testResult.error}</p>
+                    <p className="text-dark-300">
+                      <span className="text-dark-400">Response time:</span> {testResult.response_time_ms}ms
+                    </p>
+                    {testResult.response_preview && (
+                      <p className="text-dark-400 mt-1 break-words">
+                        <span className="text-dark-500">Response:</span> {testResult.response_preview.slice(0, 200)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="font-medium text-red-400">Connection failed</p>
+                    <p className="text-dark-300 break-words">{testResult.error}</p>
+                  </div>
+                )}
+              </div>
+
+              {previousResult && (
+                <div className="border-t border-white/10 px-4 py-3 space-y-1">
+                  <p className="text-dark-400 text-xs font-medium">
+                    Previous test{previousResult.created_at && (
+                      <span> ({new Date(previousResult.created_at).toLocaleString()})</span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <span className="text-dark-300">
+                      {previousResult.provider}/{previousResult.model || '—'}
+                    </span>
+                    {/* Status delta */}
+                    {testResult.success !== previousResult.success && (
+                      testResult.success
+                        ? <span className="text-green-400">(recovered)</span>
+                        : <span className="text-red-400">(regressed)</span>
+                    )}
+                    {/* Response time delta */}
+                    {previousResult.response_time_ms > 0 && testResult.response_time_ms > 0 && (() => {
+                      const delta = testResult.response_time_ms - previousResult.response_time_ms
+                      if (delta === 0) return <span className="text-dark-400">(same)</span>
+                      return delta > 0
+                        ? <span className="text-yellow-400">(+{delta}ms slower)</span>
+                        : <span className="text-green-400">({delta}ms faster)</span>
+                    })()}
+                    {previousResult.success
+                      ? <span className="text-dark-500">{previousResult.response_time_ms}ms</span>
+                      : <span className="text-dark-500 truncate max-w-xs">{previousResult.error}</span>
+                    }
+                  </div>
                 </div>
               )}
             </div>

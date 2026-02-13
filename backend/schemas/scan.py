@@ -64,6 +64,7 @@ class ScanResponse(BaseModel):
     prompt_id: Optional[str]
     auth_type: Optional[str] = None
     custom_headers: Optional[dict] = None
+    repeated_from_id: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]

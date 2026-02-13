@@ -57,6 +57,10 @@ async def _run_migrations(conn):
             logger.info("Adding 'duration' column to scans table...")
             await conn.execute(text("ALTER TABLE scans ADD COLUMN duration INTEGER"))
 
+        if "repeated_from_id" not in columns:
+            logger.info("Adding 'repeated_from_id' column to scans table...")
+            await conn.execute(text("ALTER TABLE scans ADD COLUMN repeated_from_id VARCHAR(36)"))
+
         # Check and add columns to reports table
         result = await conn.execute(text("PRAGMA table_info(reports)"))
         columns = [row[1] for row in result.fetchall()]

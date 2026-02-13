@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.db.database import get_db, engine
 from backend.models import Scan, Target, Endpoint, Vulnerability, VulnerabilityTest, Report
+from backend.models.llm_test_result import LlmTestResult
 
 router = APIRouter()
 
@@ -323,8 +324,29 @@ _API_KEY_ENV = {
 }
 
 
+async def _save_and_return(db: AsyncSession, result_data: dict) -> dict:
+    """Persist an LLM test result and return {current, previous}."""
+    # Fetch the most recent previous result before inserting the new one
+    prev_row = (
+        await db.execute(
+            select(LlmTestResult)
+            .order_by(LlmTestResult.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    new_row = LlmTestResult(**result_data)
+    db.add(new_row)
+    await db.flush()          # populate defaults (id, created_at)
+
+    current = new_row.to_dict()
+    previous = prev_row.to_dict() if prev_row else None
+
+    return {"current": current, "previous": previous}
+
+
 @router.post("/test-llm")
-async def test_llm_connection():
+async def test_llm_connection(db: AsyncSession = Depends(get_db)):
     """Test the current LLM configuration by sending a simple prompt."""
     provider_ui = _settings.get("llm_provider", "claude")
     llm_provider = _PROVIDER_MAP.get(provider_ui, provider_ui)
@@ -341,14 +363,14 @@ async def test_llm_connection():
         }
         api_key = _settings.get(key_map.get(provider_ui, ""), "") or os.getenv(env_var, "")
         if not api_key:
-            return {
+            return await _save_and_return(db, {
                 "success": False,
                 "provider": provider_ui,
                 "model": "",
                 "response_time_ms": 0,
                 "response_preview": "",
                 "error": f"No API key configured. Set {env_var} or enter it in settings.",
-            }
+            })
 
     # For bedrock, check AWS credentials
     if provider_ui == "bedrock":
@@ -357,14 +379,14 @@ async def test_llm_connection():
             or os.getenv("AWS_PROFILE")
         )
         if not has_creds:
-            return {
+            return await _save_and_return(db, {
                 "success": False,
                 "provider": provider_ui,
                 "model": "",
                 "response_time_ms": 0,
                 "response_preview": "",
                 "error": "No AWS credentials configured. Set AWS_ACCESS_KEY_ID or AWS_PROFILE.",
-            }
+            })
 
     # Build model name
     if provider_ui == "bedrock":
@@ -410,23 +432,23 @@ async def test_llm_connection():
 
         # LLMManager sometimes returns error strings instead of raising
         if response and response.strip().lower().startswith("error:"):
-            return {
+            return await _save_and_return(db, {
                 "success": False,
                 "provider": provider_ui,
                 "model": model,
                 "response_time_ms": elapsed_ms,
                 "response_preview": "",
                 "error": response.strip(),
-            }
+            })
 
-        return {
+        return await _save_and_return(db, {
             "success": True,
             "provider": provider_ui,
             "model": model,
             "response_time_ms": elapsed_ms,
             "response_preview": response[:500] if response else "",
             "error": None,
-        }
+        })
     except Exception as e:
         error_msg = str(e)
         # Provide friendlier messages for common errors
@@ -439,14 +461,14 @@ async def test_llm_connection():
             error_msg = f"Connection timed out. Check network connectivity and provider status. ({error_msg})"
         elif "connection" in lower_err and ("refused" in lower_err or "error" in lower_err):
             error_msg = f"Connection refused. Is the provider endpoint reachable? ({error_msg})"
-        return {
+        return await _save_and_return(db, {
             "success": False,
             "provider": provider_ui,
             "model": model,
             "response_time_ms": 0,
             "response_preview": "",
             "error": error_msg,
-        }
+        })
 
 
 @router.post("/clear-database")
@@ -454,6 +476,7 @@ async def clear_database(db: AsyncSession = Depends(get_db)):
     """Clear all data from the database (reset to fresh state)"""
     try:
         # Delete in correct order to respect foreign key constraints
+        await db.execute(delete(LlmTestResult))
         await db.execute(delete(VulnerabilityTest))
         await db.execute(delete(Vulnerability))
         await db.execute(delete(Endpoint))

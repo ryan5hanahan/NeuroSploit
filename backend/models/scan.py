@@ -35,6 +35,9 @@ class Scan(Base):
     auth_credentials: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Stores auth data securely
     custom_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Additional HTTP headers
 
+    # Lineage tracking (for repeated scans)
+    repeated_from_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -87,5 +90,6 @@ class Scan(Base):
             "high_count": self.high_count,
             "medium_count": self.medium_count,
             "low_count": self.low_count,
-            "info_count": self.info_count
+            "info_count": self.info_count,
+            "repeated_from_id": self.repeated_from_id
         }
