@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeftRight, Shield, Globe, ChevronDown, ChevronRight,
+  ArrowLeftRight, Shield, Globe,
   Plus, Minus, RefreshCw, Equal, ArrowRight
 } from 'lucide-react'
 import Card from '../components/common/Card'
@@ -256,9 +256,15 @@ export default function CompareScanPage() {
                       const count = info[`${sev}_count`] || 0
                       if (count === 0) return null
                       return (
-                        <SeverityBadge key={sev} severity={sev}>
+                        <span key={sev} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          sev === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                          sev === 'high' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                          sev === 'medium' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                          sev === 'low' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                          'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                        }`}>
                           {sev.charAt(0).toUpperCase()}: {count}
-                        </SeverityBadge>
+                        </span>
                       )
                     })}
                   </div>
