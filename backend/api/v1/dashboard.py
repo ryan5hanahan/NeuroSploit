@@ -239,9 +239,12 @@ async def get_activity_feed(
             "link": f"/scan/{scan.id}"
         })
 
-    # Get recent vulnerabilities
+    # Get recent vulnerabilities (join with Scan to exclude orphaned records)
     vulns_result = await db.execute(
-        select(Vulnerability).order_by(Vulnerability.created_at.desc()).limit(limit // 3)
+        select(Vulnerability)
+        .join(Scan, Vulnerability.scan_id == Scan.id)
+        .order_by(Vulnerability.created_at.desc())
+        .limit(limit // 3)
     )
     for vuln in vulns_result.scalars().all():
         activities.append({
@@ -256,9 +259,12 @@ async def get_activity_feed(
             "link": f"/scan/{vuln.scan_id}"
         })
 
-    # Get recent agent tasks
+    # Get recent agent tasks (join with Scan to exclude orphaned tasks)
     tasks_result = await db.execute(
-        select(AgentTask).order_by(AgentTask.created_at.desc()).limit(limit // 3)
+        select(AgentTask)
+        .join(Scan, AgentTask.scan_id == Scan.id)
+        .order_by(AgentTask.created_at.desc())
+        .limit(limit // 3)
     )
     for task in tasks_result.scalars().all():
         activities.append({
