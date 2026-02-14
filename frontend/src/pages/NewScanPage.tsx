@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Upload, Link as LinkIcon, FileText, Play, AlertTriangle,
-  Bot, Search, Target, Brain, BookOpen, ChevronDown, Key, Settings
+  Bot, Search, Target, Brain, BookOpen, ChevronDown, Key, Settings,
+  Zap, Layers, Shield
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
@@ -76,6 +77,7 @@ export default function NewScanPage() {
 
   // Operation mode
   const [operationMode, setOperationMode] = useState<AgentMode>('full_auto')
+  const [reconDepth, setReconDepth] = useState<'quick' | 'medium' | 'full'>('medium')
 
   // Task library
   const [tasks, setTasks] = useState<AgentTask[]>([])
@@ -169,7 +171,8 @@ export default function NewScanPage() {
       const request: any = {
         target: validation[0].normalized_url,
         mode: operationMode,
-        max_depth: maxDepth
+        max_depth: maxDepth,
+        ...(operationMode === 'recon_only' && { recon_depth: reconDepth }),
       }
 
       // Add task or custom prompt
@@ -243,6 +246,62 @@ export default function NewScanPage() {
           ))}
         </div>
       </Card>
+
+      {/* Recon Depth Selector - only for recon_only mode */}
+      {operationMode === 'recon_only' && (
+        <Card title="Recon Depth" subtitle="Select reconnaissance thoroughness level">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {([
+              {
+                id: 'quick' as const,
+                name: 'Quick',
+                icon: <Zap className="w-5 h-5" />,
+                description: 'DNS resolution, HTTP probing, basic path discovery',
+                phases: '3 phases',
+                color: 'green',
+              },
+              {
+                id: 'medium' as const,
+                name: 'Medium',
+                icon: <Layers className="w-5 h-5" />,
+                description: 'Quick + subdomain enumeration, URL collection, port scan, tech detection, web crawling',
+                phases: '8 phases',
+                color: 'blue',
+              },
+              {
+                id: 'full' as const,
+                name: 'Full',
+                icon: <Shield className="w-5 h-5" />,
+                description: 'Medium + full port scan, parameter discovery, JS analysis, directory fuzzing, nuclei scan',
+                phases: '14 phases',
+                color: 'purple',
+              },
+            ]).map((depth) => (
+              <div
+                key={depth.id}
+                onClick={() => setReconDepth(depth.id)}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  reconDepth === depth.id
+                    ? `border-${depth.color}-500 bg-${depth.color}-500/10`
+                    : 'border-dark-700 hover:border-dark-500 bg-dark-900/50'
+                }`}
+              >
+                <div className={`flex items-center gap-2 mb-2 ${
+                  reconDepth === depth.id ? `text-${depth.color}-400` : 'text-dark-300'
+                }`}>
+                  {depth.icon}
+                  <span className="font-semibold">{depth.name}</span>
+                  <span className="text-xs text-dark-500 ml-auto">{depth.phases}</span>
+                </div>
+                <p className="text-sm text-dark-400">{depth.description}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-dark-500 mt-3">
+            Enhanced recon uses 40+ security tools when available (subfinder, nmap, katana, nuclei, etc.). Falls back to basic HTTP recon if tools are not installed.
+          </p>
+        </Card>
+      )}
 
       {/* Target Input */}
       <Card title="Target" subtitle="Enter the URL to test">

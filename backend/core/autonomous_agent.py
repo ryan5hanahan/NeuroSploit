@@ -45,6 +45,13 @@ except ImportError:
     BrowserValidator = None
     embed_screenshot = None
 
+# Try to import ReconIntegration for enhanced recon
+try:
+    from backend.core.recon_integration import ReconIntegration, check_tools_installed
+    HAS_RECON_INTEGRATION = True
+except ImportError:
+    HAS_RECON_INTEGRATION = False
+
 # Try to import anthropic for Claude API
 try:
     import anthropic
@@ -146,6 +153,13 @@ class ReconData:
     forms: List[Dict] = field(default_factory=list)
     js_files: List[str] = field(default_factory=list)
     api_endpoints: List[str] = field(default_factory=list)
+    ports: List[str] = field(default_factory=list)
+    dns_records: List[str] = field(default_factory=list)
+    urls: List[str] = field(default_factory=list)
+    interesting_paths: List[Dict] = field(default_factory=list)
+    secrets: List[str] = field(default_factory=list)
+    waf_info: Optional[Dict] = None
+    recon_depth: str = "basic"
 
 
 def _get_endpoint_url(ep) -> str:
@@ -628,6 +642,7 @@ class AutonomousAgent:
         finding_callback: Optional[Callable] = None,
         lab_context: Optional[Dict] = None,
         scan_id: Optional[str] = None,
+        recon_depth: Optional[str] = None,
     ):
         self.target = self._normalize_target(target)
         self.mode = mode
@@ -636,6 +651,7 @@ class AutonomousAgent:
         self.finding_callback = finding_callback
         self.auth_headers = auth_headers or {}
         self.task = task
+        self.recon_depth = recon_depth or "medium"
         self.custom_prompt = custom_prompt
         self.recon_context = recon_context
         self.lab_context = lab_context or {}
@@ -2630,27 +2646,183 @@ NOT_VULNERABLE: <reason>"""
         """Comprehensive reconnaissance"""
         await self._update_progress(0, "Starting reconnaissance")
 
-        # Phase 1: Initial probe
-        await self.log("info", "[PHASE 1/4] Initial Probe")
-        await self._initial_probe()
-        await self._update_progress(25, "Initial probe complete")
+        # Enhanced recon only for RECON_ONLY mode (not when called by FULL_AUTO)
+        enhanced = False
+        if self.mode == OperationMode.RECON_ONLY:
+            enhanced = await self._run_enhanced_recon()
 
-        # Phase 2: Endpoint discovery
-        await self.log("info", "[PHASE 2/4] Endpoint Discovery")
-        await self._discover_endpoints()
-        await self._update_progress(50, "Endpoint discovery complete")
+        if not enhanced:
+            # Original 4-phase basic recon
+            await self.log("info", "[PHASE 1/4] Initial Probe")
+            await self._initial_probe()
+            await self._update_progress(25, "Initial probe complete")
 
-        # Phase 3: Parameter discovery
-        await self.log("info", "[PHASE 3/4] Parameter Discovery")
-        await self._discover_parameters()
-        await self._update_progress(75, "Parameter discovery complete")
+            await self.log("info", "[PHASE 2/4] Endpoint Discovery")
+            await self._discover_endpoints()
+            await self._update_progress(50, "Endpoint discovery complete")
 
-        # Phase 4: Technology detection
-        await self.log("info", "[PHASE 4/4] Technology Detection")
-        await self._detect_technologies()
+            await self.log("info", "[PHASE 3/4] Parameter Discovery")
+            await self._discover_parameters()
+            await self._update_progress(75, "Parameter discovery complete")
+
+            await self.log("info", "[PHASE 4/4] Technology Detection")
+            await self._detect_technologies()
+
+        # WAF detection (new for RECON_ONLY; FULL_AUTO already does this in Phase 1b)
+        if self.mode == OperationMode.RECON_ONLY and self.waf_detector and not self._waf_result:
+            try:
+                await self.log("info", "[RECON] WAF Detection")
+                self._waf_result = await self.waf_detector.detect(self.target)
+                if self._waf_result and self._waf_result.detected_wafs:
+                    waf_data = {
+                        "detected": True,
+                        "wafs": [],
+                        "blocking_patterns": self._waf_result.blocking_patterns,
+                        "recommended_delay": self._waf_result.recommended_delay,
+                    }
+                    for w in self._waf_result.detected_wafs:
+                        waf_label = f"WAF:{w.name} ({w.confidence:.0%})"
+                        if waf_label not in self.recon.technologies:
+                            self.recon.technologies.append(waf_label)
+                        waf_data["wafs"].append({
+                            "name": w.name,
+                            "confidence": w.confidence,
+                            "detection_method": w.detection_method,
+                            "evidence": w.evidence,
+                        })
+                        await self.log("warning", f"[WAF] Detected: {w.name} "
+                                       f"(confidence: {w.confidence:.0%})")
+                    self.recon.waf_info = waf_data
+                else:
+                    await self.log("info", "[WAF] No WAF detected")
+                    self.recon.waf_info = {"detected": False, "wafs": []}
+            except Exception as e:
+                await self.log("debug", f"[WAF] Detection failed: {e}")
+
         await self._update_progress(100, "Reconnaissance complete")
-
         return self._generate_recon_report()
+
+    async def _run_enhanced_recon(self) -> bool:
+        """Run enhanced reconnaissance using ReconIntegration tool suite.
+
+        Returns True if enhanced recon succeeded, False to fall back to basic.
+        """
+        if not HAS_RECON_INTEGRATION:
+            await self.log("debug", "[RECON] ReconIntegration not available, using basic recon")
+            return False
+
+        try:
+            # Check how many tools are installed
+            tool_status = await check_tools_installed()
+            installed_count = sum(1 for v in tool_status.values() if v)
+            if installed_count < 3:
+                await self.log("debug", f"[RECON] Only {installed_count} tools installed (<3), using basic recon")
+                return False
+
+            await self.log("info", f"[RECON] Enhanced recon: {installed_count} tools available, depth={self.recon_depth}")
+
+            # Create ReconIntegration instance
+            ri = ReconIntegration(scan_id=self.scan_id or "recon")
+
+            # Bridge ReconIntegration's log to our agent log callback
+            original_log = ri.log
+
+            async def bridged_log(level: str, message: str):
+                await self.log(level, message)
+                try:
+                    await original_log(level, message)
+                except Exception:
+                    pass
+
+            ri.log = bridged_log
+
+            # Run full recon
+            results = await ri.run_full_recon(self.target, depth=self.recon_depth)
+
+            # Map results into self.recon
+            self._map_recon_results(results)
+            self.recon.recon_depth = self.recon_depth
+
+            await self.log("info", f"[RECON] Enhanced recon complete: "
+                           f"{len(self.recon.endpoints)} endpoints, "
+                           f"{len(self.recon.subdomains)} subdomains, "
+                           f"{len(self.recon.ports)} ports")
+            return True
+
+        except Exception as e:
+            await self.log("warning", f"[RECON] Enhanced recon failed ({e}), falling back to basic")
+            return False
+
+    def _map_recon_results(self, results: Dict):
+        """Map ReconIntegration output dict into self.recon fields."""
+        # Subdomains
+        for sub in results.get("subdomains", []):
+            if sub and sub not in self.recon.subdomains:
+                self.recon.subdomains.append(sub)
+
+        # Live hosts
+        for host in results.get("live_hosts", []):
+            if host and host not in self.recon.live_hosts:
+                self.recon.live_hosts.append(host)
+
+        # Endpoints (deduplicate by URL)
+        existing_urls = {_get_endpoint_url(ep) for ep in self.recon.endpoints}
+        for ep in results.get("endpoints", []):
+            ep_url = ep.get("url", "") if isinstance(ep, dict) else str(ep)
+            if ep_url and ep_url not in existing_urls:
+                if isinstance(ep, dict):
+                    self.recon.endpoints.append(ep)
+                else:
+                    self.recon.endpoints.append({"url": ep_url, "source": "recon_integration"})
+                existing_urls.add(ep_url)
+
+        # URLs
+        for url in results.get("urls", []):
+            if url and url not in self.recon.urls:
+                self.recon.urls.append(url)
+
+        # Technologies
+        for tech in results.get("technologies", []):
+            tech_str = tech.get("data", str(tech)) if isinstance(tech, dict) else str(tech)
+            if tech_str and tech_str not in self.recon.technologies:
+                self.recon.technologies.append(tech_str)
+
+        # Ports
+        for port in results.get("ports", []):
+            if port and port not in self.recon.ports:
+                self.recon.ports.append(port)
+
+        # DNS records
+        for rec in results.get("dns_records", []):
+            if rec and rec not in self.recon.dns_records:
+                self.recon.dns_records.append(rec)
+
+        # Interesting paths
+        for path in results.get("interesting_paths", []):
+            if path and path not in self.recon.interesting_paths:
+                self.recon.interesting_paths.append(path)
+
+        # JS files
+        for js in results.get("js_files", []):
+            if js and js not in self.recon.js_files:
+                self.recon.js_files.append(js)
+
+        # Parameters (URLs with query strings)
+        for param_url in results.get("parameters", []):
+            if param_url and "?" in param_url:
+                parsed = urlparse(param_url)
+                params = parse_qs(parsed.query)
+                path = parsed.path or "/"
+                for param_name in params:
+                    if path not in self.recon.parameters:
+                        self.recon.parameters[path] = []
+                    if param_name not in self.recon.parameters[path]:
+                        self.recon.parameters[path].append(param_name)
+
+        # Secrets
+        for secret in results.get("secrets", []):
+            if secret and secret not in self.recon.secrets:
+                self.recon.secrets.append(secret)
 
     async def _initial_probe(self):
         """Initial probe of the target"""
@@ -6872,8 +7044,10 @@ Provide your analysis:"""
     # ==================== REPORT GENERATION ====================
 
     def _generate_recon_report(self) -> Dict:
-        """Generate recon report"""
-        return {
+        """Generate comprehensive recon report"""
+        waf_detected = bool(self.recon.waf_info and self.recon.waf_info.get("detected"))
+
+        report = {
             "type": "reconnaissance",
             "target": self.target,
             "mode": self.mode.value,
@@ -6882,17 +7056,79 @@ Provide your analysis:"""
                 "target": self.target,
                 "endpoints_found": len(self.recon.endpoints),
                 "forms_found": len(self.recon.forms),
+                "subdomains_found": len(self.recon.subdomains),
+                "ports_found": len(self.recon.ports),
                 "technologies": self.recon.technologies,
+                "recon_depth": self.recon.recon_depth,
+                "waf_detected": waf_detected,
             },
             "data": {
-                "endpoints": self.recon.endpoints[:50],
-                "forms": self.recon.forms[:20],
+                "endpoints": self.recon.endpoints,
+                "forms": self.recon.forms,
                 "technologies": self.recon.technologies,
-                "api_endpoints": self.recon.api_endpoints[:20],
+                "api_endpoints": self.recon.api_endpoints,
+                "subdomains": self.recon.subdomains,
+                "ports": self.recon.ports,
+                "dns_records": self.recon.dns_records,
+                "js_files": self.recon.js_files,
+                "urls": self.recon.urls[:500],
+                "interesting_paths": self.recon.interesting_paths,
+                "secrets": self.recon.secrets,
+                "live_hosts": self.recon.live_hosts,
+                "parameters": self.recon.parameters,
             },
+            # Provide endpoints under "recon" key so agent.py endpoint persistence works
+            "recon": {
+                "endpoints": self.recon.endpoints,
+            },
+            "waf_detection": self.recon.waf_info,
             "findings": [],
-            "recommendations": ["Proceed with vulnerability testing"]
+            "recommendations": self._generate_recon_recommendations(),
         }
+
+        return report
+
+    def _generate_recon_recommendations(self) -> List[str]:
+        """Generate actionable recommendations based on recon findings."""
+        recs = []
+
+        if self.recon.subdomains:
+            recs.append(f"Investigate {len(self.recon.subdomains)} discovered subdomains for additional attack surface")
+
+        if self.recon.secrets:
+            recs.append(f"URGENT: {len(self.recon.secrets)} potential secrets/credentials found in JavaScript or config files")
+
+        if self.recon.waf_info and self.recon.waf_info.get("detected"):
+            waf_names = ", ".join(w["name"] for w in self.recon.waf_info.get("wafs", []))
+            recs.append(f"WAF detected ({waf_names}) - consider WAF bypass techniques for vulnerability testing")
+
+        if self.recon.interesting_paths:
+            high_risk = [p for p in self.recon.interesting_paths if isinstance(p, dict) and p.get("risk") == "high"]
+            if high_risk:
+                recs.append(f"{len(high_risk)} high-risk sensitive paths found (e.g. .git, .env, debug endpoints) - investigate immediately")
+
+        api_eps = [ep for ep in self.recon.endpoints if isinstance(ep, dict) and "/api" in ep.get("url", "").lower()]
+        if api_eps:
+            recs.append(f"{len(api_eps)} API endpoints discovered - test for authentication bypass, IDOR, and injection vulnerabilities")
+
+        if self.recon.ports:
+            recs.append(f"{len(self.recon.ports)} open ports found - examine non-standard services for misconfigurations")
+
+        if self.recon.js_files:
+            recs.append(f"{len(self.recon.js_files)} JavaScript files found - analyze for hardcoded secrets, API keys, and internal endpoints")
+
+        forms_with_params = [f for f in self.recon.forms if f.get("inputs")]
+        if forms_with_params:
+            recs.append(f"{len(forms_with_params)} forms with input fields found - test for XSS, CSRF, and injection vulnerabilities")
+
+        if self.recon.parameters:
+            total_params = sum(len(v) for v in self.recon.parameters.values())
+            recs.append(f"{total_params} query parameters across {len(self.recon.parameters)} paths - prioritize for injection testing")
+
+        if not recs:
+            recs.append("Proceed with vulnerability testing based on discovered endpoints")
+
+        return recs
 
     async def _generate_full_report(self) -> Dict:
         """Generate comprehensive report"""

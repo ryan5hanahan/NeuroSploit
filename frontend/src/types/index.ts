@@ -198,6 +198,7 @@ export interface AgentRequest {
   max_depth?: number
   subdomain_discovery?: boolean
   targets?: string[]
+  recon_depth?: 'quick' | 'medium' | 'full'
 }
 
 export interface AgentResponse {

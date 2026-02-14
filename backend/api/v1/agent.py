@@ -118,6 +118,7 @@ class AgentRequest(BaseModel):
     max_depth: int = Field(5, description="Maximum crawl depth")
     subdomain_discovery: bool = Field(False, description="Enable subdomain discovery (auto_pentest mode)")
     targets: Optional[List[str]] = Field(None, description="Multiple targets (auto_pentest mode)")
+    recon_depth: Optional[str] = Field(None, description="Recon depth: quick, medium, or full (recon_only mode)")
 
 
 class AgentResponse(BaseModel):
@@ -212,7 +213,8 @@ async def run_agent(request: AgentRequest, background_tasks: BackgroundTasks):
         auth_headers,
         request.max_depth,
         task,
-        request.prompt
+        request.prompt,
+        request.recon_depth,
     )
 
     mode_descriptions = {
@@ -238,7 +240,8 @@ async def _run_agent_task(
     auth_headers: Dict,
     max_depth: int,
     task,
-    custom_prompt: str
+    custom_prompt: str,
+    recon_depth: str = None,
 ):
     """Background task to run the agent with DATABASE PERSISTENCE and REAL-TIME FINDINGS"""
     logs = []
@@ -330,6 +333,7 @@ async def _run_agent_task(
                 custom_prompt=custom_prompt or (task.prompt if task else None),
                 finding_callback=finding_callback,
                 scan_id=str(scan_id),
+                recon_depth=recon_depth,
             ) as agent:
                 # Store agent instance for stop functionality
                 agent_instances[agent_id] = agent
@@ -402,8 +406,11 @@ async def _run_agent_task(
                     )
                     db.add(vuln)
 
-                # Save discovered endpoints
-                for ep in report.get("recon", {}).get("endpoints", []):
+                # Save discovered endpoints (check recon key first, fall back to data key)
+                recon_endpoints = report.get("recon", {}).get("endpoints", [])
+                if not recon_endpoints:
+                    recon_endpoints = report.get("data", {}).get("endpoints", [])
+                for ep in recon_endpoints:
                     if isinstance(ep, str):
                         endpoint = Endpoint(
                             scan_id=scan_id,
@@ -428,7 +435,7 @@ async def _run_agent_task(
                 scan.progress = 100
                 scan.current_phase = "completed"
                 scan.total_vulnerabilities = len(findings)
-                scan.total_endpoints = len(report.get("recon", {}).get("endpoints", []))
+                scan.total_endpoints = len(recon_endpoints)
                 scan.critical_count = severity_counts["critical"]
                 scan.high_count = severity_counts["high"]
                 scan.medium_count = severity_counts["medium"]
