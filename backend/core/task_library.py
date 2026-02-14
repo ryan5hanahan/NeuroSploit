@@ -142,6 +142,30 @@ Do NOT send any requests directly to the target.""",
                 is_preset=True
             ),
 
+            Task(
+                id="recon_specialist",
+                name="AI-Enhanced Reconnaissance",
+                description="Full reconnaissance with AI-powered attack surface analysis",
+                category=TaskCategory.RECON.value,
+                prompt=(
+                    "Perform comprehensive reconnaissance on the target, then analyze "
+                    "the gathered data with AI to produce an expert-level attack surface analysis.\n\n"
+                    "1. **Automated Reconnaissance**: Run full tool suite\n"
+                    "2. **AI Attack Surface Analysis**: Analyze technologies, map auth boundaries, "
+                    "identify high-value targets\n"
+                    "3. **Strategic Recommendations**: Prioritized actions for testing phases"
+                ),
+                system_prompt=(
+                    "You are a Senior Reconnaissance Analyst and Attack Surface Specialist. "
+                    "Analyze reconnaissance data systematically, ground all observations in "
+                    "discovered data, and produce actionable intelligence."
+                ),
+                tools_required=["subfinder", "httpx", "nmap", "katana", "gau", "nuclei", "whatweb"],
+                estimated_tokens=4000,
+                tags=["recon", "discovery", "ai_analysis", "attack_surface", "specialist"],
+                is_preset=True,
+            ),
+
             # === VULNERABILITY TASKS ===
             Task(
                 id="vuln_owasp_top10",

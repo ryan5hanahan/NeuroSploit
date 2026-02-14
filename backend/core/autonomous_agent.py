@@ -2699,8 +2699,227 @@ NOT_VULNERABLE: <reason>"""
             except Exception as e:
                 await self.log("debug", f"[WAF] Detection failed: {e}")
 
+        # AI Attack Surface Analysis (enriches report when LLM is available)
+        ai_analysis = None
+        if self.mode == OperationMode.RECON_ONLY:
+            await self._update_progress(85, "Running AI analysis")
+            await self.log("info", "[RECON] Phase: AI Attack Surface Analysis")
+            ai_analysis = await self._ai_analyze_recon_data()
+
         await self._update_progress(100, "Reconnaissance complete")
-        return self._generate_recon_report()
+        return self._generate_recon_report(ai_analysis=ai_analysis)
+
+    async def _ai_analyze_recon_data(self) -> Optional[Dict]:
+        """Use AI to analyze reconnaissance data and produce expert-level insights.
+
+        Returns a dict with analysis sections, or None if LLM is unavailable.
+        This enriches the recon report with AI-generated intelligence.
+        """
+        if not self.llm.is_available():
+            await self.log("debug", "[RECON] LLM not available, skipping AI analysis")
+            return None
+
+        await self.log("info", "[RECON] AI Attack Surface Analysis starting...")
+
+        # --- Build context strings from recon data, with sensible truncation ---
+
+        def _format_list(items, max_items=30, formatter=str):
+            if not items:
+                return "None discovered"
+            formatted = [formatter(item) for item in items[:max_items]]
+            result = "\n".join(f"  - {item}" for item in formatted)
+            if len(items) > max_items:
+                result += f"\n  ... and {len(items) - max_items} more"
+            return result
+
+        def _fmt_endpoint(ep):
+            url = _get_endpoint_url(ep)
+            method = _get_endpoint_method(ep)
+            status = ep.get("status_code", "") if isinstance(ep, dict) else ""
+            return f"[{method}] {url}" + (f" (status: {status})" if status else "")
+
+        def _fmt_port(p):
+            if isinstance(p, dict):
+                return f"{p.get('port', p)}/{p.get('protocol', 'tcp')} - {p.get('service', 'unknown')}"
+            return str(p)
+
+        def _fmt_path(p):
+            if isinstance(p, dict):
+                return f"{p.get('path', p)} [risk: {p.get('risk', 'unknown')}] - {p.get('description', '')}"
+            return str(p)
+
+        def _fmt_form(f):
+            if isinstance(f, dict):
+                inputs = f.get("inputs", [])
+                field_names = [
+                    (i.get("name", i) if isinstance(i, dict) else i) for i in inputs[:5]
+                ]
+                return f"[{f.get('method', 'GET')}] {f.get('action', 'unknown')} fields: {field_names}"
+            return str(f)
+
+        subdomains_data = _format_list(self.recon.subdomains, max_items=50)
+        ports_data = _format_list(self.recon.ports, max_items=30, formatter=_fmt_port)
+        technologies_data = (
+            ", ".join(self.recon.technologies)
+            if self.recon.technologies
+            else "None detected"
+        )
+        endpoints_data = _format_list(
+            self.recon.endpoints, max_items=40, formatter=_fmt_endpoint
+        )
+        api_endpoints_data = _format_list(self.recon.api_endpoints, max_items=20)
+        forms_data = _format_list(self.recon.forms, max_items=15, formatter=_fmt_form)
+
+        params_lines = []
+        for path, params in list(self.recon.parameters.items())[:20]:
+            params_lines.append(f"  - {path}: {params}")
+        parameters_data = "\n".join(params_lines) if params_lines else "None discovered"
+
+        js_files_data = _format_list(self.recon.js_files, max_items=20)
+        interesting_paths_data = _format_list(
+            self.recon.interesting_paths, max_items=20, formatter=_fmt_path
+        )
+        secrets_data = (
+            _format_list(self.recon.secrets, max_items=10)
+            if self.recon.secrets
+            else "None found"
+        )
+        dns_records_data = _format_list(self.recon.dns_records, max_items=15)
+
+        # WAF data
+        if self.recon.waf_info and self.recon.waf_info.get("detected"):
+            waf_entries = []
+            for w in self.recon.waf_info.get("wafs", []):
+                waf_entries.append(
+                    f"{w['name']} (confidence: {w.get('confidence', 0):.0%}, "
+                    f"method: {w.get('detection_method', 'unknown')})"
+                )
+            waf_data_str = "WAF DETECTED:\n" + "\n".join(
+                f"  - {w}" for w in waf_entries
+            )
+            blocking = self.recon.waf_info.get("blocking_patterns")
+            if blocking:
+                waf_data_str += f"\n  Blocking patterns: {blocking}"
+        else:
+            waf_data_str = "No WAF detected"
+
+        # --- Build the analysis prompt ---
+        user_prompt = f"""You are analyzing the results of an automated reconnaissance scan.
+
+**Target:** {self.target}
+
+**Scan Configuration:**
+- Recon Depth: {self.recon.recon_depth}
+
+**Reconnaissance Data:**
+
+### Subdomains ({len(self.recon.subdomains)} discovered)
+{subdomains_data}
+
+### Open Ports ({len(self.recon.ports)} discovered)
+{ports_data}
+
+### Technologies Detected
+{technologies_data}
+
+### Endpoints ({len(self.recon.endpoints)} discovered)
+{endpoints_data}
+
+### API Endpoints
+{api_endpoints_data}
+
+### Forms ({len(self.recon.forms)} discovered)
+{forms_data}
+
+### Parameters
+{parameters_data}
+
+### JavaScript Files ({len(self.recon.js_files)} found)
+{js_files_data}
+
+### Interesting Paths
+{interesting_paths_data}
+
+### Secrets / Credentials
+{secrets_data}
+
+### DNS Records
+{dns_records_data}
+
+### WAF Detection
+{waf_data_str}
+
+**ANALYSIS REQUIREMENTS:**
+
+Produce a structured JSON analysis with the following keys:
+
+{{
+    "attack_surface_summary": "2-3 paragraph overview of the attack surface scope and risk posture",
+    "technology_analysis": [
+        {{"technology": "name", "version_info": "if known", "risk_notes": "CVE exposure and known vuln patterns", "priority_tests": ["specific tests to run"]}}
+    ],
+    "auth_boundaries": {{
+        "auth_endpoints": ["list of discovered auth-related endpoints"],
+        "session_mechanism": "observed session management approach",
+        "unauthenticated_assets": ["endpoints that appear to lack auth"],
+        "admin_interfaces": ["admin/management paths found"]
+    }},
+    "high_value_targets": [
+        {{"endpoint": "url/path", "reason": "why it is high-value", "suggested_tests": ["specific tests"], "priority": "P1/P2/P3"}}
+    ],
+    "infrastructure_assessment": {{
+        "cloud_provider": "identified or unknown",
+        "cdn_waf": "CDN/WAF observations",
+        "ssl_tls": "TLS posture notes",
+        "dns_observations": "notable DNS findings",
+        "staging_indicators": ["subdomains or paths suggesting non-production environments"]
+    }},
+    "exposed_sensitive_data": [
+        {{"item": "what was found", "location": "where", "severity": "critical/high/medium/low", "recommendation": "action"}}
+    ],
+    "strategic_recommendations": [
+        {{"priority": "P1/P2/P3/P4", "action": "specific recommendation", "rationale": "why", "endpoints": ["relevant endpoints"]}}
+    ]
+}}
+
+Respond with ONLY valid JSON. Ground every observation in the provided data."""
+
+        # Get system prompt with recon-appropriate anti-hallucination directives
+        from backend.core.vuln_engine.system_prompts import get_system_prompt
+        system_prompt = (
+            "You are a Senior Reconnaissance Analyst and Attack Surface Specialist. "
+            "Analyze the provided reconnaissance data to produce actionable intelligence. "
+            "Do NOT hallucinate vulnerabilities - assess attack surface and recommend testing priorities. "
+            "Every observation must reference specific data from the scan results.\n\n"
+            + get_system_prompt("recon_analysis")
+        )
+
+        try:
+            response = await self.llm.generate(user_prompt, system=system_prompt)
+
+            # Parse JSON from response (handle markdown code fences)
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                # Strip markdown code fences
+                lines = cleaned.split("\n")
+                lines = [l for l in lines if not l.strip().startswith("```")]
+                cleaned = "\n".join(lines)
+
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+            if json_match:
+                analysis = json.loads(json_match.group())
+                await self.log("info", "[RECON] AI analysis complete")
+                return analysis
+            else:
+                await self.log("warning", "[RECON] AI analysis returned non-JSON, storing as text")
+                return {"raw_analysis": response, "parse_error": True}
+
+        except json.JSONDecodeError as e:
+            await self.log("warning", f"[RECON] AI analysis JSON parse error: {e}")
+            return {"raw_analysis": response if 'response' in locals() else "", "parse_error": True}
+        except Exception as e:
+            await self.log("warning", f"[RECON] AI analysis failed: {e}")
+            return None
 
     async def _run_enhanced_recon(self) -> bool:
         """Run enhanced reconnaissance using ReconIntegration tool suite.
@@ -7043,8 +7262,8 @@ Provide your analysis:"""
 
     # ==================== REPORT GENERATION ====================
 
-    def _generate_recon_report(self) -> Dict:
-        """Generate comprehensive recon report"""
+    def _generate_recon_report(self, ai_analysis: Optional[Dict] = None) -> Dict:
+        """Generate comprehensive recon report, optionally enriched with AI analysis."""
         waf_detected = bool(self.recon.waf_info and self.recon.waf_info.get("detected"))
 
         report = {
@@ -7061,6 +7280,7 @@ Provide your analysis:"""
                 "technologies": self.recon.technologies,
                 "recon_depth": self.recon.recon_depth,
                 "waf_detected": waf_detected,
+                "ai_enhanced": ai_analysis is not None and not ai_analysis.get("parse_error"),
             },
             "data": {
                 "endpoints": self.recon.endpoints,
@@ -7085,6 +7305,41 @@ Provide your analysis:"""
             "findings": [],
             "recommendations": self._generate_recon_recommendations(),
         }
+
+        # Enrich with AI analysis if available
+        if ai_analysis and not ai_analysis.get("parse_error"):
+            report["ai_analysis"] = ai_analysis
+
+            # Strategic recommendations (structured list)
+            ai_recs = ai_analysis.get("strategic_recommendations", [])
+            if ai_recs:
+                report["recommendations_ai"] = ai_recs
+                # Append summary text versions to the existing recommendations list
+                for rec in ai_recs[:10]:
+                    if isinstance(rec, dict):
+                        priority = rec.get("priority", "P3")
+                        action = rec.get("action", "")
+                        if action:
+                            report["recommendations"].append(f"[{priority}] {action}")
+
+            # High-value targets for easy frontend consumption
+            hvt = ai_analysis.get("high_value_targets", [])
+            if hvt:
+                report["high_value_targets"] = hvt
+
+            # Technology analysis
+            tech_analysis = ai_analysis.get("technology_analysis", [])
+            if tech_analysis:
+                report["technology_analysis"] = tech_analysis
+
+            # Attack surface summary
+            surface_summary = ai_analysis.get("attack_surface_summary", "")
+            if surface_summary:
+                report["summary"]["attack_surface_analysis"] = surface_summary
+
+        elif ai_analysis and ai_analysis.get("parse_error"):
+            # Store raw text analysis if JSON parsing failed
+            report["ai_analysis_raw"] = ai_analysis.get("raw_analysis", "")
 
         return report
 

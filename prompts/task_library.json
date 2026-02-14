@@ -51,6 +51,35 @@
       "is_preset": true
     },
     {
+      "id": "recon_specialist",
+      "name": "AI-Enhanced Reconnaissance",
+      "description": "Full reconnaissance with AI-powered attack surface analysis: discovers assets then uses LLM to analyze technologies, map auth boundaries, identify high-value targets, and generate strategic recommendations",
+      "category": "recon",
+      "prompt": "Perform comprehensive reconnaissance on the target, then analyze the gathered data with AI to produce an expert-level attack surface analysis.\n\n1. **Automated Reconnaissance**: Run full tool suite for subdomain enumeration, port scanning, technology detection, endpoint discovery, parameter discovery, JS analysis, and API discovery\n2. **AI Attack Surface Analysis**: Analyze all gathered data to assess technologies for CVE exposure, map authentication boundaries, identify high-value targets, evaluate infrastructure security posture\n3. **Strategic Recommendations**: Generate prioritized, actionable recommendations for subsequent testing phases\n\nThe AI analysis enriches the tool-based recon with expert-level intelligence.",
+      "system_prompt": "You are a Senior Reconnaissance Analyst and Attack Surface Specialist. Analyze reconnaissance data systematically, ground all observations in discovered data, and produce actionable intelligence for penetration testing teams. Do not hallucinate vulnerabilities - assess attack surface and recommend testing priorities.",
+      "tools_required": [
+        "subfinder",
+        "httpx",
+        "nmap",
+        "katana",
+        "gau",
+        "nuclei",
+        "whatweb"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-14T00:00:00.000000",
+      "updated_at": "2026-02-14T00:00:00.000000",
+      "author": "system",
+      "tags": [
+        "recon",
+        "discovery",
+        "ai_analysis",
+        "attack_surface",
+        "specialist"
+      ],
+      "is_preset": true
+    },
+    {
       "id": "vuln_owasp_top10",
       "name": "OWASP Top 10 Assessment",
       "description": "Test for OWASP Top 10 vulnerabilities",

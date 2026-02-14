@@ -418,6 +418,13 @@ CONTEXT_PROMPTS: Dict[str, List[str]] = {
         "think_like_pentester",
         "anti_severity_inflation",
     ],
+    # Recon analysis: analyzing reconnaissance data for attack surface assessment
+    "recon_analysis": [
+        "anti_hallucination",
+        "think_like_pentester",
+        "anti_severity_inflation",
+        "operational_humility",
+    ],
 }
 
 
