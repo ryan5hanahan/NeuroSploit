@@ -13,6 +13,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - DATABASE_URL=sqlite+aiosqlite:///./data/neurosploit.db
+      - ENABLE_BROWSER_VALIDATION=${ENABLE_BROWSER_VALIDATION:-false}
     volumes:
       - neurosploit-data:/app/data
     ports:

@@ -640,6 +640,7 @@ class AutonomousAgent:
         self.recon_context = recon_context
         self.lab_context = lab_context or {}
         self.scan_id = scan_id
+        self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
         self._cancelled = False
         self._paused = False
         self._skip_to_phase: Optional[str] = None  # Phase skip target
@@ -2495,7 +2496,7 @@ NOT_VULNERABLE: <reason>"""
         or reports/screenshots/{finding_id}/ as fallback. Screenshots are also
         embedded as base64 in the finding's screenshots list for HTML reports.
         """
-        if not HAS_PLAYWRIGHT or BrowserValidator is None:
+        if not self.browser_validation_enabled or not HAS_PLAYWRIGHT or BrowserValidator is None:
             return
 
         url = finding.affected_endpoint
@@ -4969,7 +4970,7 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                             # Browser verification if available
                             browser_evidence = ""
                             screenshots = []
-                            if HAS_PLAYWRIGHT and BrowserValidator is not None:
+                            if self.browser_validation_enabled and HAS_PLAYWRIGHT and BrowserValidator is not None:
                                 browser_result = await self._browser_verify_stored_xss(
                                     form, payload, text_fields, dp_url
                                 )
@@ -5452,7 +5453,7 @@ Respond with ONLY a JSON array of payload strings:
                                           text_fields: List[str],
                                           display_url: str) -> Optional[Dict]:
         """Use Playwright browser to verify stored XSS with real form submission."""
-        if not HAS_PLAYWRIGHT or BrowserValidator is None:
+        if not self.browser_validation_enabled or not HAS_PLAYWRIGHT or BrowserValidator is None:
             return None
 
         try:
