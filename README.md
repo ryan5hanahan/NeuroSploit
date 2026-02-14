@@ -17,7 +17,7 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 ## Highlights
 
 - **100 Vulnerability Types** across 10 categories with AI-driven testing prompts
-- **Autonomous Agent** - 3-stream parallel pentest (recon + junior tester + tool runner)
+- **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
 - **Per-Scan Kali Containers** - Each scan runs in its own isolated Docker container
 - **Anti-Hallucination Pipeline** - Negative controls, proof-of-execution, confidence scoring
 - **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
@@ -34,6 +34,7 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Autonomous Agent](#autonomous-agent)
+- [Prompt & Task Library](#prompt--task-library)
 - [100 Vulnerability Types](#100-vulnerability-types)
 - [Kali Sandbox System](#kali-sandbox-system)
 - [Anti-Hallucination & Validation](#anti-hallucination--validation)
@@ -51,8 +52,8 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/NeuroSploitv2.git
-cd NeuroSploitv2
+git clone https://github.com/your-org/NeuroSploit.git
+cd NeuroSploit
 
 # Copy environment file and add your API keys
 cp .env.example .env
@@ -101,7 +102,7 @@ Access the web interface at **http://localhost:8000** (production build) or **ht
 ## Architecture
 
 ```
-NeuroSploitv3/
+NeuroSploit/
 ├── backend/                         # FastAPI Backend
 │   ├── api/v1/                      # REST API (13 routers)
 │   │   ├── scans.py                 # Scan CRUD + pause/resume/stop
@@ -118,12 +119,12 @@ NeuroSploitv3/
 │   │   ├── vulnerabilities.py       # Vulnerability management
 │   │   └── settings.py              # Runtime settings
 │   ├── core/
-│   │   ├── autonomous_agent.py      # Main AI agent (~7000 lines)
+│   │   ├── autonomous_agent.py      # Main AI agent (~7600 lines)
 │   │   ├── vuln_engine/             # 100-type vulnerability engine
 │   │   │   ├── registry.py          # 100 VULNERABILITY_INFO entries
 │   │   │   ├── payload_generator.py # 526 payloads across 95 libraries
 │   │   │   ├── ai_prompts.py        # Per-vuln AI decision prompts
-│   │   │   ├── system_prompts.py    # 12 anti-hallucination prompts
+│   │   │   ├── system_prompts.py    # 12 anti-hallucination prompts, 8 task contexts
 │   │   │   └── testers/             # 10 category tester modules
 │   │   ├── validation/              # False-positive hardening
 │   │   │   ├── negative_control.py  # Benign request control engine
@@ -141,6 +142,9 @@ NeuroSploitv3/
 │   │   ├── access_control_learner.py # Adaptive BOLA/BFLA/IDOR learning
 │   │   ├── response_verifier.py     # 4-signal response verification
 │   │   ├── agent_memory.py          # Bounded dedup agent memory
+│   │   ├── recon_integration.py     # 40+ tool recon orchestration (3 depth levels)
+│   │   ├── ai_prompt_processor.py   # LLM-based prompt analysis
+│   │   ├── task_library.py          # Task/prompt lifecycle management
 │   │   └── report_engine/           # OHVR report generator
 │   ├── models/                      # SQLAlchemy ORM models
 │   ├── db/                          # Database layer
@@ -182,6 +186,11 @@ NeuroSploitv3/
 │   ├── docker-compose.kali.yml      # Kali sandbox build
 │   └── docker-compose.sandbox.yml   # Legacy sandbox
 │
+├── prompts/
+│   ├── md_library/                  # 16 prompt templates (pentest, recon, OWASP, etc.)
+│   ├── task_library.json            # 12 preset task definitions
+│   └── library.json                 # Prompt categorization by attack phase
+│
 ├── config/config.json               # Profiles, tools, sandbox, MCP
 ├── data/
 │   ├── vuln_knowledge_base.json     # 100 vuln type definitions
@@ -201,9 +210,29 @@ NeuroSploitv3/
 
 ## Autonomous Agent
 
-The AI agent (`autonomous_agent.py`) orchestrates the entire penetration test autonomously.
+The AI agent (`autonomous_agent.py`) orchestrates security assessments across 5 operation modes.
 
-### 3-Stream Parallel Architecture
+### Operation Modes
+
+| Mode | Description |
+|------|-------------|
+| **Full Auto** | 5-phase workflow: recon, AI attack surface analysis, vulnerability testing (100 types), AI finding enhancement, report generation |
+| **Auto Pentest** | 3-stream parallel architecture (see below) with deep analysis and comprehensive 100-type testing |
+| **Recon Only** | Tool-based reconnaissance (3 depth levels) + WAF detection + AI-powered attack surface analysis with technology risk mapping, auth boundary identification, and strategic recommendations |
+| **Prompt Only** | AI-driven mode where the LLM plans and executes the full assessment based on a user prompt or task preset |
+| **Analyze Only** | Passive analysis of provided data without active testing |
+
+### Recon Depth Levels
+
+| Depth | Phases | Includes |
+|-------|--------|----------|
+| **Quick** | 3 | DNS resolution, HTTP probing, basic path discovery |
+| **Medium** | 8 | Quick + subdomain enumeration, URL collection, port scan (top 100), tech detection, web crawling |
+| **Full** | 14 | Medium + full port scan, parameter discovery, JS analysis, directory fuzzing, nuclei scan, screenshots |
+
+When an LLM is configured, recon-only scans include an AI analysis phase that produces structured intelligence: technology-to-CVE mapping, authentication boundary mapping, high-value target prioritization, infrastructure assessment, and strategic P1-P4 recommendations. Falls back to tool-only output when no LLM is available.
+
+### 3-Stream Parallel Architecture (Auto Pentest)
 
 ```
                     ┌─────────────────────┐
@@ -256,6 +285,40 @@ The AI agent (`autonomous_agent.py`) orchestrates the entire penetration test au
 - **Screenshot Capture** on confirmed findings (Playwright)
 - **Cross-Scan Learning** - Historical success rates influence future priorities
 - **CVE Testing** - Regex detection + AI-generated payloads
+
+---
+
+## Prompt & Task Library
+
+### Prompt Templates (`prompts/md_library/`)
+
+16 Markdown-based prompt templates with standardized `## User Prompt` / `## System Prompt` structure:
+
+| Template | Focus |
+|----------|-------|
+| **Pentestfull** | Elite pentester with full OWASP WSTG v4.2, CVE analysis, zero-day methodology |
+| **pentest_generalist** | Professional workflow with tool execution and documentation format |
+| **recon_specialist** | AI-enhanced reconnaissance with attack surface analysis and strategic recommendations |
+| **red_team_agent** | Red team attack simulation with real tool execution |
+| **bug_bounty_hunter** | Bug bounty focused assessment |
+| **owasp_expert / owasp** | OWASP Top 10 assessment |
+| **cwe_expert** | CWE Top 25 analysis |
+| **exploit_expert** | Exploit development guidance |
+| **blue_team_agent** | Defensive security analysis |
+| **malware_analyst** | Malware analysis |
+| **replay_attack** | Replay attack testing |
+
+### Task Presets (`prompts/task_library.json`)
+
+12 preset tasks selectable from the scan UI:
+
+| Category | Tasks |
+|----------|-------|
+| **Recon** | Full Reconnaissance, Passive Reconnaissance, AI-Enhanced Reconnaissance |
+| **Vulnerability** | OWASP Top 10, API Security, Injection Testing |
+| **Full Auto** | Bug Bounty Hunter Mode, Full Penetration Test |
+| **Custom** | Custom Prompt (Full AI Mode), Analysis Only |
+| **Reporting** | Executive Summary Report, Technical Security Report |
 
 ---
 
@@ -367,12 +430,13 @@ Finding Candidate
 
 ### Anti-Hallucination System Prompts
 
-12 composable prompts applied across 7 task contexts:
+12 composable prompts applied across 8 task contexts (testing, verification, confirmation, strategy, reporting, interpretation, poc_generation, recon_analysis):
 - `anti_hallucination` - Core truthfulness directives
 - `proof_of_execution` - Require concrete evidence
 - `negative_controls` - Compare with benign requests
 - `anti_severity_inflation` - Accurate severity ratings
 - `access_control_intelligence` - BOLA/BFLA data comparison methodology
+- `operational_humility` - Uncertainty over false confidence
 
 ### Access Control Adaptive Learning
 
@@ -393,7 +457,7 @@ Finding Candidate
 | **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (100 types, 11 categories) |
 | **Terminal Agent** | `/terminal` | AI-powered interactive security chat + tool execution |
 | **Sandboxes** | `/sandboxes` | Real-time Docker container monitoring + management |
-| **AI Agent** | `/scan/new` | Manual scan creation with prompt selection |
+| **AI Agent** | `/scan/new` | Scan creation with mode selector, recon depth, prompt/task selection |
 | **Scan Details** | `/scan/:id` | Findings with confidence badges, pause/resume/stop |
 | **Scheduler** | `/scheduler` | Cron/interval automated scan scheduling |
 | **Reports** | `/reports` | HTML/PDF/JSON report generation and viewing |
