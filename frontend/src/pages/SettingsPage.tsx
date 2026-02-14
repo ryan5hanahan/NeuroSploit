@@ -20,6 +20,7 @@ interface Settings {
   max_output_tokens: number | null
   aws_bedrock_region: string
   aws_bedrock_model: string
+  llm_model: string
 }
 
 interface DbStats {
@@ -45,6 +46,39 @@ interface LlmTestResponse {
   previous: LlmTestResult | null
 }
 
+const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
+  claude: [
+    { label: 'Claude Sonnet 4 (Default)', value: 'claude-sonnet-4-20250514' },
+    { label: 'Claude Opus 4', value: 'claude-opus-4-20250514' },
+    { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  openai: [
+    { label: 'GPT-4o (Default)', value: 'gpt-4o' },
+    { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+    { label: 'GPT-4 Turbo', value: 'gpt-4-turbo' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  openrouter: [
+    { label: 'Claude Sonnet 4 (Default)', value: 'anthropic/claude-sonnet-4-20250514' },
+    { label: 'Claude Opus 4', value: 'anthropic/claude-opus-4-20250514' },
+    { label: 'GPT-4o', value: 'openai/gpt-4o' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  ollama: [
+    { label: 'Llama 3.2 (Default)', value: 'llama3.2' },
+    { label: 'Llama 3.1', value: 'llama3.1' },
+    { label: 'Mistral', value: 'mistral' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  bedrock: [
+    { label: 'Claude Sonnet 4 (Default)', value: 'us.anthropic.claude-sonnet-4-20250514-v1:0' },
+    { label: 'Claude Opus 4', value: 'us.anthropic.claude-opus-4-20250514-v1:0' },
+    { label: 'Claude Haiku 3.5', value: 'us.anthropic.claude-3-5-haiku-20241022-v1:0' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [dbStats, setDbStats] = useState<DbStats | null>(null)
@@ -57,6 +91,8 @@ export default function SettingsPage() {
   const [awsBedrockRegion, setAwsBedrockRegion] = useState('us-east-1')
   const [awsBedrockModel, setAwsBedrockModel] = useState('')
   const [llmProvider, setLlmProvider] = useState('claude')
+  const [llmModel, setLlmModel] = useState('')
+  const [isCustomModel, setIsCustomModel] = useState(false)
   const [maxConcurrentScans, setMaxConcurrentScans] = useState('3')
   const [maxOutputTokens, setMaxOutputTokens] = useState('')
   const [aggressiveMode, setAggressiveMode] = useState(false)
@@ -91,6 +127,11 @@ export default function SettingsPage() {
         setMaxOutputTokens(data.max_output_tokens ? String(data.max_output_tokens) : '')
         setAwsBedrockRegion(data.aws_bedrock_region || 'us-east-1')
         setAwsBedrockModel(data.aws_bedrock_model || '')
+        const savedModel = data.llm_model || ''
+        setLlmModel(savedModel)
+        const presets = MODEL_PRESETS[data.llm_provider] || []
+        const isPreset = presets.some((p: { value: string }) => p.value === savedModel)
+        setIsCustomModel(savedModel !== '' && !isPreset)
       }
     } catch (error) {
       console.error('Failed to fetch settings:', error)
@@ -127,6 +168,7 @@ export default function SettingsPage() {
           aws_session_token: awsSessionToken || undefined,
           aws_bedrock_region: llmProvider === 'bedrock' ? awsBedrockRegion : undefined,
           aws_bedrock_model: llmProvider === 'bedrock' ? awsBedrockModel : undefined,
+          llm_model: llmModel,
           max_concurrent_scans: parseInt(maxConcurrentScans),
           aggressive_mode: aggressiveMode,
           enable_model_routing: enableModelRouting,
@@ -235,13 +277,51 @@ export default function SettingsPage() {
                 <Button
                   key={provider}
                   variant={llmProvider === provider ? 'primary' : 'secondary'}
-                  onClick={() => { setLlmProvider(provider); setTestResult(null); setPreviousResult(null) }}
+                  onClick={() => { setLlmProvider(provider); setLlmModel(''); setIsCustomModel(false); setTestResult(null); setPreviousResult(null) }}
                 >
                   {provider === 'openrouter' ? 'OpenRouter' : provider === 'bedrock' ? 'AWS Bedrock' : provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </Button>
               ))}
             </div>
           </div>
+
+          {/* Model Selection */}
+          {MODEL_PRESETS[llmProvider] && (
+            <div>
+              <label className="block text-sm font-medium text-dark-200 mb-2">
+                Model
+              </label>
+              <select
+                value={isCustomModel ? '__custom__' : llmModel}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') {
+                    setIsCustomModel(true)
+                    setLlmModel('')
+                  } else {
+                    setIsCustomModel(false)
+                    setLlmModel(e.target.value)
+                  }
+                }}
+                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
+              >
+                <option value="">Default</option>
+                {MODEL_PRESETS[llmProvider].map((preset) => (
+                  <option key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+              {isCustomModel && (
+                <Input
+                  label=""
+                  placeholder="Enter custom model ID..."
+                  value={llmModel}
+                  onChange={(e) => setLlmModel(e.target.value)}
+                  helperText="Enter the full model identifier"
+                />
+              )}
+            </div>
+          )}
 
           {llmProvider === 'claude' && (
             <Input
@@ -308,13 +388,6 @@ export default function SettingsPage() {
                 value={awsBedrockRegion}
                 onChange={(e) => setAwsBedrockRegion(e.target.value)}
                 helperText="AWS region where Bedrock is enabled (e.g., us-east-1, us-west-2)"
-              />
-              <Input
-                label="Bedrock Model ID"
-                placeholder="us.anthropic.claude-sonnet-4-20250514-v1:0"
-                value={awsBedrockModel}
-                onChange={(e) => setAwsBedrockModel(e.target.value)}
-                helperText="Model ID for Bedrock Converse API (e.g., us.anthropic.claude-sonnet-4-20250514-v1:0)"
               />
             </div>
           )}

@@ -78,6 +78,7 @@ class SettingsUpdate(BaseModel):
     aws_session_token: Optional[str] = None
     aws_bedrock_region: Optional[str] = None
     aws_bedrock_model: Optional[str] = None
+    llm_model: Optional[str] = None
     max_concurrent_scans: Optional[int] = None
     aggressive_mode: Optional[bool] = None
     default_scan_type: Optional[str] = None
@@ -105,6 +106,7 @@ class SettingsResponse(BaseModel):
     max_output_tokens: Optional[int] = None
     aws_bedrock_region: str = "us-east-1"
     aws_bedrock_model: str = ""
+    llm_model: str = ""
 
 
 def _load_settings_from_env() -> dict:
@@ -158,6 +160,7 @@ def _load_settings_from_env() -> dict:
         "aws_session_token": os.getenv("AWS_SESSION_TOKEN", ""),
         "aws_bedrock_region": os.getenv("AWS_BEDROCK_REGION", "us-east-1"),
         "aws_bedrock_model": os.getenv("AWS_BEDROCK_MODEL", ""),
+        "llm_model": os.getenv("DEFAULT_LLM_MODEL", ""),
         "max_concurrent_scans": _env_int("MAX_CONCURRENT_SCANS", 3),
         "aggressive_mode": _env_bool("AGGRESSIVE_MODE", False),
         "default_scan_type": os.getenv("DEFAULT_SCAN_TYPE", "full"),
@@ -195,6 +198,7 @@ async def get_settings():
         max_output_tokens=_settings["max_output_tokens"],
         aws_bedrock_region=_settings.get("aws_bedrock_region", "us-east-1"),
         aws_bedrock_model=_settings.get("aws_bedrock_model", ""),
+        llm_model=_settings.get("llm_model", ""),
     )
 
 
@@ -254,6 +258,11 @@ async def update_settings(settings_data: SettingsUpdate):
         if settings_data.aws_bedrock_model:
             os.environ["AWS_BEDROCK_MODEL"] = settings_data.aws_bedrock_model
             env_updates["AWS_BEDROCK_MODEL"] = settings_data.aws_bedrock_model
+
+    if settings_data.llm_model is not None:
+        _settings["llm_model"] = settings_data.llm_model
+        os.environ["DEFAULT_LLM_MODEL"] = settings_data.llm_model
+        env_updates["DEFAULT_LLM_MODEL"] = settings_data.llm_model
 
     if settings_data.max_concurrent_scans is not None:
         _settings["max_concurrent_scans"] = settings_data.max_concurrent_scans
@@ -388,11 +397,13 @@ async def test_llm_connection(db: AsyncSession = Depends(get_db)):
                 "error": "No AWS credentials configured. Set AWS_ACCESS_KEY_ID or AWS_PROFILE.",
             })
 
-    # Build model name
-    if provider_ui == "bedrock":
-        model = _settings.get("aws_bedrock_model") or os.getenv("AWS_BEDROCK_MODEL", "") or default_model
-    else:
-        model = default_model
+    # Build model name: llm_model takes precedence, then provider-specific fallbacks
+    model = _settings.get("llm_model") or ""
+    if not model:
+        if provider_ui == "bedrock":
+            model = _settings.get("aws_bedrock_model") or os.getenv("AWS_BEDROCK_MODEL", "") or default_model
+        else:
+            model = default_model
 
     # Resolve max_output_tokens
     max_output_tokens = _settings.get("max_output_tokens") or None
