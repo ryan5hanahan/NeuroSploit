@@ -234,7 +234,7 @@ class LLMClient:
                 sts.get_caller_identity()
                 self.client = bedrock_client
                 self.provider = "bedrock"
-                self.bedrock_model = os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+                self.bedrock_model = os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
                 self.bedrock_region = bedrock_region
                 print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
                 return
@@ -333,7 +333,7 @@ class LLMClient:
         try:
             if self.provider == "claude":
                 message = self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-5-20250929",
                     max_tokens=max_tokens,
                     system=system or default_system,
                     messages=[{"role": "user", "content": prompt}]

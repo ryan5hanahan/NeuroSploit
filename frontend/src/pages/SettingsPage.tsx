@@ -48,9 +48,9 @@ interface LlmTestResponse {
 
 const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
   claude: [
-    { label: 'Claude Sonnet 4 (Default)', value: 'claude-sonnet-4-20250514' },
-    { label: 'Claude Opus 4', value: 'claude-opus-4-20250514' },
-    { label: 'Claude Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+    { label: 'Claude Sonnet 4.5 (Default)', value: 'claude-sonnet-4-5-20250929' },
+    { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
+    { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
     { label: 'Custom', value: '__custom__' },
   ],
   openai: [
@@ -60,8 +60,8 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   openrouter: [
-    { label: 'Claude Sonnet 4 (Default)', value: 'anthropic/claude-sonnet-4-20250514' },
-    { label: 'Claude Opus 4', value: 'anthropic/claude-opus-4-20250514' },
+    { label: 'Claude Sonnet 4.5 (Default)', value: 'anthropic/claude-sonnet-4-5-20250929' },
+    { label: 'Claude Opus 4.6', value: 'anthropic/claude-opus-4-6' },
     { label: 'GPT-4o', value: 'openai/gpt-4o' },
     { label: 'Custom', value: '__custom__' },
   ],
@@ -72,9 +72,9 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   bedrock: [
-    { label: 'Claude Sonnet 4 (Default)', value: 'us.anthropic.claude-sonnet-4-20250514-v1:0' },
-    { label: 'Claude Opus 4', value: 'us.anthropic.claude-opus-4-20250514-v1:0' },
-    { label: 'Claude Haiku 3.5', value: 'us.anthropic.claude-3-5-haiku-20241022-v1:0' },
+    { label: 'Claude Sonnet 4.5 (Default)', value: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' },
+    { label: 'Claude Opus 4.6', value: 'us.anthropic.claude-opus-4-6-v1:0' },
+    { label: 'Claude Haiku 4.5', value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0' },
     { label: 'Custom', value: '__custom__' },
   ],
 }

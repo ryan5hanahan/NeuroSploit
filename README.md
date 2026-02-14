@@ -515,7 +515,7 @@ OPENROUTER_API_KEY=your-key
 # AWS Bedrock (uses AWS credential chain - no API key needed)
 # Authenticate via env vars, ~/.aws/credentials, IAM role, or SSO
 AWS_BEDROCK_REGION=us-east-1
-AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-20250514-v1:0
+AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 # AWS_ACCESS_KEY_ID=your-access-key
 # AWS_SECRET_ACCESS_KEY=your-secret-key
 # AWS_PROFILE=default
