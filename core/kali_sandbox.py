@@ -9,6 +9,7 @@ Container destroyed when scan completes.
 import asyncio
 import json
 import logging
+import random
 import shlex
 import time
 from datetime import datetime
@@ -26,6 +27,7 @@ except ImportError:
 from core.sandbox_manager import (
     BaseSandbox, SandboxResult,
     parse_nuclei_jsonl, parse_naabu_output,
+    _get_opsec, _get_proxy_env,
 )
 from core.tool_registry import ToolRegistry
 
@@ -46,7 +48,7 @@ class KaliSandbox(BaseSandbox):
         image: str = "neurosploit-kali:latest",
         memory_limit: str = "2g",
         cpu_limit: float = 2.0,
-        network_mode: str = "bridge",
+        network_mode: str = "neurosploit-network",
     ):
         self.scan_id = scan_id
         self.container_name = f"neurosploit-{scan_id}"
@@ -98,6 +100,14 @@ class KaliSandbox(BaseSandbox):
         # Create container
         try:
             cpu_quota = int(self.cpu_limit * 100000)
+
+            # Mount mitmproxy CA volume for HTTPS interception support.
+            # Volume may not exist if mitmproxy hasn't been started yet — that's fine,
+            # Docker will create an empty volume and the CA cert check will just skip.
+            volumes = {
+                "mitmproxy-data": {"bind": "/mitmproxy/.mitmproxy", "mode": "ro"},
+            }
+
             self._container = self._client.containers.run(
                 self.image,
                 command="sleep infinity",
@@ -109,6 +119,7 @@ class KaliSandbox(BaseSandbox):
                 cpu_quota=cpu_quota,
                 cap_add=["NET_RAW", "NET_ADMIN"],
                 security_opt=["no-new-privileges:true"],
+                volumes=volumes,
                 labels={
                     "neurosploit.scan_id": self.scan_id,
                     "neurosploit.type": "kali-sandbox",
@@ -117,6 +128,25 @@ class KaliSandbox(BaseSandbox):
             self._available = True
             self._created_at = datetime.utcnow()
             logger.info(f"Created Kali container {self.container_name} for scan {self.scan_id}")
+
+            # Install mitmproxy CA cert if proxy volume is mounted (enables HTTPS interception)
+            try:
+                ca_check = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._container.exec_run(
+                        cmd=["bash", "-c",
+                             "test -f /mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem && "
+                             "cp /mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem "
+                             "/usr/local/share/ca-certificates/mitmproxy.crt && "
+                             "update-ca-certificates 2>/dev/null"],
+                        stdout=True, stderr=True,
+                    ),
+                )
+                if ca_check.exit_code == 0:
+                    logger.info(f"[{self.container_name}] Installed mitmproxy CA cert")
+            except Exception:
+                pass  # Volume not mounted or cert not present — normal
+
             return True, f"Container {self.container_name} started"
         except Exception as e:
             return False, f"Failed to create container: {e}"
@@ -253,6 +283,7 @@ class KaliSandbox(BaseSandbox):
     async def run_nuclei(
         self, target, templates=None, severity=None,
         tags=None, rate_limit=150, timeout=600,
+        opsec_profile=None,
     ) -> SandboxResult:
         await self._ensure_tool("nuclei")
         cmd_parts = [
@@ -267,6 +298,10 @@ class KaliSandbox(BaseSandbox):
         if tags:
             cmd_parts.extend(["-tags", shlex.quote(tags)])
 
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            cmd_parts.extend(opsec.build_flag_args("nuclei", opsec_profile))
+
         result = await self._exec(" ".join(cmd_parts) + " 2>/dev/null", timeout=timeout)
         result.tool = "nuclei"
         if result.stdout:
@@ -276,6 +311,7 @@ class KaliSandbox(BaseSandbox):
     async def run_naabu(
         self, target, ports=None, top_ports=None,
         scan_type="s", rate=1000, timeout=300,
+        opsec_profile=None,
     ) -> SandboxResult:
         await self._ensure_tool("naabu")
         cmd_parts = [
@@ -291,13 +327,17 @@ class KaliSandbox(BaseSandbox):
         if scan_type:
             cmd_parts.extend(["-scan-type", scan_type])
 
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            cmd_parts.extend(opsec.build_flag_args("naabu", opsec_profile))
+
         result = await self._exec(" ".join(cmd_parts) + " 2>/dev/null", timeout=timeout)
         result.tool = "naabu"
         if result.stdout:
             result.findings = parse_naabu_output(result.stdout)
         return result
 
-    async def run_httpx(self, targets, timeout=120) -> SandboxResult:
+    async def run_httpx(self, targets, timeout=120, opsec_profile=None) -> SandboxResult:
         await self._ensure_tool("httpx")
         if isinstance(targets, str):
             targets = [targets]
@@ -327,7 +367,7 @@ class KaliSandbox(BaseSandbox):
             result.findings = findings
         return result
 
-    async def run_subfinder(self, domain, timeout=120) -> SandboxResult:
+    async def run_subfinder(self, domain, timeout=120, opsec_profile=None) -> SandboxResult:
         await self._ensure_tool("subfinder")
         command = f"subfinder -d {shlex.quote(domain)} -silent -no-color 2>/dev/null"
         result = await self._exec(command, timeout=timeout)
@@ -337,7 +377,7 @@ class KaliSandbox(BaseSandbox):
             result.findings = [{"subdomain": s} for s in subs]
         return result
 
-    async def run_nmap(self, target, ports=None, scripts=True, timeout=300) -> SandboxResult:
+    async def run_nmap(self, target, ports=None, scripts=True, timeout=300, opsec_profile=None) -> SandboxResult:
         await self._ensure_tool("nmap")
         cmd_parts = ["nmap", "-sV"]
         if scripts:
@@ -349,8 +389,8 @@ class KaliSandbox(BaseSandbox):
         result.tool = "nmap"
         return result
 
-    async def run_tool(self, tool, args, timeout=300) -> SandboxResult:
-        """Run any tool (validates whitelist, installs on demand)."""
+    async def run_tool(self, tool, args, timeout=300, opsec_profile=None) -> SandboxResult:
+        """Run any tool (validates whitelist, installs on demand, applies opsec)."""
         # Load whitelist from config
         allowed_tools = set()
         try:
@@ -366,6 +406,8 @@ class KaliSandbox(BaseSandbox):
                 "dnsx", "ffuf", "gobuster", "dalfox", "nikto", "sqlmap",
                 "whatweb", "curl", "dig", "whois", "masscan", "dirsearch",
                 "wfuzz", "arjun", "wafw00f", "waybackurls",
+                "interactsh-client", "cvemap", "alterx", "shuffledns",
+                "mapcidr", "asnmap", "tlsx", "cloudlist", "notify", "massdns",
             }
 
         if tool not in allowed_tools:
@@ -382,7 +424,19 @@ class KaliSandbox(BaseSandbox):
                 error=f"Could not install '{tool}' in Kali container",
             )
 
-        result = await self._exec(f"{shlex.quote(tool)} {args} 2>&1", timeout=timeout)
+        # Apply opsec jitter and flags
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            jitter_min, jitter_max = opsec.get_jitter_range(opsec_profile)
+            if jitter_max > 0:
+                await asyncio.sleep(random.uniform(jitter_min, jitter_max))
+            extra_flags = opsec.build_flag_args(tool, opsec_profile)
+            if extra_flags:
+                args = args + " " + " ".join(extra_flags)
+
+        # Prepend proxy env vars if proxy routing is active
+        proxy_env = await _get_proxy_env(opsec_profile)
+        result = await self._exec(f"{proxy_env}{shlex.quote(tool)} {args} 2>&1", timeout=timeout)
         result.tool = tool
         return result
 

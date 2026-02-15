@@ -83,8 +83,12 @@
             "transport": "stdio",
             "command": "python3",
             "args": ["-m", "core.mcp_server"],
-            "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, Nuclei scanner, Naabu port scanner, sandbox execution"
+            "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
         }
+    },
+    "opsec": {
+        "default_profile": "balanced",
+        "profiles_file": "config/opsec_profiles.json"
     },
     "sandbox": {
         "enabled": false,
@@ -107,7 +111,9 @@
             "nuclei", "naabu", "nmap", "httpx", "subfinder", "katana",
             "dnsx", "ffuf", "gobuster", "dalfox", "nikto", "sqlmap",
             "whatweb", "curl", "dig", "whois", "masscan", "dirsearch",
-            "wfuzz", "arjun", "wafw00f", "waybackurls"
+            "wfuzz", "arjun", "wafw00f", "waybackurls",
+            "interactsh-client", "cvemap", "alterx", "shuffledns",
+            "mapcidr", "asnmap", "tlsx", "cloudlist", "notify", "massdns"
         ],
         "nuclei": {
             "rate_limit": 150,
