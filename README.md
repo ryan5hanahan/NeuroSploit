@@ -10,7 +10,7 @@
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 100 vulnerability types, per-scan isolated Kali Linux containers, false-positive hardening, exploit chaining, and a modern React web interface with real-time monitoring.
+NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 100 vulnerability types, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening, exploit chaining, and a modern React web interface with real-time monitoring.
 
 ---
 
@@ -18,7 +18,12 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 
 - **100 Vulnerability Types** across 10 categories with AI-driven testing prompts
 - **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
+- **Opsec Profiles** - Stealth/balanced/aggressive profiles controlling rate limits, jitter, proxy routing, and DNS-over-HTTPS per tool
+- **Full ProjectDiscovery Suite** - 20 Go tools pre-compiled (nuclei, httpx, katana, subfinder, tlsx, asnmap, cvemap, and more)
+- **28 MCP Tools** - Scanning, reconnaissance, proxy control, and ProjectDiscovery tool handlers via MCP protocol
 - **Per-Scan Kali Containers** - Each scan runs in its own isolated Docker container
+- **mitmproxy Integration** - Opt-in HTTP/HTTPS traffic interception, flow capture, replay, and export
+- **Self-Hosted OOB Server** - Optional interactsh-server for out-of-band vulnerability testing
 - **Anti-Hallucination Pipeline** - Negative controls, proof-of-execution, confidence scoring
 - **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
 - **WAF Detection & Bypass** - 16 WAF signatures, 12 bypass techniques
@@ -34,9 +39,13 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Autonomous Agent](#autonomous-agent)
+- [Opsec Profiles](#opsec-profiles)
+- [MCP Server & Tools](#mcp-server--tools)
 - [Prompt & Task Library](#prompt--task-library)
 - [100 Vulnerability Types](#100-vulnerability-types)
 - [Kali Sandbox System](#kali-sandbox-system)
+- [mitmproxy Integration](#mitmproxy-integration)
+- [interactsh OOB Server](#interactsh-oob-server)
 - [Anti-Hallucination & Validation](#anti-hallucination--validation)
 - [Web GUI](#web-gui)
 - [API Reference](#api-reference)
@@ -93,6 +102,19 @@ npm run dev
 
 # Or via docker-compose
 docker compose -f docker/docker-compose.kali.yml build
+```
+
+### Optional Services
+
+```bash
+# Start mitmproxy for HTTP/HTTPS traffic interception
+docker compose --profile proxy up -d
+
+# Start self-hosted interactsh server for OOB testing
+docker compose --profile oob up -d
+
+# Start both
+docker compose --profile proxy --profile oob up -d
 ```
 
 Access the web interface at **http://localhost:8000** (production build) or **http://localhost:5173** (dev mode).
@@ -153,11 +175,14 @@ NeuroSploit/
 │
 ├── core/                            # Shared core modules
 │   ├── llm_manager.py               # Multi-provider LLM routing
-│   ├── sandbox_manager.py           # BaseSandbox ABC + legacy shared sandbox
+│   ├── sandbox_manager.py           # BaseSandbox ABC + opsec-aware sandbox
 │   ├── kali_sandbox.py              # Per-scan Kali container manager
 │   ├── container_pool.py            # Global container pool coordinator
+│   ├── opsec_manager.py             # Opsec profile system (stealth/balanced/aggressive)
 │   ├── tool_registry.py             # 56 tool install recipes for Kali
-│   ├── mcp_server.py                # MCP server (12 tools, stdio)
+│   ├── mcp_server.py                # MCP server (28 tools, stdio)
+│   ├── mcp_tools_pd.py              # 9 ProjectDiscovery MCP tool handlers
+│   ├── mcp_tools_proxy.py           # 7 mitmproxy MCP tool handlers
 │   ├── scheduler.py                 # APScheduler scan scheduling
 │   └── browser_validator.py         # Playwright browser validation
 │
@@ -179,7 +204,7 @@ NeuroSploit/
 │   └── package.json
 │
 ├── docker/
-│   ├── Dockerfile.kali              # Multi-stage Kali sandbox (11 Go tools)
+│   ├── Dockerfile.kali              # Multi-stage Kali sandbox (20 Go tools)
 │   ├── Dockerfile.sandbox           # Legacy Debian sandbox
 │   ├── Dockerfile.backend           # Backend container
 │   ├── Dockerfile.frontend          # Frontend container
@@ -191,7 +216,9 @@ NeuroSploit/
 │   ├── task_library.json            # 12 preset task definitions
 │   └── library.json                 # Prompt categorization by attack phase
 │
-├── config/config.json               # Profiles, tools, sandbox, MCP
+├── config/
+│   ├── config.json                  # Profiles, tools, sandbox, MCP, opsec
+│   └── opsec_profiles.json          # Stealth/balanced/aggressive opsec profiles
 ├── data/
 │   ├── vuln_knowledge_base.json     # 100 vuln type definitions
 │   ├── execution_history.json       # Cross-scan learning data
@@ -288,6 +315,56 @@ When an LLM is configured, recon-only scans include an AI analysis phase that pr
 
 ---
 
+## Opsec Profiles
+
+Configurable operational security postures that control scan behavior per tool. Set via the `opsec_profile` parameter on any MCP tool call or scan.
+
+### Profiles
+
+| Setting | Stealth | Balanced (default) | Aggressive |
+|---------|---------|-------------------|------------|
+| **Request Jitter** | 500–3000ms | 100–500ms | None |
+| **Random User-Agent** | Yes | Yes | Yes |
+| **DNS-over-HTTPS** | Yes | No | No |
+| **Proxy Routing** | Auto (use if up) | Opt-in | Off |
+| **Header Randomization** | Yes | No | No |
+
+### Per-Tool Tuning (examples)
+
+| Tool | Stealth | Balanced | Aggressive |
+|------|---------|----------|------------|
+| nuclei | rate-limit 10, concurrency 2 | rate-limit 50, concurrency 10 | rate-limit 150, concurrency 25 |
+| naabu | rate 100, SYN scan, top-ports 100 | rate 500, top-ports 1000 | rate 1000 |
+| httpx | rate-limit 5, delay 1–3s | rate-limit 50 | No rate limit |
+| katana | delay 2s, depth 2 | delay 0.5s, depth 3 | depth 5 |
+| nmap | -T2, --scan-delay 1s | -T3 | -T4 |
+| ffuf | rate 10, 2 threads | rate 50, 10 threads | rate 150, 40 threads |
+
+Profiles are defined in `config/opsec_profiles.json`. User-supplied flags always override profile defaults.
+
+---
+
+## MCP Server & Tools
+
+The MCP server (`core/mcp_server.py`) exposes 28 tools over stdio for AI agent integration.
+
+### Tool Categories
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Scanning** | `execute_nuclei`, `execute_naabu`, `sandbox_exec` | Vulnerability scanning with opsec profile support |
+| **Reconnaissance** | `execute_httpx`, `execute_subfinder`, `execute_katana`, `execute_dnsx`, `execute_uncover`, `execute_nmap`, `execute_ffuf` | Target discovery and enumeration |
+| **ProjectDiscovery** | `execute_cvemap`, `execute_tlsx`, `execute_asnmap`, `execute_mapcidr`, `execute_alterx`, `execute_shuffledns`, `execute_cloudlist`, `execute_interactsh`, `execute_notify` | Full PD suite with structured output |
+| **Proxy** | `proxy_status`, `proxy_flows`, `proxy_capture`, `proxy_replay`, `proxy_intercept`, `proxy_clear`, `proxy_export` | mitmproxy control (requires `--profile proxy`) |
+| **Utility** | `browser_navigate`, `browser_screenshot` | Browser automation |
+
+```bash
+# Start the MCP server
+python3 -m core.mcp_server
+```
+
+---
+
 ## Prompt & Task Library
 
 ### Prompt Templates (`prompts/md_library/`)
@@ -357,13 +434,15 @@ Each scan runs in its own **isolated Kali Linux Docker container**, providing:
 - **Auto Cleanup** - Containers destroyed when scan completes
 - **Resource Limits** - Per-container memory (2GB) and CPU (2 cores) limits
 
-### Pre-Installed Tools (28)
+### Pre-Installed Tools (38)
 
 | Category | Tools |
 |----------|-------|
 | **Scanners** | nuclei, naabu, httpx, nmap, nikto, masscan, whatweb |
 | **Discovery** | subfinder, katana, dnsx, uncover, ffuf, gobuster, waybackurls |
+| **ProjectDiscovery** | tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh-client, notify |
 | **Exploitation** | dalfox, sqlmap |
+| **DNS** | massdns (+ bundled resolvers file) |
 | **System** | curl, wget, git, python3, pip3, go, jq, dig, whois, openssl, netcat, bash |
 
 ### On-Demand Tools (28 more)
@@ -386,6 +465,56 @@ ContainerPool (global coordinator, max 5 concurrent)
 - **TTL enforcement** - Containers auto-destroyed after 60 min
 - **Orphan cleanup** - Stale containers removed on server startup
 - **Graceful fallback** - Falls back to shared container if Docker unavailable
+- **Network** - All containers on `neurosploit-network` for inter-container communication
+
+---
+
+## mitmproxy Integration
+
+Opt-in HTTP/HTTPS proxy for traffic inspection, replay, and routing scan traffic through an intercepting proxy.
+
+### Setup
+
+```bash
+# Start mitmproxy (not started by default)
+docker compose --profile proxy up -d
+```
+
+| Endpoint | URL | Description |
+|----------|-----|-------------|
+| **Proxy** | `http://localhost:8081` | HTTP/HTTPS proxy port |
+| **Web UI** | `http://localhost:8082` | mitmweb interface + REST API |
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `proxy_status` | Health check, flow count, connection info |
+| `proxy_flows` | Retrieve captured flows with optional filter |
+| `proxy_capture` | Set/clear view filter for flow capture |
+| `proxy_replay` | Replay a captured flow with optional header/body modifications |
+| `proxy_intercept` | Set/clear intercept breakpoints (pause matching flows) |
+| `proxy_clear` | Clear all captured flows |
+| `proxy_export` | Export a flow as curl command or raw request/response |
+
+### Proxy Routing
+
+When an opsec profile has proxy routing enabled (stealth: auto, balanced: opt-in), scan containers automatically route HTTP/HTTPS traffic through mitmproxy. TLS interception is supported — the mitmproxy CA certificate is auto-installed in sandbox containers.
+
+---
+
+## interactsh OOB Server
+
+Self-hosted out-of-band (OOB) interaction server for detecting blind vulnerabilities (SSRF, blind XSS, blind SQLi, etc.).
+
+```bash
+# Start interactsh server (not started by default)
+docker compose --profile oob up -d
+```
+
+The stealth opsec profile automatically routes `interactsh-client` to the self-hosted server (`-server http://neurosploit-interactsh`) instead of public servers. Balanced and aggressive profiles use the default public interactsh infrastructure.
+
+Configure the domain via the `INTERACTSH_DOMAIN` environment variable (defaults to `interact.local`).
 
 ---
 
@@ -629,6 +758,10 @@ Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock
       "container_ttl_minutes": 60
     }
   },
+  "opsec": {
+    "default_profile": "balanced",
+    "profiles_file": "config/opsec_profiles.json"
+  },
   "mcp_servers": {
     "neurosploit_tools": {
       "transport": "stdio",
@@ -670,7 +803,7 @@ npm run build      # Production build
 ### MCP Server
 
 ```bash
-python3 -m core.mcp_server        # Starts stdio MCP server (12 tools)
+python3 -m core.mcp_server        # Starts stdio MCP server (28 tools)
 ```
 
 ---
@@ -699,9 +832,11 @@ MIT License - See [LICENSE](LICENSE) for details.
 | **Backend** | Python, FastAPI, SQLAlchemy, Pydantic, aiohttp |
 | **Frontend** | React 18, TypeScript, TailwindCSS, Vite |
 | **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter |
-| **Sandbox** | Docker, Kali Linux, ProjectDiscovery suite, Nmap, SQLMap, Nikto |
-| **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, FFuf, Gobuster, Dalfox |
-| **Infra** | Docker Compose, MCP Protocol, Playwright, APScheduler |
+| **Sandbox** | Docker, Kali Linux, 20 ProjectDiscovery tools, Nmap, SQLMap, Nikto |
+| **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh, FFuf, Dalfox |
+| **Proxy** | mitmproxy (opt-in traffic interception, replay, TLS inspection) |
+| **OOB** | interactsh-server (self-hosted out-of-band interaction server) |
+| **Infra** | Docker Compose, MCP Protocol (28 tools), Playwright, APScheduler |
 
 ---
 
