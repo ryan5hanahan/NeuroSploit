@@ -191,6 +191,8 @@ class LLMClient:
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
         self.google_key = os.getenv("GOOGLE_API_KEY", "")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
+        self.claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
         self.client = None
         self.provider = None
         self.error_message = None
@@ -346,24 +348,10 @@ class LLMClient:
 
         try:
             if self.provider == "claude":
-                message = self.client.messages.create(
-                    model="claude-sonnet-4-5-20250929",
-                    max_tokens=max_tokens,
-                    system=system or default_system,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                return message.content[0].text
+                return await self._generate_claude(prompt, system or default_system, max_tokens)
 
             elif self.provider == "openai":
-                response = self.client.chat.completions.create(
-                    model="gpt-4-turbo-preview",
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "system", "content": system or default_system},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                return response.choices[0].message.content
+                return await self._generate_openai(prompt, system or default_system, max_tokens)
 
             elif self.provider == "gemini":
                 return await self._generate_gemini(prompt, system or default_system, max_tokens)
@@ -385,6 +373,32 @@ class LLMClient:
             raise LLMConnectionError(f"API call failed ({self.provider}): {error_msg}")
 
         return ""
+
+    async def _generate_claude(self, prompt: str, system: str, max_tokens: int) -> str:
+        """Generate using Anthropic Claude API (runs sync SDK call in thread)"""
+        def _call():
+            message = self.client.messages.create(
+                model=self.claude_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text
+        return await asyncio.to_thread(_call)
+
+    async def _generate_openai(self, prompt: str, system: str, max_tokens: int) -> str:
+        """Generate using OpenAI API (runs sync SDK call in thread)"""
+        def _call():
+            response = self.client.chat.completions.create(
+                model=self.openai_model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return response.choices[0].message.content
+        return await asyncio.to_thread(_call)
 
     async def _generate_gemini(self, prompt: str, system: str, max_tokens: int) -> str:
         """Generate using Google Gemini API"""
