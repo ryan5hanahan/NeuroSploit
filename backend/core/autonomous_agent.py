@@ -190,13 +190,24 @@ class LLMClient:
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
         self.google_key = os.getenv("GOOGLE_API_KEY", "")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
-        self.claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
         self.client = None
         self.provider = None
         self.error_message = None
         self.connection_tested = False
+
+        # Preferred provider from settings UI (DEFAULT_LLM_PROVIDER)
+        self.preferred_provider = os.getenv("DEFAULT_LLM_PROVIDER", "").strip().lower()
+        # Global model override from settings UI (DEFAULT_LLM_MODEL)
+        global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
+
+        # Per-provider model: global override takes precedence, then provider-specific env, then hardcoded default
+        self.claude_model = global_model or os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+        self.openai_model = global_model or os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+        # MAX_OUTPUT_TOKENS from settings UI
+        _max_tok = os.getenv("MAX_OUTPUT_TOKENS", "").strip()
+        self.default_max_tokens = int(_max_tok) if _max_tok.isdigit() else 4096
 
         # Validate keys are not placeholder values
         if self.anthropic_key in ["", "your-anthropic-api-key"]:
@@ -206,73 +217,90 @@ class LLMClient:
         if self.google_key in ["", "your-google-api-key"]:
             self.google_key = None
 
-        # Try providers in order of preference
+        # Initialize provider — preferred first, then fallback order
         self._initialize_provider()
 
     def _initialize_provider(self):
-        """Initialize the first available LLM provider"""
-        # 1. Try Claude (Anthropic)
-        if ANTHROPIC_AVAILABLE and self.anthropic_key:
-            try:
-                self.client = anthropic.Anthropic(api_key=self.anthropic_key)
-                self.provider = "claude"
-                print("[LLM] Claude API initialized successfully")
+        """Initialize LLM provider, respecting DEFAULT_LLM_PROVIDER setting."""
+
+        # Build ordered list of providers to try.
+        # If user chose a preferred provider in settings, try it first.
+        default_order = ["claude", "openai", "gemini", "bedrock", "ollama", "lmstudio"]
+        if self.preferred_provider and self.preferred_provider in default_order:
+            order = [self.preferred_provider] + [p for p in default_order if p != self.preferred_provider]
+        else:
+            order = default_order
+
+        for provider in order:
+            if self._try_init_provider(provider):
                 return
-            except Exception as e:
-                self.error_message = f"Claude init error: {e}"
-                print(f"[LLM] Claude initialization failed: {e}")
-
-        # 2. Try OpenAI
-        if OPENAI_AVAILABLE and self.openai_key:
-            try:
-                self.client = openai.OpenAI(api_key=self.openai_key)
-                self.provider = "openai"
-                print("[LLM] OpenAI API initialized successfully")
-                return
-            except Exception as e:
-                self.error_message = f"OpenAI init error: {e}"
-                print(f"[LLM] OpenAI initialization failed: {e}")
-
-        # 3. Try Google Gemini
-        if self.google_key:
-            self.client = "gemini"  # Placeholder - uses HTTP requests
-            self.provider = "gemini"
-            print("[LLM] Gemini API initialized")
-            return
-
-        # 3.5. Try AWS Bedrock
-        if BOTO3_AVAILABLE:
-            try:
-                bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
-                bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
-                # Verify credentials are available by calling get_caller_identity
-                sts = boto3.client('sts', region_name=bedrock_region)
-                sts.get_caller_identity()
-                self.client = bedrock_client
-                self.provider = "bedrock"
-                self.bedrock_model = os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-                self.bedrock_region = bedrock_region
-                print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
-                return
-            except Exception as e:
-                print(f"[LLM] AWS Bedrock initialization failed: {e}")
-
-        # 4. Try Ollama (local)
-        if self._check_ollama():
-            self.client = "ollama"  # Placeholder - uses HTTP requests
-            self.provider = "ollama"
-            print(f"[LLM] Ollama initialized with model: {self.ollama_model}")
-            return
-
-        # 5. Try LM Studio (local)
-        if self._check_lmstudio():
-            self.client = "lmstudio"  # Placeholder - uses HTTP requests
-            self.provider = "lmstudio"
-            print("[LLM] LM Studio initialized")
-            return
 
         # No provider available
         self._set_no_provider_error()
+
+    def _try_init_provider(self, name: str) -> bool:
+        """Try to initialize a single provider. Returns True on success."""
+        if name == "claude":
+            if ANTHROPIC_AVAILABLE and self.anthropic_key:
+                try:
+                    self.client = anthropic.Anthropic(api_key=self.anthropic_key)
+                    self.provider = "claude"
+                    print(f"[LLM] Claude API initialized (model={self.claude_model})")
+                    return True
+                except Exception as e:
+                    self.error_message = f"Claude init error: {e}"
+                    print(f"[LLM] Claude initialization failed: {e}")
+
+        elif name == "openai":
+            if OPENAI_AVAILABLE and self.openai_key:
+                try:
+                    self.client = openai.OpenAI(api_key=self.openai_key)
+                    self.provider = "openai"
+                    print(f"[LLM] OpenAI API initialized (model={self.openai_model})")
+                    return True
+                except Exception as e:
+                    self.error_message = f"OpenAI init error: {e}"
+                    print(f"[LLM] OpenAI initialization failed: {e}")
+
+        elif name == "gemini":
+            if self.google_key:
+                self.client = "gemini"
+                self.provider = "gemini"
+                print("[LLM] Gemini API initialized")
+                return True
+
+        elif name == "bedrock":
+            if BOTO3_AVAILABLE:
+                try:
+                    bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+                    bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
+                    sts = boto3.client('sts', region_name=bedrock_region)
+                    sts.get_caller_identity()
+                    self.client = bedrock_client
+                    self.provider = "bedrock"
+                    global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
+                    self.bedrock_model = global_model or os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+                    self.bedrock_region = bedrock_region
+                    print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
+                    return True
+                except Exception as e:
+                    print(f"[LLM] AWS Bedrock initialization failed: {e}")
+
+        elif name == "ollama":
+            if self._check_ollama():
+                self.client = "ollama"
+                self.provider = "ollama"
+                print(f"[LLM] Ollama initialized with model: {self.ollama_model}")
+                return True
+
+        elif name == "lmstudio":
+            if self._check_lmstudio():
+                self.client = "lmstudio"
+                self.provider = "lmstudio"
+                print("[LLM] LM Studio initialized")
+                return True
+
+        return False
 
     def _check_ollama(self) -> bool:
         """Check if Ollama is running locally"""
@@ -339,8 +367,10 @@ class LLMClient:
         except Exception as e:
             return False, f"Connection test failed for {self.provider}: {str(e)}"
 
-    async def generate(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-        """Generate response from LLM"""
+    async def generate(self, prompt: str, system: str = "", max_tokens: int = 0) -> str:
+        """Generate response from LLM. max_tokens=0 means use self.default_max_tokens."""
+        if max_tokens <= 0:
+            max_tokens = self.default_max_tokens
         if not self.client:
             raise LLMConnectionError(self.error_message or "No LLM provider available")
 
