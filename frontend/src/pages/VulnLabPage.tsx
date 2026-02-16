@@ -153,7 +153,7 @@ export default function VulnLabPage() {
   }
 
   const handleStart = async () => {
-    if (!targetUrl.trim() || !selectedVulnType) return
+    if (!targetUrl.trim() || (!selectedVulnType && !ctfMode)) return
 
     setError(null)
     setIsRunning(true)
