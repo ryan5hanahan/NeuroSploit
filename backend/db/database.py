@@ -227,6 +227,8 @@ async def _run_migrations(conn):
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_time_to_first_flag FLOAT"))
             if "ctf_metrics" not in columns:
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_metrics JSON"))
+            if "ctf_agent_count" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_agent_count INTEGER"))
 
         logger.info("Database migrations completed")
     except Exception as e:

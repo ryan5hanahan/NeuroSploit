@@ -695,6 +695,9 @@ class AutonomousAgent:
         scan_id: Optional[str] = None,
         recon_depth: Optional[str] = None,
         governance: Optional[Any] = None,
+        preset_recon: Optional['ReconData'] = None,
+        focus_vuln_types: Optional[List[str]] = None,
+        agent_label: Optional[str] = None,
     ):
         self.target = self._normalize_target(target)
         self.mode = mode
@@ -761,6 +764,11 @@ class AutonomousAgent:
 
         # Data storage
         self.recon = ReconData()
+        self.preset_recon = preset_recon
+        self.focus_vuln_types = focus_vuln_types
+        self.agent_label = agent_label or ""
+        if preset_recon:
+            self.recon = preset_recon
         self.memory = AgentMemory()
         self.custom_prompts: List[str] = []
         self.tool_executions: List[Dict] = []
@@ -3455,18 +3463,22 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("info", f"[GOVERNANCE] Scope: {s.profile.value} | {types_info}")
 
         # Phase 1: Reconnaissance + Sandbox tools (concurrent)
-        skip_target = self._check_skip("recon")
-        if skip_target:
-            await self.log("warning", f">> SKIPPING Reconnaissance -> jumping to {skip_target}")
-            await self._update_progress(20, f"recon_skipped")
-            # Still run sandbox tools even if recon is skipped
-            await self._run_sandbox_scan()
+        if self.preset_recon:
+            await self.log("info", "[PHASE 1/5] Recon SKIPPED (pre-populated by pipeline)")
+            await self._update_progress(20, "Recon pre-populated")
         else:
-            await self.log("info", "[PHASE 1/5] Reconnaissance + Sandbox tools")
-            await asyncio.gather(
-                self._run_recon_only(),
-                self._run_sandbox_scan(),
-            )
+            skip_target = self._check_skip("recon")
+            if skip_target:
+                await self.log("warning", f">> SKIPPING Reconnaissance -> jumping to {skip_target}")
+                await self._update_progress(20, f"recon_skipped")
+                # Still run sandbox tools even if recon is skipped
+                await self._run_sandbox_scan()
+            else:
+                await self.log("info", "[PHASE 1/5] Reconnaissance + Sandbox tools")
+                await asyncio.gather(
+                    self._run_recon_only(),
+                    self._run_sandbox_scan(),
+                )
             await self._update_progress(20, "Reconnaissance complete")
 
         # Phase 1b: WAF Detection
@@ -4479,6 +4491,48 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             "attack_vectors": []
         }
 
+    @staticmethod
+    def _static_default_attack_plan() -> list:
+        """Static version of _default_attack_plan for use by CTFCoordinator without an instance."""
+        return [
+            "sqli_error", "sqli_union", "command_injection", "ssti",
+            "auth_bypass", "insecure_deserialization", "rfi", "file_upload",
+            "xss_reflected", "xss_stored", "lfi", "ssrf", "ssrf_cloud",
+            "xxe", "path_traversal", "idor", "bola",
+            "sqli_blind", "sqli_time", "jwt_manipulation",
+            "privilege_escalation", "arbitrary_file_read",
+            "nosql_injection", "ldap_injection", "xpath_injection",
+            "blind_xss", "xss_dom", "cors_misconfig", "csrf",
+            "open_redirect", "session_fixation", "bfla",
+            "mass_assignment", "race_condition", "host_header_injection",
+            "http_smuggling", "subdomain_takeover",
+            "security_headers", "clickjacking", "http_methods", "ssl_issues",
+            "directory_listing", "debug_mode", "exposed_admin_panel",
+            "exposed_api_docs", "insecure_cookie_flags",
+            "sensitive_data_exposure", "information_disclosure",
+            "api_key_exposure", "version_disclosure",
+            "crlf_injection", "header_injection", "prototype_pollution",
+            "graphql_introspection", "graphql_dos", "graphql_injection",
+            "cache_poisoning", "parameter_pollution", "type_juggling",
+            "business_logic", "rate_limit_bypass", "timing_attack",
+            "weak_encryption", "weak_hashing", "cleartext_transmission",
+            "vulnerable_dependency", "s3_bucket_misconfiguration",
+            "cloud_metadata_exposure", "soap_injection",
+            "source_code_disclosure", "backup_file_exposure",
+            "csv_injection", "html_injection", "log_injection",
+            "email_injection", "expression_language_injection",
+            "mutation_xss", "dom_clobbering", "postmessage_vulnerability",
+            "websocket_hijacking", "css_injection", "tabnabbing",
+            "default_credentials", "weak_password", "brute_force",
+            "two_factor_bypass", "oauth_misconfiguration",
+            "forced_browsing", "arbitrary_file_delete", "zip_slip",
+            "orm_injection", "improper_error_handling",
+            "weak_random", "insecure_cdn", "outdated_component",
+            "container_escape", "serverless_misconfiguration",
+            "rest_api_versioning", "api_rate_limiting",
+            "excessive_data_exposure",
+        ]
+
     # Types that need parameter injection testing (payload → param → endpoint)
     INJECTION_TYPES = {
         # SQL injection
@@ -4559,6 +4613,12 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
         # Governance: defense-in-depth final filter — even if AI/plan slipped through
         if self.governance:
             vuln_types = self.governance.filter_vuln_types(vuln_types)
+
+        # Pipeline focus: restrict to assigned vuln types if set by coordinator
+        if self.focus_vuln_types:
+            vuln_types = [v for v in vuln_types if v in self.focus_vuln_types]
+            if not vuln_types:
+                vuln_types = self.focus_vuln_types
 
         await self.log("info", f"  Testing {len(vuln_types)} vulnerability types")
 

@@ -70,6 +70,9 @@ class VulnLabChallenge(Base):
     ctf_time_to_first_flag: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ctf_metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Multi-agent pipeline
+    ctf_agent_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -104,5 +107,6 @@ class VulnLabChallenge(Base):
             "ctf_flags_count": self.ctf_flags_count,
             "ctf_time_to_first_flag": self.ctf_time_to_first_flag,
             "ctf_metrics": self.ctf_metrics,
+            "ctf_agent_count": self.ctf_agent_count,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

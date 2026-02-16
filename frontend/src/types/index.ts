@@ -431,6 +431,7 @@ export interface VulnLabChallenge {
     elapsed_seconds: number
     flag_timeline: Array<{ flag: string; platform: string; elapsed_seconds: number }>
   } | null
+  ctf_agent_count?: number
   created_at: string | null
 }
 
@@ -444,6 +445,7 @@ export interface VulnLabRunRequest {
   notes?: string
   ctf_mode?: boolean
   ctf_flag_patterns?: string[]
+  ctf_agent_count?: number
 }
 
 export interface VulnLabRunResponse {
@@ -482,6 +484,8 @@ export interface VulnLabRealtimeStatus {
     time_to_first_flag: number | null
     elapsed_seconds: number
   } | null
+  ctf_agent_count?: number
+  ctf_pipeline_phase?: string
   source: string
 }
 

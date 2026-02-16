@@ -4,7 +4,7 @@ NeuroSploit v3 - Vulnerability Lab API Endpoints
 Isolated vulnerability testing against labs, CTFs, and PortSwigger challenges.
 Test individual vuln types one at a time and track results.
 """
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -25,7 +25,7 @@ from backend.api.v1.agent import (
 router = APIRouter()
 
 # In-memory tracking for running lab tests
-lab_agents: Dict[str, AutonomousAgent] = {}
+lab_agents: Dict[str, Any] = {}  # AutonomousAgent or CTFCoordinator
 lab_results: Dict[str, Dict] = {}
 
 
@@ -41,6 +41,7 @@ class VulnLabRunRequest(BaseModel):
     notes: Optional[str] = Field(None, description="Notes about this challenge")
     ctf_mode: bool = Field(False, description="Enable CTF flag detection mode")
     ctf_flag_patterns: Optional[List[str]] = Field(None, description="Custom regex patterns for flag detection")
+    ctf_agent_count: Optional[int] = Field(None, description="Number of agents for CTF pipeline (2-6)")
 
 
 class VulnLabResponse(BaseModel):
@@ -248,6 +249,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
             notes=request.notes,
             ctf_mode=request.ctf_mode,
             ctf_flag_patterns=request.ctf_flag_patterns,
+            ctf_agent_count=request.ctf_agent_count,
         )
         db.add(challenge)
         await db.commit()
@@ -267,6 +269,8 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         "ctf_mode": request.ctf_mode,
         "ctf_flags": [],
         "ctf_metrics": None,
+        "ctf_agent_count": request.ctf_agent_count,
+        "ctf_pipeline_phase": None,
     }
 
     # Also register in agent.py's shared results dict so /agent/status works
@@ -296,6 +300,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         request.notes,
         request.ctf_mode,
         request.ctf_flag_patterns,
+        request.ctf_agent_count,
     )
 
     return VulnLabResponse(
@@ -317,6 +322,7 @@ async def _run_lab_test(
     notes: Optional[str] = None,
     ctf_mode: bool = False,
     ctf_flag_patterns: Optional[List[str]] = None,
+    ctf_agent_count: Optional[int] = None,
 ):
     """Background task: run the agent focused on a single vuln type"""
     import asyncio
@@ -500,190 +506,213 @@ async def _run_lab_test(
                 scope = create_vuln_lab_scope(target, vuln_type)
             governance = GovernanceAgent(scope, log_callback=log_callback)
 
-            async with AutonomousAgent(
-                target=target,
-                mode=OperationMode.FULL_AUTO,
-                log_callback=log_callback,
-                progress_callback=progress_callback,
-                auth_headers=auth_headers,
-                custom_prompt=focused_prompt,
-                finding_callback=finding_callback,
-                lab_context=lab_ctx,
-                governance=governance,
-            ) as agent:
-                lab_agents[challenge_id] = agent
-                # Also register in agent.py's shared instances so stop works
-                agent_instances[agent_id] = agent
+            # Multi-agent CTF pipeline branch
+            use_pipeline = ctf_mode and (ctf_agent_count or 0) > 1
 
-                report = await agent.run()
-
+            if use_pipeline:
+                from backend.core.ctf_coordinator import CTFCoordinator
+                coordinator = CTFCoordinator(
+                    target=target,
+                    agent_count=ctf_agent_count,
+                    flag_detector=flag_detector,
+                    log_callback=log_callback,
+                    progress_callback=progress_callback,
+                    finding_callback=finding_callback,
+                    auth_headers=auth_headers,
+                    custom_prompt=focused_prompt,
+                    challenge_name=challenge_name,
+                    notes=notes,
+                    lab_context=lab_ctx,
+                    scan_id=scan_id,
+                )
+                lab_agents[challenge_id] = coordinator
+                report = await coordinator.run()
                 lab_agents.pop(challenge_id, None)
-                agent_instances.pop(agent_id, None)
+            else:
+                async with AutonomousAgent(
+                    target=target,
+                    mode=OperationMode.FULL_AUTO,
+                    log_callback=log_callback,
+                    progress_callback=progress_callback,
+                    auth_headers=auth_headers,
+                    custom_prompt=focused_prompt,
+                    finding_callback=finding_callback,
+                    lab_context=lab_ctx,
+                    governance=governance,
+                ) as agent:
+                    lab_agents[challenge_id] = agent
+                    # Also register in agent.py's shared instances so stop works
+                    agent_instances[agent_id] = agent
 
-                # Use findings from report OR from real-time callbacks (fallback)
-                report_findings = report.get("findings", [])
-                # If report findings are empty but we got findings via callback, use those
-                findings = report_findings if report_findings else findings_list
-                # Also merge: if findings_list has entries not in report_findings, add them
-                if not findings and findings_list:
-                    findings = findings_list
+                    report = await agent.run()
 
-                severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-                findings_detail = []
+                    lab_agents.pop(challenge_id, None)
+                    agent_instances.pop(agent_id, None)
 
-                for finding in findings:
-                    severity = finding.get("severity", "medium").lower()
-                    if severity in severity_counts:
-                        severity_counts[severity] += 1
+            # Use findings from report OR from real-time callbacks (fallback)
+            report_findings = report.get("findings", [])
+            # If report findings are empty but we got findings via callback, use those
+            findings = report_findings if report_findings else findings_list
+            # Also merge: if findings_list has entries not in report_findings, add them
+            if not findings and findings_list:
+                findings = findings_list
 
-                    findings_detail.append({
-                        "title": finding.get("title", ""),
-                        "vulnerability_type": finding.get("vulnerability_type", ""),
-                        "severity": severity,
-                        "affected_endpoint": finding.get("affected_endpoint", ""),
-                        "evidence": (finding.get("evidence", "") or "")[:500],
-                        "payload": (finding.get("payload", "") or "")[:200],
-                    })
+            severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+            findings_detail = []
 
-                    # Save to vulnerabilities table
-                    vuln = Vulnerability(
+            for finding in findings:
+                severity = finding.get("severity", "medium").lower()
+                if severity in severity_counts:
+                    severity_counts[severity] += 1
+
+                findings_detail.append({
+                    "title": finding.get("title", ""),
+                    "vulnerability_type": finding.get("vulnerability_type", ""),
+                    "severity": severity,
+                    "affected_endpoint": finding.get("affected_endpoint", ""),
+                    "evidence": (finding.get("evidence", "") or "")[:500],
+                    "payload": (finding.get("payload", "") or "")[:200],
+                })
+
+                # Save to vulnerabilities table
+                vuln = Vulnerability(
+                    scan_id=scan_id,
+                    title=finding.get("title", finding.get("type", "Unknown")),
+                    vulnerability_type=finding.get("vulnerability_type", finding.get("type", "unknown")),
+                    severity=severity,
+                    cvss_score=finding.get("cvss_score"),
+                    cvss_vector=finding.get("cvss_vector"),
+                    cwe_id=finding.get("cwe_id"),
+                    description=finding.get("description", finding.get("evidence", "")),
+                    affected_endpoint=finding.get("affected_endpoint", finding.get("url", target)),
+                    poc_payload=finding.get("payload", finding.get("poc_payload", finding.get("poc_code", ""))),
+                    poc_parameter=finding.get("parameter", finding.get("poc_parameter", "")),
+                    poc_evidence=finding.get("evidence", finding.get("poc_evidence", "")),
+                    poc_request=str(finding.get("request", finding.get("poc_request", "")))[:5000],
+                    poc_response=str(finding.get("response", finding.get("poc_response", "")))[:5000],
+                    impact=finding.get("impact", ""),
+                    remediation=finding.get("remediation", ""),
+                    references=finding.get("references", []),
+                    ai_analysis=finding.get("ai_analysis", ""),
+                    screenshots=finding.get("screenshots", []),
+                    url=finding.get("url", finding.get("affected_endpoint", "")),
+                    parameter=finding.get("parameter", finding.get("poc_parameter", "")),
+                )
+                db.add(vuln)
+
+            # Save discovered endpoints from recon data
+            endpoints_count = 0
+            for ep in report.get("recon", {}).get("endpoints", []):
+                endpoints_count += 1
+                if isinstance(ep, str):
+                    endpoint = Endpoint(
                         scan_id=scan_id,
-                        title=finding.get("title", finding.get("type", "Unknown")),
-                        vulnerability_type=finding.get("vulnerability_type", finding.get("type", "unknown")),
-                        severity=severity,
-                        cvss_score=finding.get("cvss_score"),
-                        cvss_vector=finding.get("cvss_vector"),
-                        cwe_id=finding.get("cwe_id"),
-                        description=finding.get("description", finding.get("evidence", "")),
-                        affected_endpoint=finding.get("affected_endpoint", finding.get("url", target)),
-                        poc_payload=finding.get("payload", finding.get("poc_payload", finding.get("poc_code", ""))),
-                        poc_parameter=finding.get("parameter", finding.get("poc_parameter", "")),
-                        poc_evidence=finding.get("evidence", finding.get("poc_evidence", "")),
-                        poc_request=str(finding.get("request", finding.get("poc_request", "")))[:5000],
-                        poc_response=str(finding.get("response", finding.get("poc_response", "")))[:5000],
-                        impact=finding.get("impact", ""),
-                        remediation=finding.get("remediation", ""),
-                        references=finding.get("references", []),
-                        ai_analysis=finding.get("ai_analysis", ""),
-                        screenshots=finding.get("screenshots", []),
-                        url=finding.get("url", finding.get("affected_endpoint", "")),
-                        parameter=finding.get("parameter", finding.get("poc_parameter", "")),
+                        target_id=target_record.id,
+                        url=ep,
+                        method="GET",
+                        path=ep.split("?")[0].split("/")[-1] or "/"
                     )
-                    db.add(vuln)
+                else:
+                    endpoint = Endpoint(
+                        scan_id=scan_id,
+                        target_id=target_record.id,
+                        url=ep.get("url", ""),
+                        method=ep.get("method", "GET"),
+                        path=ep.get("path", "/")
+                    )
+                db.add(endpoint)
 
-                # Save discovered endpoints from recon data
-                endpoints_count = 0
-                for ep in report.get("recon", {}).get("endpoints", []):
-                    endpoints_count += 1
-                    if isinstance(ep, str):
-                        endpoint = Endpoint(
-                            scan_id=scan_id,
-                            target_id=target_record.id,
-                            url=ep,
-                            method="GET",
-                            path=ep.split("?")[0].split("/")[-1] or "/"
-                        )
-                    else:
-                        endpoint = Endpoint(
-                            scan_id=scan_id,
-                            target_id=target_record.id,
-                            url=ep.get("url", ""),
-                            method=ep.get("method", "GET"),
-                            path=ep.get("path", "/")
-                        )
-                    db.add(endpoint)
-
-                # CTF mode: flag captured = solved, regardless of vuln matching
-                if ctf_mode and flag_detector and flag_detector.captured_flags:
+            # CTF mode: flag captured = solved, regardless of vuln matching
+            if ctf_mode and flag_detector and flag_detector.captured_flags:
+                result_status = "detected"
+            else:
+                # Determine result - more flexible matching
+                # Check if any finding matches the target vuln type
+                target_type_findings = [
+                    f for f in findings
+                    if _vuln_type_matches(vuln_type, f.get("vulnerability_type", ""))
+                ]
+                # If the agent found ANY vulnerability, it detected something
+                # (since we told it to focus on one type, any finding is relevant)
+                if target_type_findings:
+                    result_status = "detected"
+                elif len(findings) > 0:
+                    # Found other vulns but not the exact type
                     result_status = "detected"
                 else:
-                    # Determine result - more flexible matching
-                    # Check if any finding matches the target vuln type
-                    target_type_findings = [
-                        f for f in findings
-                        if _vuln_type_matches(vuln_type, f.get("vulnerability_type", ""))
-                    ]
-                    # If the agent found ANY vulnerability, it detected something
-                    # (since we told it to focus on one type, any finding is relevant)
-                    if target_type_findings:
-                        result_status = "detected"
-                    elif len(findings) > 0:
-                        # Found other vulns but not the exact type
-                        result_status = "detected"
-                    else:
-                        result_status = "not_detected"
+                    result_status = "not_detected"
 
-                # Update scan
-                scan.status = "completed"
-                scan.completed_at = datetime.utcnow()
-                scan.progress = 100
-                scan.current_phase = "completed"
-                scan.total_vulnerabilities = len(findings)
-                scan.total_endpoints = endpoints_count
-                scan.critical_count = severity_counts["critical"]
-                scan.high_count = severity_counts["high"]
-                scan.medium_count = severity_counts["medium"]
-                scan.low_count = severity_counts["low"]
-                scan.info_count = severity_counts["info"]
+            # Update scan
+            scan.status = "completed"
+            scan.completed_at = datetime.utcnow()
+            scan.progress = 100
+            scan.current_phase = "completed"
+            scan.total_vulnerabilities = len(findings)
+            scan.total_endpoints = endpoints_count
+            scan.critical_count = severity_counts["critical"]
+            scan.high_count = severity_counts["high"]
+            scan.medium_count = severity_counts["medium"]
+            scan.low_count = severity_counts["low"]
+            scan.info_count = severity_counts["info"]
 
-                # Auto-generate report
-                exec_summary = report.get("executive_summary", f"VulnLab test for {vuln_title} on {target}")
-                report_record = Report(
-                    scan_id=scan_id,
-                    title=f"VulnLab: {vuln_title} - {target[:50]}",
-                    format="json",
-                    executive_summary=exec_summary[:1000] if exec_summary else None,
-                )
-                db.add(report_record)
+            # Auto-generate report
+            exec_summary = report.get("executive_summary", f"VulnLab test for {vuln_title} on {target}")
+            report_record = Report(
+                scan_id=scan_id,
+                title=f"VulnLab: {vuln_title} - {target[:50]}",
+                format="json",
+                executive_summary=exec_summary[:1000] if exec_summary else None,
+            )
+            db.add(report_record)
 
-                # Persist logs (keep last 500 entries to avoid huge DB rows)
-                persisted_logs = logs[-500:] if len(logs) > 500 else logs
+            # Persist logs (keep last 500 entries to avoid huge DB rows)
+            persisted_logs = logs[-500:] if len(logs) > 500 else logs
 
-                # Update challenge record
-                result_q = await db.execute(
-                    select(VulnLabChallenge).where(VulnLabChallenge.id == challenge_id)
-                )
-                challenge = result_q.scalar_one_or_none()
-                if challenge:
-                    challenge.status = "completed"
-                    challenge.result = result_status
-                    challenge.completed_at = datetime.utcnow()
-                    challenge.duration = int((datetime.utcnow() - challenge.started_at).total_seconds()) if challenge.started_at else 0
-                    challenge.findings_count = len(findings)
-                    challenge.critical_count = severity_counts["critical"]
-                    challenge.high_count = severity_counts["high"]
-                    challenge.medium_count = severity_counts["medium"]
-                    challenge.low_count = severity_counts["low"]
-                    challenge.info_count = severity_counts["info"]
-                    challenge.findings_detail = findings_detail
-                    challenge.logs = persisted_logs
-                    challenge.endpoints_count = endpoints_count
-                    if ctf_mode and flag_detector:
-                        challenge.ctf_flags_captured = flag_detector.to_serializable()
-                        challenge.ctf_flags_count = len(flag_detector.captured_flags)
-                        challenge.ctf_time_to_first_flag = (
-                            round(flag_detector.first_flag_time - flag_detector.start_time, 2)
-                            if flag_detector.first_flag_time else None
-                        )
-                        challenge.ctf_metrics = flag_detector.get_metrics()
+            # Update challenge record
+            result_q = await db.execute(
+                select(VulnLabChallenge).where(VulnLabChallenge.id == challenge_id)
+            )
+            challenge = result_q.scalar_one_or_none()
+            if challenge:
+                challenge.status = "completed"
+                challenge.result = result_status
+                challenge.completed_at = datetime.utcnow()
+                challenge.duration = int((datetime.utcnow() - challenge.started_at).total_seconds()) if challenge.started_at else 0
+                challenge.findings_count = len(findings)
+                challenge.critical_count = severity_counts["critical"]
+                challenge.high_count = severity_counts["high"]
+                challenge.medium_count = severity_counts["medium"]
+                challenge.low_count = severity_counts["low"]
+                challenge.info_count = severity_counts["info"]
+                challenge.findings_detail = findings_detail
+                challenge.logs = persisted_logs
+                challenge.endpoints_count = endpoints_count
+                if ctf_mode and flag_detector:
+                    challenge.ctf_flags_captured = flag_detector.to_serializable()
+                    challenge.ctf_flags_count = len(flag_detector.captured_flags)
+                    challenge.ctf_time_to_first_flag = (
+                        round(flag_detector.first_flag_time - flag_detector.start_time, 2)
+                        if flag_detector.first_flag_time else None
+                    )
+                    challenge.ctf_metrics = flag_detector.get_metrics()
 
-                await db.commit()
+            await db.commit()
 
-                # Update in-memory results
-                if challenge_id in lab_results:
-                    lab_results[challenge_id]["status"] = "completed"
-                    lab_results[challenge_id]["result"] = result_status
-                    lab_results[challenge_id]["findings"] = findings
-                    lab_results[challenge_id]["progress"] = 100
-                    lab_results[challenge_id]["phase"] = "completed"
+            # Update in-memory results
+            if challenge_id in lab_results:
+                lab_results[challenge_id]["status"] = "completed"
+                lab_results[challenge_id]["result"] = result_status
+                lab_results[challenge_id]["findings"] = findings
+                lab_results[challenge_id]["progress"] = 100
+                lab_results[challenge_id]["phase"] = "completed"
 
-                if agent_id in agent_results:
-                    agent_results[agent_id]["status"] = "completed"
-                    agent_results[agent_id]["completed_at"] = datetime.utcnow().isoformat()
-                    agent_results[agent_id]["report"] = report
-                    agent_results[agent_id]["findings"] = findings
-                    agent_results[agent_id]["progress"] = 100
-                    agent_results[agent_id]["phase"] = "completed"
+            if agent_id in agent_results:
+                agent_results[agent_id]["status"] = "completed"
+                agent_results[agent_id]["completed_at"] = datetime.utcnow().isoformat()
+                agent_results[agent_id]["report"] = report
+                agent_results[agent_id]["findings"] = findings
+                agent_results[agent_id]["progress"] = 100
+                agent_results[agent_id]["phase"] = "completed"
 
     except Exception as e:
         import traceback
@@ -818,6 +847,8 @@ async def get_challenge(challenge_id: str):
             "ctf_mode": mem.get("ctf_mode", False),
             "ctf_flags": mem.get("ctf_flags", []),
             "ctf_metrics": mem.get("ctf_metrics"),
+            "ctf_agent_count": mem.get("ctf_agent_count"),
+            "ctf_pipeline_phase": mem.get("ctf_pipeline_phase"),
             "source": "realtime",
         }
 

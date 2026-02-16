@@ -4,7 +4,7 @@ import {
   FlaskConical, ChevronDown, ChevronUp, Loader2, Lock,
   AlertTriangle, CheckCircle2, XCircle, Play, Square,
   Trash2, Eye, Search, BarChart3, Clock, Target,
-  Terminal, Shield, Globe, FileText, ChevronRight, Flag
+  Terminal, Shield, Globe, FileText, ChevronRight, Flag, Users
 } from 'lucide-react'
 import { vulnLabApi } from '../services/api'
 import type { VulnTypeCategory, VulnLabChallenge, VulnLabStats, VulnLabLogEntry } from '../types'
@@ -72,6 +72,7 @@ export default function VulnLabPage() {
   const [searchFilter, setSearchFilter] = useState('')
   const [ctfMode, setCtfMode] = useState(false)
   const [ctfPatterns, setCtfPatterns] = useState('')
+  const [ctfAgentCount, setCtfAgentCount] = useState(4)
 
   // Data state
   const [categories, setCategories] = useState<Record<string, VulnTypeCategory>>({})
@@ -174,6 +175,7 @@ export default function VulnLabPage() {
         notes: notes || undefined,
         ctf_mode: ctfMode || undefined,
         ctf_flag_patterns: ctfPatternsArr,
+        ctf_agent_count: ctfMode ? ctfAgentCount : undefined,
       })
       setRunningChallengeId(resp.challenge_id)
     } catch (err: any) {
@@ -517,6 +519,27 @@ export default function VulnLabPage() {
                     />
                   </div>
                 )}
+
+                {/* Agent Count Slider */}
+                {ctfMode && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-yellow-400/70 mb-1">
+                      Agent Count: {ctfAgentCount} ({ctfAgentCount - 1} parallel testers)
+                    </label>
+                    <input
+                      type="range"
+                      min={2}
+                      max={6}
+                      value={ctfAgentCount}
+                      onChange={e => setCtfAgentCount(Number(e.target.value))}
+                      disabled={isRunning}
+                      className="w-full h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                    />
+                    <div className="flex justify-between text-xs text-dark-600 mt-1">
+                      <span>2</span><span>3</span><span>4</span><span>5</span><span>6</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -586,7 +609,17 @@ export default function VulnLabPage() {
                   {runningStatus.phase && (
                     <span className="flex items-center gap-1">
                       <Shield className="w-3.5 h-3.5" />
-                      {runningStatus.phase}
+                      {runningStatus.phase?.startsWith('ctf_pipeline:')
+                        ? ({'ctf_pipeline:recon': 'Recon Agent', 'ctf_pipeline:analysis': 'LLM Analysis',
+                            'ctf_pipeline:testing': 'Parallel Testing', 'ctf_pipeline:aggregating': 'Aggregating'} as Record<string, string>)
+                          [runningStatus.phase.split(':').slice(0, 2).join(':')] || runningStatus.phase
+                        : runningStatus.phase}
+                    </span>
+                  )}
+                  {runningStatus.ctf_agent_count > 1 && (
+                    <span className="flex items-center gap-1 text-yellow-400">
+                      <Users className="w-3.5 h-3.5" />
+                      {runningStatus.ctf_agent_count} agents
                     </span>
                   )}
                   <span className="flex items-center gap-1">
