@@ -79,11 +79,13 @@
         "hydra": "/usr/bin/hydra"
     },
     "mcp_servers": {
-        "neurosploit_tools": {
-            "transport": "stdio",
-            "command": "python3",
-            "args": ["-m", "core.mcp_server"],
-            "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
+        "enabled": true,
+        "servers": {
+            "neurosploit_tools": {
+                "transport": "direct",
+                "args": ["-m", "core.mcp_server"],
+                "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
+            }
         }
     },
     "opsec": {

@@ -86,6 +86,7 @@ RUN python -m playwright install --with-deps chromium
 # Copy application code
 COPY backend/ ./backend/
 COPY core/ ./core/
+COPY config/ ./config/
 COPY prompts/ ./prompts/
 COPY tools/ ./tools/
 
