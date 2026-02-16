@@ -2741,9 +2741,42 @@ NOT_VULNERABLE: <reason>"""
 
     # ==================== RECONNAISSANCE ====================
 
+    async def _connectivity_precheck(self) -> bool:
+        """TCP + HTTP pre-check — fail fast if target is unreachable."""
+        import socket
+        parsed = urlparse(self.target)
+        host = parsed.hostname or parsed.netloc
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+
+        # TCP connect test
+        try:
+            loop = asyncio.get_event_loop()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            await loop.run_in_executor(None, sock.connect, (host, port))
+            sock.close()
+            await self.log("info", f"  [PRE-CHECK] TCP connect to {host}:{port} OK")
+        except Exception as e:
+            await self.log("error", f"  [PRE-CHECK] TCP connect to {host}:{port} FAILED: {e}")
+            return False
+
+        # HTTP probe
+        try:
+            async with self.session.get(self.target, ssl=False, allow_redirects=True) as resp:
+                await self.log("info", f"  [PRE-CHECK] HTTP probe: {resp.status} ({resp.headers.get('Server', 'unknown')})")
+                return True
+        except Exception as e:
+            await self.log("error", f"  [PRE-CHECK] HTTP probe failed: {e}")
+            return False
+
     async def _run_recon_only(self) -> Dict:
         """Comprehensive reconnaissance"""
         await self._update_progress(0, "Starting reconnaissance")
+
+        # Pre-check: verify target is reachable
+        reachable = await self._connectivity_precheck()
+        if not reachable:
+            await self.log("warning", "[RECON] Target unreachable — attempting recon anyway")
 
         # Enhanced recon only for RECON_ONLY mode (not when called by FULL_AUTO)
         enhanced = False
@@ -2751,21 +2784,30 @@ NOT_VULNERABLE: <reason>"""
             enhanced = await self._run_enhanced_recon()
 
         if not enhanced:
-            # Original 4-phase basic recon
-            await self.log("info", "[PHASE 1/4] Initial Probe")
+            # Phase 1: Initial probe
+            await self.log("info", "[PHASE 1/5] Initial Probe")
             await self._initial_probe()
-            await self._update_progress(25, "Initial probe complete")
+            await self._update_progress(15, "Initial probe complete")
 
-            await self.log("info", "[PHASE 2/4] Endpoint Discovery")
-            await self._discover_endpoints()
-            await self._update_progress(50, "Endpoint discovery complete")
-
-            await self.log("info", "[PHASE 3/4] Parameter Discovery")
-            await self._discover_parameters()
-            await self._update_progress(75, "Parameter discovery complete")
-
-            await self.log("info", "[PHASE 4/4] Technology Detection")
+            # Phase 2: Tech detection (moved earlier so endpoints can adapt)
+            await self.log("info", "[PHASE 2/5] Technology Detection")
             await self._detect_technologies()
+            await self._update_progress(30, "Tech detection complete")
+
+            # Phase 3: Endpoint discovery (now uses tech stack for dynamic paths)
+            await self.log("info", "[PHASE 3/5] Endpoint Discovery")
+            await self._discover_endpoints()
+            await self._update_progress(55, "Endpoint discovery complete")
+
+            # Phase 4: Deep JS analysis (fetch + parse JS bundles for API routes)
+            await self.log("info", "[PHASE 4/5] JS Route Extraction")
+            await self._deep_js_analysis()
+            await self._update_progress(75, "JS analysis complete")
+
+            # Phase 5: Parameter discovery
+            await self.log("info", "[PHASE 5/5] Parameter Discovery")
+            await self._discover_parameters()
+            await self._update_progress(90, "Parameter discovery complete")
 
         # WAF detection (new for RECON_ONLY; FULL_AUTO already does this in Phase 1b)
         if self.mode == OperationMode.RECON_ONLY and self.waf_detector and not self._waf_result:
@@ -3159,8 +3201,8 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("error", f"  Target probe failed: {e}")
 
     async def _discover_endpoints(self):
-        """Discover endpoints through crawling and common paths"""
-        # Common paths to check
+        """Discover endpoints through crawling, common paths, and tech-specific paths"""
+        # Common paths to check (universal)
         common_paths = [
             "/", "/admin", "/login", "/api", "/api/v1", "/api/v2",
             "/user", "/users", "/account", "/profile", "/dashboard",
@@ -3168,33 +3210,164 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             "/config", "/settings", "/admin/login", "/wp-admin",
             "/robots.txt", "/sitemap.xml", "/.git/config",
             "/api/users", "/api/login", "/graphql", "/api/graphql",
-            "/swagger", "/api-docs", "/docs", "/health", "/status"
+            "/swagger", "/api-docs", "/docs", "/health", "/status",
+            "/.env", "/package.json", "/composer.json", "/web.config",
+            "/server-status", "/server-info", "/.well-known/security.txt",
+            "/actuator", "/actuator/health", "/metrics", "/debug",
+            "/console", "/trace", "/env",
         ]
 
         base = self.target.rstrip('/')
         parsed_target = urlparse(self.target)
 
-        # Add known vulnerable endpoints for common test sites
+        # --- Tech-specific dynamic paths (Item 6 + 8: data-driven) ---
+        techs_lower = [t.lower() for t in self.recon.technologies]
+        techs_str = " ".join(techs_lower)
+
+        # Juice Shop / OWASP detection (hostname OR tech detection)
+        is_juice_shop = (
+            "juice" in parsed_target.netloc.lower() or
+            "juice shop" in techs_str or "juiceshop" in techs_str
+        )
+        if is_juice_shop:
+            await self.log("info", "  Detected OWASP Juice Shop — adding comprehensive API paths")
+            common_paths.extend([
+                # REST API
+                "/rest/products/search?q=",
+                "/rest/products/reviews",
+                "/rest/user/login",
+                "/rest/user/change-password",
+                "/rest/user/reset-password",
+                "/rest/user/security-question",
+                "/rest/user/whoami",
+                "/rest/user/authentication-details",
+                "/rest/basket/0",
+                "/rest/saveLoginIp",
+                "/rest/deluxe-membership",
+                "/rest/continue-code",
+                "/rest/continue-code/apply/",
+                "/rest/chatbot/status",
+                "/rest/chatbot/respond",
+                "/rest/memories",
+                "/rest/order-history",
+                "/rest/wallet/balance",
+                "/rest/repeat-notification",
+                "/rest/track-order/0",
+                # API endpoints
+                "/api/Users", "/api/Users/1",
+                "/api/Products", "/api/Products/1",
+                "/api/Products/1/reviews",
+                "/api/Feedbacks", "/api/Feedbacks/1",
+                "/api/Complaints", "/api/Complaints/1",
+                "/api/Recycles", "/api/Recycles/1",
+                "/api/BasketItems", "/api/BasketItems/1",
+                "/api/Challenges", "/api/Challenges/?name=",
+                "/api/Quantitys", "/api/Quantitys/1",
+                "/api/Deliverys", "/api/Deliverys/1",
+                "/api/Addresss", "/api/Addresss/1",
+                "/api/Cards", "/api/Cards/1",
+                "/api/SecurityQuestions",
+                "/api/SecurityAnswers",
+                # Admin / scoring
+                "/api/Challenges",
+                "/rest/admin/application-configuration",
+                "/rest/admin/application-version",
+                # Common Juice Shop challenge paths
+                "/ftp", "/ftp/acquisitions.md",
+                "/ftp/coupons_2013.md.bak",
+                "/ftp/easter.egg",
+                "/ftp/encrypt.pyc",
+                "/ftp/legal.md",
+                "/ftp/package.json.bak",
+                "/ftp/quarantine",
+                "/ftp/suspicious_errors.yml",
+                "/encryptionkeys", "/encryptionkeys/jwt.pub",
+                "/snippets", "/snippets/1",
+                "/dataerasure",
+                "/profile",
+                "/privacy-security/privacy-policy",
+                "/privacy-security/change-password",
+                "/b2b/v2/orders",
+                "/promotion",
+                "/redirect?to=https://owasp.org",
+                "/metrics",
+                "/video",
+                "/assets/public/images/uploads/",
+                "/#/score-board",
+                "/#/track-result",
+                "/#/administration",
+                "/#/recycle",
+                "/#/complain",
+                "/#/chatbot",
+                "/#/deluxe-membership",
+                "/#/privacy-security/data-export",
+                "/#/wallet",
+                "/#/order-history",
+                "/#/address/saved",
+                "/#/saved-payment-methods",
+            ])
+
+        # WordPress
+        if any("wordpress" in t for t in techs_lower) or any("wp-" in t for t in techs_lower):
+            common_paths.extend([
+                "/wp-login.php", "/wp-admin/", "/wp-json/wp/v2/users",
+                "/wp-json/wp/v2/posts", "/wp-json/wp/v2/pages",
+                "/wp-content/uploads/", "/xmlrpc.php", "/wp-cron.php",
+            ])
+
+        # Node.js / Express
+        if any("express" in t or "node" in t for t in techs_lower):
+            common_paths.extend([
+                "/graphql", "/graphiql", "/playground",
+                "/.env", "/package.json", "/node_modules/",
+                "/socket.io/", "/api/health", "/api/config",
+            ])
+
+        # PHP
+        if any("php" in t for t in techs_lower):
+            common_paths.extend([
+                "/phpmyadmin/", "/phpinfo.php", "/info.php",
+                "/wp-login.php", "/administrator/",
+            ])
+
+        # Java / Spring
+        if any("spring" in t or "java" in t or "jsessionid" in t for t in techs_lower):
+            common_paths.extend([
+                "/actuator", "/actuator/env", "/actuator/health",
+                "/actuator/mappings", "/actuator/beans",
+                "/swagger-ui.html", "/v2/api-docs", "/v3/api-docs",
+                "/h2-console/", "/trace",
+            ])
+
+        # Django
+        if any("django" in t for t in techs_lower):
+            common_paths.extend([
+                "/admin/", "/admin/login/", "/__debug__/",
+                "/api/", "/static/admin/",
+            ])
+
+        # GraphQL (detected)
+        if any("graphql" in t for t in techs_lower):
+            common_paths.extend([
+                "/graphql", "/graphiql", "/altair", "/playground",
+                "/graphql/schema.json",
+            ])
+
+        # Swagger/OpenAPI
+        if any("swagger" in t or "openapi" in t for t in techs_lower):
+            common_paths.extend([
+                "/swagger-ui/", "/swagger-ui.html", "/swagger.json",
+                "/api-docs/", "/v2/api-docs", "/v3/api-docs",
+                "/openapi.json", "/openapi.yaml",
+            ])
+
+        # Known test sites (hostname-based)
         if "vulnweb" in parsed_target.netloc or "testphp" in parsed_target.netloc:
             await self.log("info", "  Detected test site - adding known vulnerable endpoints")
             common_paths.extend([
-                "/listproducts.php?cat=1",
-                "/artists.php?artist=1",
-                "/search.php?test=1",
-                "/guestbook.php",
-                "/comment.php?aid=1",
-                "/showimage.php?file=1",
-                "/product.php?pic=1",
-                "/hpp/?pp=12",
-                "/AJAX/index.php",
-                "/secured/newuser.php",
-            ])
-        elif "juice-shop" in parsed_target.netloc or "juiceshop" in parsed_target.netloc:
-            common_paths.extend([
-                "/rest/products/search?q=test",
-                "/api/Users",
-                "/api/Products",
-                "/rest/user/login",
+                "/listproducts.php?cat=1", "/artists.php?artist=1",
+                "/search.php?test=1", "/guestbook.php",
+                "/comment.php?aid=1", "/showimage.php?file=1",
             ])
         elif "dvwa" in parsed_target.netloc:
             common_paths.extend([
@@ -3203,14 +3376,29 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 "/vulnerabilities/fi/?page=include.php",
             ])
 
+        # Also probe discovered open ports from Naabu (Item 3)
+        if self.recon.ports:
+            for port_str in self.recon.ports[:10]:
+                port = port_str.split("/")[0] if "/" in port_str else port_str
+                port_url = f"{parsed_target.scheme}://{parsed_target.hostname}:{port}"
+                if port_url != base:
+                    common_paths.append(f"__PORT_PROBE__{port_url}")
+
+        # Deduplicate paths
+        common_paths = list(dict.fromkeys(common_paths))
+
         tasks = []
         for path in common_paths:
-            tasks.append(self._check_endpoint(f"{base}{path}"))
+            if path.startswith("__PORT_PROBE__"):
+                # Probe a different port — use full URL
+                tasks.append(self._check_endpoint(path.replace("__PORT_PROBE__", "") + "/"))
+            else:
+                tasks.append(self._check_endpoint(f"{base}{path}"))
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Crawl discovered pages for more endpoints
-        for endpoint in list(self.recon.endpoints)[:10]:
+        # Crawl discovered pages for more endpoints (increased depth)
+        for endpoint in list(self.recon.endpoints)[:20]:
             await self._crawl_page(_get_endpoint_url(endpoint))
 
         await self.log("info", f"  Found {len(self.recon.endpoints)} endpoints")
@@ -3352,29 +3540,82 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
     async def _extract_api_from_js(self, js_url: str):
         """Extract API endpoints from JavaScript files"""
         try:
-            async with self.session.get(js_url) as resp:
+            async with self.session.get(js_url, ssl=False) as resp:
                 content = await resp.text()
 
-                # Find API patterns
+                # Find API patterns (expanded)
                 api_patterns = [
-                    r'["\']/(api/[^"\']+)["\']',
-                    r'["\']/(v[0-9]/[^"\']+)["\']',
+                    r'["\']/(api/[^"\'?\s]+)["\']',
+                    r'["\']/(rest/[^"\'?\s]+)["\']',
+                    r'["\']/(v[0-9]+/[^"\'?\s]+)["\']',
                     r'fetch\s*\(\s*["\']([^"\']+)["\']',
                     r'axios\.[a-z]+\s*\(\s*["\']([^"\']+)["\']',
+                    r'\.(?:get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
+                    r'url\s*[:=]\s*["\']([^"\']*(?:api|rest|v\d)[^"\']*)["\']',
+                    r'endpoint\s*[:=]\s*["\']([^"\']+)["\']',
+                    r'(?:path|route)\s*[:=]\s*["\'](/[^"\']+)["\']',
+                    r'(?:XMLHttpRequest|\.open)\s*\(\s*["\'](?:GET|POST|PUT|DELETE)["\']\s*,\s*["\']([^"\']+)["\']',
                 ]
 
+                base = urlparse(self.target)
                 for pattern in api_patterns:
                     matches = re.findall(pattern, content)
-                    for match in matches[:5]:
+                    for match in matches[:15]:
                         if match.startswith('/'):
-                            base = urlparse(self.target)
                             full_url = f"{base.scheme}://{base.netloc}{match}"
-                        else:
+                        elif match.startswith('http'):
                             full_url = match
-                        if full_url not in self.recon.api_endpoints:
+                        elif match.startswith('api/') or match.startswith('rest/') or match.startswith('v'):
+                            full_url = f"{base.scheme}://{base.netloc}/{match}"
+                        else:
+                            continue
+                        if full_url not in self.recon.api_endpoints and len(self.recon.api_endpoints) < 200:
                             self.recon.api_endpoints.append(full_url)
-        except:
+        except Exception:
             pass
+
+    async def _deep_js_analysis(self):
+        """Deep analysis of JS bundles: re-fetch known JS files + discover inline scripts + sourcemaps"""
+        base = urlparse(self.target)
+        base_url = f"{base.scheme}://{base.netloc}"
+
+        # Re-process all JS files with expanded extraction
+        for js_url in list(self.recon.js_files):
+            await self._extract_api_from_js(js_url)
+
+        # Try to find webpack/vite chunk manifests
+        manifest_paths = [
+            "/asset-manifest.json", "/manifest.json",
+            "/_next/static/chunks/webpack.js",
+            "/static/js/main.chunk.js",
+        ]
+        for path in manifest_paths:
+            try:
+                async with self.session.get(f"{base_url}{path}", ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text()
+                        # Extract more JS file paths from manifests
+                        js_refs = re.findall(r'["\'](/[^"\']*\.js)["\']', content)
+                        for ref in js_refs[:20]:
+                            full = f"{base_url}{ref}"
+                            if full not in self.recon.js_files:
+                                self.recon.js_files.append(full)
+                                await self._extract_api_from_js(full)
+            except Exception:
+                pass
+
+        # Add all discovered API endpoints as recon endpoints
+        for api_url in self.recon.api_endpoints:
+            endpoint_data = {
+                "url": api_url,
+                "method": "GET",
+                "path": urlparse(api_url).path,
+                "source": "js_analysis",
+            }
+            if endpoint_data not in self.recon.endpoints and len(self.recon.endpoints) < 200:
+                self.recon.endpoints.append(endpoint_data)
+
+        await self.log("info", f"  JS analysis: {len(self.recon.js_files)} JS files, {len(self.recon.api_endpoints)} API routes extracted")
 
     async def _discover_parameters(self):
         """Discover parameters in endpoints"""
@@ -3395,11 +3636,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         await self.log("info", f"  Found {total_params} parameters in {len(self.recon.parameters)} endpoints")
 
     async def _detect_technologies(self):
-        """Detect technologies used"""
+        """Detect technologies via headers, body signatures, cookies, and error pages"""
         try:
-            async with self.session.get(self.target) as resp:
+            async with self.session.get(self.target, ssl=False) as resp:
                 headers = dict(resp.headers)
                 body = await resp.text()
+                cookies = {c.key: c.value for c in self.session.cookie_jar}
 
                 # Server header
                 if "Server" in headers:
@@ -3409,33 +3651,83 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 if "X-Powered-By" in headers:
                     self.recon.technologies.append(headers["X-Powered-By"])
 
-                # Technology signatures
+                # Technology signatures (expanded)
                 signatures = {
-                    "WordPress": ["wp-content", "wp-includes", "wordpress"],
+                    "WordPress": ["wp-content", "wp-includes", "wordpress", "wp-json"],
                     "Laravel": ["laravel", "XSRF-TOKEN", "laravel_session"],
                     "Django": ["csrfmiddlewaretoken", "__admin__", "django"],
                     "Express.js": ["express", "X-Powered-By: Express"],
-                    "ASP.NET": ["__VIEWSTATE", "asp.net", ".aspx"],
+                    "ASP.NET": ["__VIEWSTATE", "asp.net", ".aspx", "__RequestVerificationToken"],
                     "PHP": [".php", "PHPSESSID"],
-                    "React": ["react", "_reactRoot", "__REACT"],
-                    "Angular": ["ng-app", "ng-", "angular"],
-                    "Vue.js": ["vue", "__VUE", "v-if", "v-for"],
-                    "jQuery": ["jquery", "$.ajax"],
+                    "React": ["react", "_reactRoot", "__REACT", "react-root", "data-reactroot"],
+                    "Angular": ["ng-app", "ng-version", "angular", "ng-controller"],
+                    "Vue.js": ["vue", "__VUE", "v-cloak", "data-v-"],
+                    "jQuery": ["jquery", "$.ajax", "jQuery"],
                     "Bootstrap": ["bootstrap", "btn-primary"],
+                    "Node.js": ["node", "x-powered-by: express"],
+                    "Spring": ["jsessionid", "spring", "X-Application-Context"],
+                    "Ruby on Rails": ["_session_id", "rails", "action_dispatch"],
+                    "Flask": ["flask", "werkzeug"],
+                    "Nginx": ["nginx"],
+                    "Apache": ["apache"],
+                    "Cloudflare": ["cloudflare", "cf-ray", "__cfduid"],
+                    "Juice Shop": ["juice-shop", "juice shop", "juiceshop", "OWASP Juice Shop"],
+                    "Swagger/OpenAPI": ["swagger", "openapi", "api-docs"],
+                    "GraphQL": ["graphql", "graphiql", "__schema"],
+                    "Next.js": ["__next", "_next/", "next-router"],
+                    "Nuxt.js": ["__nuxt", "_nuxt/"],
                 }
 
                 body_lower = body.lower()
                 headers_str = str(headers).lower()
+                cookies_str = str(cookies).lower()
 
                 for tech, patterns in signatures.items():
-                    if any(p.lower() in body_lower or p.lower() in headers_str for p in patterns):
+                    if any(p.lower() in body_lower or p.lower() in headers_str or p.lower() in cookies_str for p in patterns):
                         if tech not in self.recon.technologies:
                             self.recon.technologies.append(tech)
+
+                # Cookie-based detection
+                cookie_techs = {
+                    "connect.sid": "Express.js", "JSESSIONID": "Java/Spring",
+                    "PHPSESSID": "PHP", "ASP.NET_SessionId": "ASP.NET",
+                    "_csrf": "Node.js/Express", "laravel_session": "Laravel",
+                    "rack.session": "Ruby", "language": "Juice Shop",
+                }
+                for cookie_name, tech in cookie_techs.items():
+                    if cookie_name.lower() in cookies_str:
+                        if tech not in self.recon.technologies:
+                            self.recon.technologies.append(tech)
+
+                # Error page fingerprinting — probe a 404 path
+                try:
+                    async with self.session.get(
+                        self.target.rstrip('/') + '/neurosploit_404_probe_' + str(hash(self.target))[-6:],
+                        ssl=False
+                    ) as err_resp:
+                        err_body = await err_resp.text()
+                        err_lower = err_body.lower()
+                        error_sigs = {
+                            "Express.js": ["cannot get /", "express"],
+                            "Django": ["django", "you're seeing this error because"],
+                            "Laravel": ["laravel", "whoops!"],
+                            "Spring": ["whitelabel error page", "spring boot"],
+                            "ASP.NET": ["runtime error", "asp.net"],
+                            "Nginx": ["nginx"],
+                            "Apache": ["apache", "not found"],
+                            "Juice Shop": ["owasp juice shop", "juice-shop"],
+                        }
+                        for tech, patterns in error_sigs.items():
+                            if any(p in err_lower for p in patterns):
+                                if tech not in self.recon.technologies:
+                                    self.recon.technologies.append(tech)
+                except Exception:
+                    pass
 
         except Exception as e:
             await self.log("debug", f"Tech detection error: {e}")
 
-        await self.log("info", f"  Detected: {', '.join(self.recon.technologies[:5]) or 'Unknown'}")
+        await self.log("info", f"  Detected: {', '.join(self.recon.technologies[:10]) or 'Unknown'}")
 
     # ==================== VULNERABILITY TESTING ====================
 
@@ -3638,8 +3930,60 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     await self.log("info", f"  [Sandbox] Naabu found {len(open_ports)} open ports: {', '.join(open_ports[:20])} ({_naabu_duration}s)")
                     # Store port info in recon data
                     self.recon.technologies.append(f"Open ports: {', '.join(open_ports[:30])}")
+                    self.recon.ports = open_ports
+
+                    # Feed discovered ports into endpoint discovery (Item 3)
+                    target_port = str(parsed.port or (443 if parsed.scheme == 'https' else 80))
+                    for port in open_ports[:10]:
+                        if port != target_port:
+                            port_url = f"http://{host}:{port}"
+                            try:
+                                async with self.session.get(port_url + "/", ssl=False, allow_redirects=True) as port_resp:
+                                    if port_resp.status < 500:
+                                        self.recon.endpoints.append({
+                                            "url": port_url, "method": "GET",
+                                            "status": port_resp.status, "path": "/",
+                                            "source": "naabu_port_probe",
+                                        })
+                                        await self.log("info", f"  [Sandbox] Port {port} responds HTTP {port_resp.status}")
+                            except Exception:
+                                pass
                 else:
                     await self.log("info", "  [Sandbox] Naabu: no open ports found")
+
+                # Item 7: Run nmap -sV -sC on discovered open ports for service detection
+                nmap_ports = ",".join(open_ports[:30]) if naabu_result.findings else None
+                if nmap_ports and hasattr(sandbox, 'run_nmap'):
+                    try:
+                        await self.log("info", f"  [Sandbox] Running nmap service detection on {len(open_ports)} ports...")
+                        _nmap_start = _time.time()
+                        nmap_result = await sandbox.run_nmap(
+                            target=host,
+                            ports=nmap_ports,
+                            scripts=True,
+                            timeout=180,
+                        )
+                        _nmap_duration = round(_time.time() - _nmap_start, 2)
+
+                        self.tool_executions.append({
+                            "tool": "nmap",
+                            "command": f"nmap -sV -sC -p {nmap_ports} {host}",
+                            "duration": _nmap_duration,
+                            "stdout_preview": nmap_result.stdout[:3000] if hasattr(nmap_result, 'stdout') and nmap_result.stdout else "",
+                            "stderr_preview": nmap_result.stderr[:500] if hasattr(nmap_result, 'stderr') and nmap_result.stderr else "",
+                            "exit_code": getattr(nmap_result, 'exit_code', 0),
+                        })
+
+                        if nmap_result.stdout:
+                            await self.log("info", f"  [Sandbox] nmap completed ({_nmap_duration}s)")
+                            # Extract service info from nmap output
+                            for line in nmap_result.stdout.split('\n'):
+                                if '/tcp' in line and 'open' in line:
+                                    service_info = line.strip()
+                                    if service_info not in self.recon.technologies:
+                                        self.recon.technologies.append(f"nmap: {service_info}")
+                    except Exception as nmap_err:
+                        await self.log("debug", f"  [Sandbox] nmap error: {nmap_err}")
 
         except Exception as e:
             await self.log("warning", f"  Sandbox scan error: {e}")
