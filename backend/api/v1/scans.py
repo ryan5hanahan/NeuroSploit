@@ -174,6 +174,12 @@ async def create_scan(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new scan with optional authentication for authenticated testing"""
+    from backend.api.v1.settings import _settings as app_settings
+
+    # Apply setting defaults when client didn't specify
+    scan_type = scan_data.scan_type if scan_data.scan_type is not None else app_settings.get("default_scan_type", "full")
+    recon_enabled = scan_data.recon_enabled if scan_data.recon_enabled is not None else app_settings.get("recon_enabled_by_default", True)
+
     # Process authentication config
     auth_type = None
     auth_credentials = None
@@ -195,8 +201,8 @@ async def create_scan(
     # Create scan
     scan = Scan(
         name=scan_data.name or f"Scan {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        scan_type=scan_data.scan_type,
-        recon_enabled=scan_data.recon_enabled,
+        scan_type=scan_type,
+        recon_enabled=recon_enabled,
         custom_prompt=scan_data.custom_prompt,
         prompt_id=scan_data.prompt_id,
         config=scan_data.config,
@@ -336,6 +342,8 @@ async def start_scan(
     db: AsyncSession = Depends(get_db)
 ):
     """Start a scan execution"""
+    from backend.api.v1.settings import _settings as app_settings
+
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalar_one_or_none()
 
@@ -344,6 +352,18 @@ async def start_scan(
 
     if scan.status == "running":
         raise HTTPException(status_code=400, detail="Scan is already running")
+
+    # Enforce MAX_CONCURRENT_SCANS
+    max_concurrent = app_settings.get("max_concurrent_scans", 3)
+    running_result = await db.execute(
+        select(func.count()).select_from(Scan).where(Scan.status == "running")
+    )
+    running_count = running_result.scalar() or 0
+    if running_count >= max_concurrent:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum concurrent scans reached ({max_concurrent}). Stop a running scan first."
+        )
 
     # Update scan status
     scan.status = "running"
@@ -366,10 +386,24 @@ async def repeat_scan(
     db: AsyncSession = Depends(get_db)
 ):
     """Clone a completed/stopped/failed scan's config and immediately start a new scan"""
+    from backend.api.v1.settings import _settings as app_settings
+
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Scan not found")
+
+    # Enforce MAX_CONCURRENT_SCANS
+    max_concurrent = app_settings.get("max_concurrent_scans", 3)
+    running_result = await db.execute(
+        select(func.count()).select_from(Scan).where(Scan.status == "running")
+    )
+    running_count = running_result.scalar() or 0
+    if running_count >= max_concurrent:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum concurrent scans reached ({max_concurrent}). Stop a running scan first."
+        )
 
     if original.status not in ("completed", "stopped", "failed"):
         raise HTTPException(

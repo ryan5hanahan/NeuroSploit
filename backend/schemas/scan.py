@@ -21,8 +21,8 @@ class ScanCreate(BaseModel):
     """Schema for creating a new scan"""
     name: Optional[str] = Field(None, max_length=255, description="Scan name")
     targets: List[str] = Field(..., min_length=1, description="List of target URLs")
-    scan_type: str = Field("full", description="Scan type: quick, full, custom")
-    recon_enabled: bool = Field(True, description="Enable reconnaissance phase")
+    scan_type: Optional[str] = Field(None, description="Scan type: quick, full, custom. Uses DEFAULT_SCAN_TYPE setting if not specified.")
+    recon_enabled: Optional[bool] = Field(None, description="Enable reconnaissance phase. Uses RECON_ENABLED_BY_DEFAULT setting if not specified.")
     custom_prompt: Optional[str] = Field(None, max_length=32000, description="Custom prompt (up to 32k tokens)")
     prompt_id: Optional[str] = Field(None, description="ID of preset prompt to use")
     config: dict = Field(default_factory=dict, description="Additional configuration")

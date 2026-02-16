@@ -266,15 +266,25 @@ async def update_settings(settings_data: SettingsUpdate):
 
     if settings_data.max_concurrent_scans is not None:
         _settings["max_concurrent_scans"] = settings_data.max_concurrent_scans
+        os.environ["MAX_CONCURRENT_SCANS"] = str(settings_data.max_concurrent_scans)
+        env_updates["MAX_CONCURRENT_SCANS"] = str(settings_data.max_concurrent_scans)
 
     if settings_data.aggressive_mode is not None:
         _settings["aggressive_mode"] = settings_data.aggressive_mode
+        val = str(settings_data.aggressive_mode).lower()
+        os.environ["AGGRESSIVE_MODE"] = val
+        env_updates["AGGRESSIVE_MODE"] = val
 
     if settings_data.default_scan_type is not None:
         _settings["default_scan_type"] = settings_data.default_scan_type
+        os.environ["DEFAULT_SCAN_TYPE"] = settings_data.default_scan_type
+        env_updates["DEFAULT_SCAN_TYPE"] = settings_data.default_scan_type
 
     if settings_data.recon_enabled_by_default is not None:
         _settings["recon_enabled_by_default"] = settings_data.recon_enabled_by_default
+        val = str(settings_data.recon_enabled_by_default).lower()
+        os.environ["RECON_ENABLED_BY_DEFAULT"] = val
+        env_updates["RECON_ENABLED_BY_DEFAULT"] = val
 
     if settings_data.enable_model_routing is not None:
         _settings["enable_model_routing"] = settings_data.enable_model_routing

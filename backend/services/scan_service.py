@@ -14,6 +14,7 @@ All tests are performed with explicit authorization from the target owner.
 The AI agent has full permission to test for vulnerabilities.
 """
 import asyncio
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,6 +126,7 @@ class ScanService:
         self.ai_processor = AIPromptProcessor()
         self.ai_analyzer = AIVulnerabilityAnalyzer()
         self.payload_generator = PayloadGenerator()
+        self.aggressive_mode = os.getenv("AGGRESSIVE_MODE", "false").lower() == "true"
 
     @property
     def _stop_requested(self) -> bool:
@@ -891,17 +893,23 @@ Be thorough and test all discovered endpoints aggressively.
 
             try:
                 # Get payloads for this vulnerability type
+                payload_context = {
+                    "testing_plan": testing_plan.__dict__,
+                    "recon": recon_data,
+                    "depth": "thorough" if self.aggressive_mode else "standard",
+                }
                 payloads = await self.payload_generator.get_payloads(
                     vuln_type=vuln_type,
                     endpoint=endpoint,
-                    context={"testing_plan": testing_plan.__dict__, "recon": recon_data}
+                    context=payload_context
                 )
 
                 if not payloads:
                     continue
 
-                # Test payloads
-                for payload in payloads[:5]:  # Limit payloads per type
+                # Test payloads — aggressive mode tests more per type
+                payload_limit = 15 if self.aggressive_mode else 5
+                for payload in payloads[:payload_limit]:
                     result = await self._execute_payload_test(
                         endpoint=endpoint,
                         vuln_type=vuln_type,
