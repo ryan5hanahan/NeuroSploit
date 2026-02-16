@@ -417,7 +417,7 @@ REASON: [brief explanation]"""
 
         system = "You are a security assessment planner. Analyze context and determine data gaps. Be concise."
 
-        response = self.llm_manager.generate(analysis_prompt, system)
+        response = self.llm_manager.generate(analysis_prompt, system, task_type="analysis")
 
         # Parse response
         gaps = {
@@ -745,7 +745,7 @@ Provide working PoC commands using the real URLs and parameters.
 Document any vulnerabilities found during testing with CVSS scores."""
 
         print(f"  [*] Generating final analysis...")
-        response = self.llm_manager.generate(user_prompt, system_prompt)
+        response = self.llm_manager.generate(user_prompt, system_prompt, task_type="analysis")
         print(f"  [+] Analysis complete")
 
         return response
@@ -809,7 +809,7 @@ Be creative. Think like a hacker."""
 Each command must be prefixed with [TEST] and be complete and executable.
 Target the actual endpoints and parameters from the recon context."""
 
-        response = self.llm_manager.generate(analysis_prompt, system)
+        response = self.llm_manager.generate(analysis_prompt, system, task_type="reasoning")
 
         # Extract and run tests
         tests = re.findall(r'\[TEST\]\s*(.+?)(?=\[TEST\]|\Z)', response, re.DOTALL)
@@ -862,7 +862,7 @@ Or if done, respond with [DONE]"""
 
             system = "You are exploiting a target. Analyze results and output next commands."
 
-            response = self.llm_manager.generate(exploitation_prompt, system)
+            response = self.llm_manager.generate(exploitation_prompt, system, task_type="generation")
 
             if "[DONE]" in response:
                 print("  [*] AI completed exploitation phase")
@@ -1053,7 +1053,7 @@ Be creative. Think like a hacker. Test edge cases."""
 Each command must be prefixed with [TEST] and be a complete, executable curl command.
 Target the actual endpoints and parameters discovered. Be aggressive."""
 
-        response = self.llm_manager.generate(analysis_prompt, system)
+        response = self.llm_manager.generate(analysis_prompt, system, task_type="reasoning")
 
         # Extract and run the tests
         tests = re.findall(r'\[TEST\]\s*(.+?)(?=\[TEST\]|\Z)', response, re.DOTALL)
@@ -1119,7 +1119,7 @@ Analyze results, identify vulnerabilities, and output next commands.
 Format: [EXEC] tool: arguments
 When done, say [DONE]"""
 
-            response = self.llm_manager.generate(exploitation_prompt, system)
+            response = self.llm_manager.generate(exploitation_prompt, system, task_type="generation")
 
             if "[DONE]" in response:
                 print("  [*] AI completed exploitation phase")
@@ -1219,7 +1219,7 @@ Output as:
 
             system = "You are exploiting a confirmed vulnerability. Go deeper."
 
-            response = self.llm_manager.generate(deep_prompt, system)
+            response = self.llm_manager.generate(deep_prompt, system, task_type="generation")
             commands = self._parse_ai_commands(response)
 
             for tool, args in commands[:5]:
@@ -1372,7 +1372,7 @@ Analyze the ACTUAL scan results provided and document REAL vulnerabilities found
 Include working PoCs with exact commands and evidence from the outputs.
 Do NOT say "no vulnerabilities" if there is evidence of vulnerabilities in the scan data."""
 
-        return self.llm_manager.generate(report_prompt, system)
+        return self.llm_manager.generate(report_prompt, system, task_type="generation")
 
     def get_allowed_tools(self) -> List[str]:
         return self.tools_allowed

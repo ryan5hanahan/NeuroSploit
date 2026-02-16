@@ -379,10 +379,10 @@ class NeuroSploitv2:
             # Temporarily modify config to set the default profile for LLMManager init
             original_default = llm_config.get('default_profile')
             llm_config['default_profile'] = agent_llm_profile
-            self.llm_manager_instance = LLMManager({"llm": llm_config})
+            self.llm_manager_instance = LLMManager(self.config)
             llm_config['default_profile'] = original_default # Restore original default
         else:
-            self.llm_manager_instance = LLMManager({"llm": llm_config})
+            self.llm_manager_instance = LLMManager(self.config)
 
     def execute_agent_role(self, agent_role_name: str, user_input: str, additional_context: Optional[Dict] = None, llm_profile_override: Optional[str] = None, recon_context: Optional[Dict] = None):
         """

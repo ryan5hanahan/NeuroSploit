@@ -124,6 +124,16 @@
             "timeout": 300
         }
     },
+    "model_routing": {
+        "enabled": false,
+        "routes": {
+            "reasoning": "bedrock_claude_default",
+            "analysis": "gemini_pro_default",
+            "generation": "gemini_pro_default",
+            "validation": "gemini_pro_default",
+            "default": "gemini_pro_default"
+        }
+    },
     "output": {
         "format": "json",
         "verbose": true,

@@ -24,22 +24,29 @@ logger = logging.getLogger(__name__)
 
 class LLMManager:
     """Manage multiple LLM providers"""
-    
-    def __init__(self, config: Dict):
-        """Initialize LLM manager"""
+
+    def __init__(self, config: Optional[Dict] = None, _routing_disabled: bool = False):
+        """Initialize LLM manager
+
+        Args:
+            config: Full application config dict (must contain 'llm' key, may contain 'model_routing')
+            _routing_disabled: Internal flag to prevent recursive router creation
+        """
+        config = config or {}
+        self._full_config = config
         self.config = config.get('llm', {})
         self.default_profile_name = self.config.get('default_profile', 'gemini_pro_default')
         self.profiles = self.config.get('profiles', {})
-        
+
         self.active_profile = self.profiles.get(self.default_profile_name, {})
-        
+
         # Load active profile settings
         self.provider = self.active_profile.get('provider', 'gemini').lower()
         self.model = self.active_profile.get('model', 'gemini-pro')
         self.api_key = self._get_api_key(self.active_profile.get('api_key', ''))
         self.temperature = self.active_profile.get('temperature', 0.7)
         self.max_tokens = self.active_profile.get('max_tokens', 4096)
-        
+
         # New LLM parameters
         self.input_token_limit = self.active_profile.get('input_token_limit', 4096)
         self.output_token_limit = self.active_profile.get('output_token_limit', 4096)
@@ -60,8 +67,10 @@ class LLMManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_OUTPUT_TOKENS value: {env_max_tokens}")
 
-        # Model router (lazy init, set externally or via config)
+        # Model router — auto-initialize when enabled (skip for child instances to prevent recursion)
         self._model_router = None
+        if not _routing_disabled:
+            self._init_model_router()
         
         # New prompt loading
         self.json_prompts_file_path = Path("prompts/library.json")
@@ -76,6 +85,32 @@ class LLMManager:
             env_var = api_key_config[2:-1]
             return os.getenv(env_var, '')
         return api_key_config
+
+    def _init_model_router(self):
+        """Initialize ModelRouter from config if model routing is enabled."""
+        try:
+            from core.model_router import ModelRouter
+        except ImportError:
+            logger.debug("ModelRouter not available, skipping model routing init")
+            return
+
+        def _profile_factory(profile_name: str) -> 'LLMManager':
+            """Create an LLMManager for a specific profile with routing disabled."""
+            child_config = dict(self._full_config)
+            child_llm = dict(child_config.get('llm', {}))
+            child_llm['default_profile'] = profile_name
+            child_config['llm'] = child_llm
+            return LLMManager(child_config, _routing_disabled=True)
+
+        try:
+            router = ModelRouter(self._full_config, _profile_factory)
+            if router.enabled:
+                self._model_router = router
+                logger.info(f"Model routing wired: routes={list(router.routes.keys())}")
+            else:
+                logger.debug("Model routing config present but disabled")
+        except Exception as e:
+            logger.warning(f"Failed to initialize model router: {e}")
     
     def _load_all_prompts(self) -> Dict:
         """Load prompts from JSON library and Markdown files (both prompts/ and prompts/md_library/)."""
@@ -145,8 +180,20 @@ class LLMManager:
         """
         return self.prompts.get(library_type, {}).get(category, {}).get(name, default)
 
-    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Generate response from LLM and apply hallucination mitigation if configured."""
+    def generate(self, prompt: str, system_prompt: Optional[str] = None, task_type: Optional[str] = None) -> str:
+        """Generate response from LLM and apply hallucination mitigation if configured.
+
+        Args:
+            prompt: The user prompt
+            system_prompt: Optional system prompt
+            task_type: Optional task type for model routing (reasoning, analysis, generation, validation)
+        """
+        # Route to specialized profile when task_type is provided and routing is enabled
+        if task_type and self._model_router:
+            routed_result = self._model_router.generate(prompt, system_prompt, task_type)
+            if routed_result is not None:
+                return routed_result
+
         raw_response = ""
         try:
             if self.provider == 'claude':
@@ -817,13 +864,13 @@ Analyze vulnerabilities and provide detailed, actionable exploitation strategies
 Consider OWASP, CWE, and MITRE ATT&CK frameworks.
 Always include ethical considerations and legal boundaries.""")
         
-        response = self.generate(prompt, system_prompt)
-        
+        response = self.generate(prompt, system_prompt, task_type="analysis")
+
         try:
             return json.loads(response)
         except:
             return {"raw_response": response}
-    
+
     def generate_payload(self, target_info: Dict, vulnerability_type: str) -> str:
         """Generate exploit payload"""
         # This prompt will be fetched from library.json later
@@ -847,8 +894,8 @@ Provide the payload code with detailed comments.
         system_prompt = self.get_prompt("json_prompts", "exploitation", "generate_payload_system", default="""You are an expert exploit developer.
 Generate sophisticated, tested payloads that are effective yet responsible.
 Always include safety mechanisms and ethical guidelines.""")
-        
-        return self.generate(prompt, system_prompt)
+
+        return self.generate(prompt, system_prompt, task_type="generation")
     
     def suggest_privilege_escalation(self, system_info: Dict) -> List[str]:
         """Suggest privilege escalation techniques"""
@@ -872,8 +919,8 @@ Response in JSON format with prioritized list.
         system_prompt = self.get_prompt("json_prompts", "privesc", "suggest_privilege_escalation_system", default="""You are a privilege escalation specialist.
 Analyze system configurations and suggest effective escalation paths.
 Consider Windows, Linux, and Active Directory environments.""")
-        
-        response = self.generate(prompt, system_prompt)
+
+        response = self.generate(prompt, system_prompt, task_type="reasoning")
         
         try:
             result = json.loads(response)
@@ -904,8 +951,8 @@ Response in JSON format.
         system_prompt = self.get_prompt("json_prompts", "network_recon", "analyze_network_topology_system", default="""You are a network penetration testing expert.
 Analyze network structures and identify optimal attack vectors.
 Consider defense-in-depth and detection mechanisms.""")
-        
-        response = self.generate(prompt, system_prompt)
+
+        response = self.generate(prompt, system_prompt, task_type="analysis")
         
         try:
             return json.loads(response)
@@ -946,7 +993,7 @@ Consider defense-in-depth and detection mechanisms.""")
             # Use a generic system prompt if a specific one isn't found
             system_prompt = "You are an expert web security tester. Analyze the provided data for vulnerabilities and offer exploitation steps and remediation."
 
-        response = self.generate(prompt, system_prompt)
+        response = self.generate(prompt, system_prompt, task_type="analysis")
 
         try:
             return json.loads(response)
