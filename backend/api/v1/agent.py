@@ -19,6 +19,7 @@ from enum import Enum
 from urllib.parse import urlparse
 
 from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+from backend.core.governance import GovernanceAgent, create_full_auto_scope, create_recon_only_scope
 from backend.core.task_library import get_task_library
 from backend.db.database import async_session_factory
 from backend.models import Scan, Target, Vulnerability, Endpoint, Report
@@ -360,6 +361,12 @@ async def _run_agent_task(
             }
             op_mode = mode_map.get(mode, OperationMode.FULL_AUTO)
 
+            if op_mode == OperationMode.RECON_ONLY:
+                _gov_scope = create_recon_only_scope(target)
+            else:
+                _gov_scope = create_full_auto_scope(target)
+            governance = GovernanceAgent(_gov_scope, log_callback=log_callback)
+
             async with AutonomousAgent(
                 target=target,
                 mode=op_mode,
@@ -371,6 +378,7 @@ async def _run_agent_task(
                 finding_callback=finding_callback,
                 scan_id=str(scan_id),
                 recon_depth=recon_depth,
+                governance=governance,
             ) as agent:
                 # Store agent instance for stop functionality
                 agent_instances[agent_id] = agent

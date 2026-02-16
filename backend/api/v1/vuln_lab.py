@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import select, func, text
 
 from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+from backend.core.governance import GovernanceAgent, create_vuln_lab_scope
 from backend.core.vuln_engine.registry import VulnerabilityRegistry
 from backend.db.database import async_session_factory
 from backend.models import Scan, Target, Vulnerability, Endpoint, Report, VulnLabChallenge
@@ -394,6 +395,9 @@ async def _run_lab_test(
                 "is_lab": True,
             }
 
+            scope = create_vuln_lab_scope(target, vuln_type)
+            governance = GovernanceAgent(scope, log_callback=log_callback)
+
             async with AutonomousAgent(
                 target=target,
                 mode=OperationMode.FULL_AUTO,
@@ -403,6 +407,7 @@ async def _run_lab_test(
                 custom_prompt=focused_prompt,
                 finding_callback=finding_callback,
                 lab_context=lab_ctx,
+                governance=governance,
             ) as agent:
                 lab_agents[challenge_id] = agent
                 # Also register in agent.py's shared instances so stop works

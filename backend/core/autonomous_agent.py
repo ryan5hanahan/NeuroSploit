@@ -657,6 +657,7 @@ class AutonomousAgent:
         lab_context: Optional[Dict] = None,
         scan_id: Optional[str] = None,
         recon_depth: Optional[str] = None,
+        governance: Optional[Any] = None,
     ):
         self.target = self._normalize_target(target)
         self.mode = mode
@@ -670,6 +671,7 @@ class AutonomousAgent:
         self.recon_context = recon_context
         self.lab_context = lab_context or {}
         self.scan_id = scan_id
+        self.governance = governance
         self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
         self._cancelled = False
         self._paused = False
@@ -3371,6 +3373,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 await self.log("warning", f"[HEALTH] Target may be unhealthy: {reason}")
                 await self.log("warning", "[HEALTH] Proceeding with caution - results may be unreliable")
 
+        # Log governance scope
+        if self.governance:
+            s = self.governance.scope
+            types_info = f"{len(s.allowed_vuln_types)} types" if s.allowed_vuln_types else "all types"
+            await self.log("info", f"[GOVERNANCE] Scope: {s.profile.value} | {types_info}")
+
         # Phase 1: Reconnaissance + Sandbox tools (concurrent)
         skip_target = self._check_skip("recon")
         if skip_target:
@@ -3404,15 +3412,26 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             except Exception as e:
                 await self.log("debug", f"[WAF] Detection failed: {e}")
 
+        # Governance: constrain recon depth if specified
+        if self.governance and self.governance.scope.max_recon_depth:
+            depth_order = {"quick": 0, "medium": 1, "full": 2}
+            gov_depth = self.governance.scope.max_recon_depth
+            if depth_order.get(gov_depth, 1) < depth_order.get(self.recon_depth, 1):
+                self.recon_depth = gov_depth
+
         # Phase 2: AI Attack Surface Analysis
         skip_target = self._check_skip("analysis")
         if skip_target:
             await self.log("warning", f">> SKIPPING Analysis -> jumping to {skip_target}")
             attack_plan = self._default_attack_plan()
+            if self.governance:
+                attack_plan = self.governance.scope_attack_plan(attack_plan)
             await self._update_progress(30, f"analysis_skipped")
         else:
             await self.log("info", "[PHASE 2/5] AI Attack Surface Analysis")
             attack_plan = await self._ai_analyze_attack_surface()
+            if self.governance:
+                attack_plan = self.governance.scope_attack_plan(attack_plan)
             await self._update_progress(30, "Attack surface analyzed")
 
         # Phase 3: Vulnerability Testing
@@ -3458,12 +3477,18 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("info", "  [Sandbox] Running Nuclei vulnerability scanner...")
             import time as _time
             _nuclei_start = _time.time()
-            nuclei_result = await sandbox.run_nuclei(
+            _nuclei_kwargs = dict(
                 target=self.target,
                 severity="critical,high,medium",
                 rate_limit=150,
                 timeout=600,
             )
+            # Governance: scope Nuclei to relevant template tags
+            if self.governance:
+                _gov_tags = self.governance.get_nuclei_template_tags()
+                if _gov_tags:
+                    _nuclei_kwargs["tags"] = _gov_tags
+            nuclei_result = await sandbox.run_nuclei(**_nuclei_kwargs)
             _nuclei_duration = round(_time.time() - _nuclei_start, 2)
 
             # Track tool execution
@@ -3496,10 +3521,10 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             else:
                 await self.log("info", f"  [Sandbox] Nuclei: no findings ({_nuclei_duration}s)")
 
-            # Naabu port scan
+            # Naabu port scan (governance may skip)
             parsed = urlparse(self.target)
             host = parsed.hostname or parsed.netloc
-            if host:
+            if host and (not self.governance or self.governance.should_port_scan()):
                 await self.log("info", "  [Sandbox] Running Naabu port scanner...")
                 _naabu_start = _time.time()
                 naabu_result = await sandbox.run_naabu(
@@ -4260,11 +4285,19 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
 }}"""
 
         try:
+            # Governance: constrain the AI prompt to allowed vuln types
+            if self.governance:
+                prompt = self.governance.constrain_analysis_prompt(prompt)
+
             response = await self.llm.generate(prompt,
                 get_system_prompt("strategy"))
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
-                return json.loads(match.group())
+                plan = json.loads(match.group())
+                # Governance: filter AI output at the data level
+                if self.governance:
+                    plan = self.governance.scope_attack_plan(plan)
+                return plan
         except Exception as e:
             await self.log("debug", f"AI analysis error: {e}")
 
@@ -4397,6 +4430,11 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
     async def _test_all_vulnerabilities(self, plan: Dict):
         """Test for all vulnerability types (100-type coverage)"""
         vuln_types = plan.get("priority_vulns", list(self._default_attack_plan()["priority_vulns"]))
+
+        # Governance: defense-in-depth final filter — even if AI/plan slipped through
+        if self.governance:
+            vuln_types = self.governance.filter_vuln_types(vuln_types)
+
         await self.log("info", f"  Testing {len(vuln_types)} vulnerability types")
 
         # Get testable endpoints
@@ -7489,6 +7527,10 @@ Provide your analysis:"""
             "executive_summary": await self._generate_executive_summary(findings_data, severity_counts),
             "tool_executions": self.tool_executions,
         }
+
+        # Add governance audit trail
+        if self.governance:
+            report["governance"] = self.governance.get_summary()
 
         # Add autonomy module stats
         if self.request_engine:
