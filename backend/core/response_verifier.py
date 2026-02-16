@@ -183,7 +183,7 @@ class ResponseVerifier:
             (is_healthy, info_dict)
         """
         try:
-            async with session.get(url, timeout=15, allow_redirects=True) as resp:
+            async with session.get(url, timeout=15, allow_redirects=True, ssl=False) as resp:
                 body = await resp.text()
                 status = resp.status
                 headers = dict(resp.headers)

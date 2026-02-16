@@ -354,6 +354,12 @@ async def _run_lab_test(
                 if challenge_id in lab_results:
                     lab_results[challenge_id]["ctf_flags"] = flag_detector.to_serializable()
                     lab_results[challenge_id]["ctf_metrics"] = flag_detector.get_metrics()
+        # Sync flag_detector state to lab_results when coordinator adds flags directly
+        # (e.g., Juice Shop /api/Challenges polling)
+        elif flag_detector and "[CTF]" in message and flag_detector.captured_flags:
+            if challenge_id in lab_results:
+                lab_results[challenge_id]["ctf_flags"] = flag_detector.to_serializable()
+                lab_results[challenge_id]["ctf_metrics"] = flag_detector.get_metrics()
 
     async def progress_callback(progress: int, phase: str):
         if challenge_id in lab_results:

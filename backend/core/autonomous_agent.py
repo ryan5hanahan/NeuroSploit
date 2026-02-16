@@ -4968,12 +4968,17 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
 
         # Get testable endpoints
         test_targets = []
+        seen_urls = set()
 
         # Add endpoints with parameters (extract params from URL if present)
-        for endpoint in self.recon.endpoints[:20]:
+        for endpoint in self.recon.endpoints[:50]:
             url = _get_endpoint_url(endpoint)
             parsed = urlparse(url)
             base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+            if base_url in seen_urls:
+                continue
+            seen_urls.add(base_url)
 
             if parsed.query:
                 params = list(parse_qs(parsed.query).keys())
@@ -4986,24 +4991,71 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                 await self.log("debug", f"  Found endpoint with params: {url[:60]}... params={params}")
             elif url in self.recon.parameters:
                 test_targets.append({"url": url, "method": "GET", "params": self.recon.parameters[url]})
+            elif base_url in self.recon.parameters:
+                test_targets.append({"url": base_url, "method": "GET", "params": self.recon.parameters[base_url]})
+
+        # Add REST API endpoints (JSON body params) — crucial for modern apps
+        rest_common_params = ["id", "email", "username", "password", "query", "q", "search", "name", "role", "admin"]
+        api_patterns = ("/api/", "/rest/", "/v1/", "/v2/", "/graphql")
+        for endpoint in self.recon.endpoints[:80]:
+            url = _get_endpoint_url(endpoint)
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if base_url in seen_urls:
+                continue
+            path_lower = parsed.path.lower()
+            if any(p in path_lower for p in api_patterns):
+                seen_urls.add(base_url)
+                test_targets.append({
+                    "url": base_url,
+                    "method": "POST",
+                    "params": rest_common_params,
+                    "is_rest_api": True
+                })
+                # Also test GET with query params
+                test_targets.append({
+                    "url": base_url,
+                    "method": "GET",
+                    "params": ["q", "id", "search", "type"],
+                })
+
+        # Add API endpoints discovered from JS analysis
+        for api_ep in getattr(self.recon, 'api_endpoints', [])[:30]:
+            api_url = api_ep if api_ep.startswith("http") else f"{self.target.rstrip('/')}/{api_ep.lstrip('/')}"
+            parsed = urlparse(api_url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if base_url in seen_urls:
+                continue
+            seen_urls.add(base_url)
+            test_targets.append({
+                "url": base_url,
+                "method": "GET",
+                "params": ["q", "id", "search", "type"],
+            })
 
         # Add forms
         for form in self.recon.forms[:10]:
-            test_targets.append({
-                "url": form['action'],
-                "method": form['method'],
-                "params": form.get('inputs', [])
-            })
-
-        # If no parameterized endpoints, test base endpoints with common params
-        if not test_targets:
-            await self.log("warning", "  No parameterized endpoints found, testing with common params")
-            for endpoint in self.recon.endpoints[:5]:
+            form_url = form['action']
+            if form_url not in seen_urls:
+                seen_urls.add(form_url)
                 test_targets.append({
-                    "url": _get_endpoint_url(endpoint),
-                    "method": "GET",
-                    "params": ["id", "q", "search", "page", "file", "url", "cat", "artist", "item"]
+                    "url": form_url,
+                    "method": form['method'],
+                    "params": form.get('inputs', [])
                 })
+
+        # If still few parameterized endpoints, add base endpoints with common params
+        if len(test_targets) < 5:
+            await self.log("warning", "  Few parameterized endpoints found, adding common params")
+            for endpoint in self.recon.endpoints[:10]:
+                url = _get_endpoint_url(endpoint)
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    test_targets.append({
+                        "url": url,
+                        "method": "GET",
+                        "params": ["id", "q", "search", "page", "file", "url", "cat", "artist", "item"]
+                    })
 
         # Also test the main target with common params
         test_targets.append({
@@ -6477,18 +6529,25 @@ Respond with ONLY a JSON array of payload strings:
             return aiohttp.ClientTimeout(total=0.1)
         return aiohttp.ClientTimeout(total=10)
 
-    async def _make_request(self, url: str, method: str, params: Dict) -> Optional[Dict]:
+    async def _make_request(self, url: str, method: str, params: Dict, use_json: bool = False) -> Optional[Dict]:
         """Make HTTP request with resilient request engine (retry, rate limiting, circuit breaker)"""
         if self.is_cancelled():
             return None
+        # Auto-detect JSON for REST API endpoints
+        parsed_path = urlparse(url).path.lower()
+        is_rest = use_json or any(p in parsed_path for p in ("/api/", "/rest/", "/v1/", "/v2/", "/graphql"))
         try:
             if self.request_engine:
-                result = await self.request_engine.request(
-                    url, method=method.upper(),
-                    params=params if method.upper() == "GET" else None,
-                    data=params if method.upper() != "GET" else None,
-                    allow_redirects=False,
-                )
+                if method.upper() == "GET":
+                    result = await self.request_engine.request(
+                        url, method="GET", params=params, allow_redirects=False)
+                elif is_rest:
+                    result = await self.request_engine.request(
+                        url, method=method.upper(), json_data=params,
+                        headers={"Content-Type": "application/json"}, allow_redirects=False)
+                else:
+                    result = await self.request_engine.request(
+                        url, method=method.upper(), data=params, allow_redirects=False)
                 if result:
                     return {
                         "status": result.status,
@@ -6500,7 +6559,17 @@ Respond with ONLY a JSON array of payload strings:
             # Fallback: direct session (no request_engine)
             timeout = self._get_request_timeout()
             if method.upper() == "GET":
-                async with self.session.get(url, params=params, allow_redirects=False, timeout=timeout) as resp:
+                async with self.session.get(url, params=params, allow_redirects=False, timeout=timeout, ssl=False) as resp:
+                    body = await resp.text()
+                    return {
+                        "status": resp.status,
+                        "body": body,
+                        "headers": dict(resp.headers),
+                        "url": str(resp.url)
+                    }
+            elif is_rest:
+                async with self.session.post(url, json=params, allow_redirects=False, timeout=timeout, ssl=False,
+                                             headers={"Content-Type": "application/json"}) as resp:
                     body = await resp.text()
                     return {
                         "status": resp.status,
@@ -6509,7 +6578,7 @@ Respond with ONLY a JSON array of payload strings:
                         "url": str(resp.url)
                     }
             else:
-                async with self.session.post(url, data=params, allow_redirects=False, timeout=timeout) as resp:
+                async with self.session.post(url, data=params, allow_redirects=False, timeout=timeout, ssl=False) as resp:
                     body = await resp.text()
                     return {
                         "status": resp.status,
