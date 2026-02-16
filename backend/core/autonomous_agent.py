@@ -83,6 +83,13 @@ try:
 except ImportError:
     HAS_SANDBOX = False
 
+# MCP tool client (in-process direct transport)
+try:
+    from core.mcp_client import MCPToolClient
+    HAS_MCP_CLIENT = True
+except ImportError:
+    HAS_MCP_CLIENT = False
+
 
 class OperationMode(Enum):
     """Agent operation modes"""
@@ -760,6 +767,15 @@ class AutonomousAgent:
         self.rejected_findings: List[Finding] = []
         self._sandbox = None  # Lazy-init sandbox reference for tool runner
 
+        # MCP tool client (direct in-process transport)
+        self.mcp_client = None
+        if HAS_MCP_CLIENT:
+            try:
+                config = self._load_config()
+                self.mcp_client = MCPToolClient(config)
+            except Exception:
+                pass
+
     @property
     def findings(self) -> List[Finding]:
         """Backward-compatible access to confirmed findings via memory"""
@@ -836,6 +852,16 @@ class AutonomousAgent:
         kb_path = Path(__file__).parent.parent.parent / "data" / "vuln_knowledge_base.json"
         try:
             with open(kb_path, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _load_config() -> Dict:
+        """Load config/config.json for MCP and sandbox settings."""
+        config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+        try:
+            with open(config_path) as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -2629,9 +2655,27 @@ NOT_VULNERABLE: <reason>"""
         self.strategy = StrategyAdapter(self.memory)
         self.auth_manager = AuthManager(self.request_engine, self.recon)
 
+        # Connect MCP tools
+        if self.mcp_client and self.mcp_client.enabled:
+            try:
+                for server_name in self.mcp_client.servers_config:
+                    await self.mcp_client.connect(server_name)
+                mcp_tools = await self.mcp_client.list_tools()
+                tool_count = sum(len(t) for t in mcp_tools.values())
+                await self.log("info", f"MCP tools connected ({tool_count} tools available)")
+            except Exception:
+                pass
+
         return self
 
     async def __aexit__(self, *args):
+        # Disconnect MCP tools
+        if self.mcp_client:
+            try:
+                await self.mcp_client.disconnect_all()
+            except Exception:
+                pass
+
         # Cleanup per-scan sandbox container
         if self.scan_id and self._sandbox:
             try:
@@ -3958,7 +4002,7 @@ Technologies detected: {tech_str}
 Endpoints discovered:
 {endpoints_preview}
 
-Available tools in our sandbox (choose from these ONLY):
+Available sandbox tools (CLI flags as args string):
 - nmap (network scanner with scripts)
 - httpx (HTTP probing + tech detection)
 - subfinder (subdomain enumeration)
@@ -3973,11 +4017,20 @@ Available tools in our sandbox (choose from these ONLY):
 - wafw00f (WAF detection)
 - arjun (parameter discovery)
 
+Available MCP tools (provide structured JSON dict as args):
+- screenshot_capture: Browser screenshot (args: {{"url": "https://..."}})
+- technology_detect: Tech fingerprinting (args: {{"url": "https://..."}})
+- dns_lookup: DNS records (args: {{"domain": "example.com", "record_type": "A"}})
+- execute_cvemap: CVE database lookup (args: {{"severity": "critical", "product": "apache"}})
+- execute_tlsx: TLS/SSL analysis (args: {{"target": "example.com"}})
+- execute_interactsh: OOB callback detection (args: {{"action": "register"}})
+
 NOTE: nuclei and naabu already ran. Pick 1-3 MOST USEFUL additional tools.
-For each tool, provide the exact command-line arguments for {self.target}.
+For sandbox tools: {{"tool": "httpx", "args": "-u {self.target} -tech-detect", "reason": "..."}}
+For MCP tools: {{"tool": "execute_cvemap", "args": {{"severity": "critical"}}, "reason": "..."}}
 
 Respond ONLY with a JSON array:
-[{{"tool": "tool_name", "args": "-flags {self.target}", "reason": "brief reason"}}]"""
+[{{"tool": "tool_name", "args": "...", "reason": "brief reason"}}]"""
 
         try:
             resp = await self.llm.generate(
@@ -3989,7 +4042,9 @@ Respond ONLY with a JSON array:
             decisions = json.loads(resp[start:end])
             # Validate tool names against allowed set
             allowed = {"nmap", "httpx", "subfinder", "katana", "dalfox", "nikto",
-                       "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun"}
+                       "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun",
+                       "screenshot_capture", "technology_detect", "dns_lookup",
+                       "execute_cvemap", "execute_tlsx", "execute_interactsh"}
             validated = [d for d in decisions
                          if isinstance(d, dict) and d.get("tool") in allowed]
             return validated[:5]
@@ -3997,13 +4052,51 @@ Respond ONLY with a JSON array:
             await self.log("info", f"  [STREAM 3] AI tool selection skipped: {e}")
             return []
 
+    # MCP tool names that should be routed through MCP client
+    MCP_TOOLS = {
+        "screenshot_capture", "payload_delivery", "dns_lookup", "port_scan",
+        "technology_detect", "subdomain_enumerate", "execute_cvemap",
+        "execute_tlsx", "execute_asnmap", "execute_interactsh",
+    }
+
+    async def run_mcp_tool(self, tool_name: str, arguments: Optional[Dict] = None) -> Optional[Dict]:
+        """Execute a tool via MCP. Returns parsed dict or None."""
+        if not self.mcp_client or not self.mcp_client.enabled:
+            return None
+        try:
+            result = await self.mcp_client.try_tool(tool_name, arguments or {})
+            if result:
+                return json.loads(result)
+        except (json.JSONDecodeError, Exception):
+            pass
+        return None
+
     async def _execute_dynamic_tool(self, decision: Dict):
-        """Execute an AI-selected tool in the sandbox."""
+        """Execute an AI-selected tool via MCP or sandbox."""
         tool_name = decision.get("tool", "")
         args = decision.get("args", "")
         reason = decision.get("reason", "")
 
         await self.log("info", f"  [TOOL] Running {tool_name}: {reason}")
+
+        # Route MCP tools through MCP client
+        if tool_name in self.MCP_TOOLS:
+            mcp_args = args if isinstance(args, dict) else {"target": self.target}
+            mcp_result = await self.run_mcp_tool(tool_name, mcp_args)
+            if mcp_result:
+                self.tool_executions.append({
+                    "tool": tool_name,
+                    "command": f"MCP:{tool_name}",
+                    "reason": reason,
+                    "via": "mcp",
+                    "findings_count": len(mcp_result.get("findings", [])) if isinstance(mcp_result, dict) else 0,
+                })
+                if isinstance(mcp_result, dict):
+                    for finding in mcp_result.get("findings", []):
+                        await self._process_tool_finding(finding, tool_name)
+                await self.log("info", f"  [MCP] {tool_name}: completed")
+                return
+            # Fall through to sandbox if MCP failed
 
         try:
             if not HAS_SANDBOX:
