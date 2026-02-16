@@ -436,7 +436,7 @@ export interface VulnLabChallenge {
 
 export interface VulnLabRunRequest {
   target_url: string
-  vuln_type: string
+  vuln_type?: string
   challenge_name?: string
   auth_type?: string
   auth_value?: string

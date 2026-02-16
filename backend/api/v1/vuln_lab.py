@@ -33,7 +33,7 @@ lab_results: Dict[str, Dict] = {}
 
 class VulnLabRunRequest(BaseModel):
     target_url: str = Field(..., description="Target URL to test (lab, CTF, etc.)")
-    vuln_type: str = Field(..., description="Vulnerability type to test (e.g. xss_reflected)")
+    vuln_type: Optional[str] = Field(None, description="Vulnerability type to test (e.g. xss_reflected). Optional in CTF mode.")
     challenge_name: Optional[str] = Field(None, description="Name of the lab/challenge")
     auth_type: Optional[str] = Field(None, description="Auth type: cookie, bearer, basic, header")
     auth_value: Optional[str] = Field(None, description="Auth credential value")
@@ -190,17 +190,29 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
     """Launch an isolated vulnerability test for a specific vuln type"""
     import uuid
 
-    # Validate vuln type exists
     registry = VulnerabilityRegistry()
-    if request.vuln_type not in registry.VULNERABILITY_INFO:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown vulnerability type: {request.vuln_type}. Use GET /vuln-lab/types for available types."
-        )
+
+    # CTF mode allows omitting vuln_type (tests all types)
+    if request.ctf_mode:
+        effective_vuln_type = request.vuln_type or "ctf_challenge"
+        if effective_vuln_type != "ctf_challenge" and effective_vuln_type not in registry.VULNERABILITY_INFO:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown vulnerability type: {effective_vuln_type}. Use GET /vuln-lab/types for available types."
+            )
+    else:
+        if not request.vuln_type:
+            raise HTTPException(status_code=400, detail="vuln_type is required when CTF mode is off.")
+        effective_vuln_type = request.vuln_type
+        if effective_vuln_type not in registry.VULNERABILITY_INFO:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown vulnerability type: {effective_vuln_type}. Use GET /vuln-lab/types for available types."
+            )
 
     challenge_id = str(uuid.uuid4())
     agent_id = str(uuid.uuid4())[:8]
-    category = _get_vuln_category(request.vuln_type)
+    category = _get_vuln_category(effective_vuln_type)
 
     # Build auth headers
     auth_headers = {}
@@ -226,7 +238,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
             id=challenge_id,
             target_url=request.target_url,
             challenge_name=request.challenge_name,
-            vuln_type=request.vuln_type,
+            vuln_type=effective_vuln_type,
             vuln_category=category,
             auth_type=request.auth_type,
             auth_value=request.auth_value,
@@ -241,11 +253,12 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         await db.commit()
 
     # Init in-memory tracking (both local and in agent.py's shared dicts)
-    vuln_info = registry.VULNERABILITY_INFO[request.vuln_type]
+    vuln_info = registry.VULNERABILITY_INFO.get(effective_vuln_type, {})
+    vuln_title = vuln_info.get("title", "CTF Challenge" if effective_vuln_type == "ctf_challenge" else effective_vuln_type)
     lab_results[challenge_id] = {
         "status": "running",
         "agent_id": agent_id,
-        "vuln_type": request.vuln_type,
+        "vuln_type": effective_vuln_type,
         "target": request.target_url,
         "progress": 0,
         "phase": "initializing",
@@ -262,7 +275,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         "mode": "full_auto",
         "started_at": datetime.utcnow().isoformat(),
         "target": request.target_url,
-        "task": f"VulnLab: {vuln_info.get('title', request.vuln_type)}",
+        "task": f"VulnLab: {vuln_title}",
         "logs": [],
         "findings": [],
         "report": None,
@@ -276,8 +289,8 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         challenge_id,
         agent_id,
         request.target_url,
-        request.vuln_type,
-        vuln_info.get("title", request.vuln_type),
+        effective_vuln_type,
+        vuln_title,
         auth_headers,
         request.challenge_name,
         request.notes,
@@ -289,7 +302,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         challenge_id=challenge_id,
         agent_id=agent_id,
         status="running",
-        message=f"Testing {vuln_info.get('title', request.vuln_type)} against {request.target_url}"
+        message=f"Testing {vuln_title} against {request.target_url}"
     )
 
 
@@ -380,9 +393,14 @@ async def _run_lab_test(
                 recon_enabled=True,
                 progress=0,
                 current_phase="initializing",
-                custom_prompt=f"Focus ONLY on testing for {vuln_title} ({vuln_type}). "
-                              f"Do NOT test other vulnerability types. "
-                              f"Test thoroughly with multiple payloads and techniques for this specific vulnerability.",
+                custom_prompt=(
+                    f"CTF Challenge: Test ALL vulnerability types against the target. "
+                    f"Prioritize speed and flag capture. Try injection, auth bypass, file access, SSRF, and more."
+                    if vuln_type == "ctf_challenge" else
+                    f"Focus ONLY on testing for {vuln_title} ({vuln_type}). "
+                    f"Do NOT test other vulnerability types. "
+                    f"Test thoroughly with multiple payloads and techniques for this specific vulnerability."
+                ),
             )
             db.add(scan)
             await db.commit()
@@ -413,14 +431,25 @@ async def _run_lab_test(
                 agent_results[agent_id]["scan_id"] = scan_id
 
             # Build focused prompt for isolated testing
-            focused_prompt = (
-                f"You are testing specifically for {vuln_title} ({vuln_type}). "
-                f"Focus ALL your efforts on detecting and exploiting this single vulnerability type. "
-                f"Do NOT scan for other vulnerability types. "
-                f"Use all relevant payloads and techniques for {vuln_type}. "
-                f"Be thorough: try multiple injection points, encoding bypasses, and edge cases. "
-                f"This is a lab/CTF challenge - the vulnerability is expected to exist."
-            )
+            if vuln_type == "ctf_challenge":
+                focused_prompt = (
+                    "You are solving a CTF challenge. Test ALL vulnerability types: "
+                    "XSS, SQLi, command injection, SSTI, SSRF, path traversal, auth bypass, IDOR, "
+                    "file upload, XXE, CSRF, business logic flaws, and more. "
+                    "Enumerate all input vectors: URL params, form fields, headers, cookies, JSON bodies. "
+                    "Try common CTF techniques: source code review, robots.txt, directory bruteforce, "
+                    "hidden parameters, JWT manipulation, cookie tampering. "
+                    "Be aggressive and fast - the goal is to find and capture flags."
+                )
+            else:
+                focused_prompt = (
+                    f"You are testing specifically for {vuln_title} ({vuln_type}). "
+                    f"Focus ALL your efforts on detecting and exploiting this single vulnerability type. "
+                    f"Do NOT scan for other vulnerability types. "
+                    f"Use all relevant payloads and techniques for {vuln_type}. "
+                    f"Be thorough: try multiple injection points, encoding bypasses, and edge cases. "
+                    f"This is a lab/CTF challenge - the vulnerability is expected to exist."
+                )
             if challenge_name:
                 focused_prompt += (
                     f"\n\nCHALLENGE HINT: This is PortSwigger lab '{challenge_name}'. "

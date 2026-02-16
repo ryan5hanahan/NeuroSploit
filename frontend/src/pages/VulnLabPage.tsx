@@ -167,7 +167,7 @@ export default function VulnLabPage() {
         : undefined
       const resp = await vulnLabApi.run({
         target_url: targetUrl.trim(),
-        vuln_type: selectedVulnType,
+        vuln_type: selectedVulnType || undefined,
         challenge_name: challengeName || undefined,
         auth_type: authType || undefined,
         auth_value: authValue || undefined,
@@ -532,11 +532,15 @@ export default function VulnLabPage() {
             {!isRunning ? (
               <button
                 onClick={handleStart}
-                disabled={!targetUrl.trim() || !selectedVulnType}
-                className="w-full py-4 bg-purple-500 hover:bg-purple-600 disabled:bg-dark-600 disabled:text-dark-400 text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-3"
+                disabled={!targetUrl.trim() || (!selectedVulnType && !ctfMode)}
+                className={`w-full py-4 ${
+                  ctfMode && !selectedVulnType
+                    ? 'bg-yellow-500 hover:bg-yellow-600'
+                    : 'bg-purple-500 hover:bg-purple-600'
+                } disabled:bg-dark-600 disabled:text-dark-400 text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-3`}
               >
-                <FlaskConical className="w-6 h-6" />
-                START TEST
+                {ctfMode ? <Flag className="w-6 h-6" /> : <FlaskConical className="w-6 h-6" />}
+                {ctfMode && !selectedVulnType ? 'START CTF' : 'START TEST'}
               </button>
             ) : (
               <button
