@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import select, func, text
 
 from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-from backend.core.governance import GovernanceAgent, create_vuln_lab_scope
+from backend.core.governance import GovernanceAgent, create_vuln_lab_scope, create_ctf_scope
 from backend.core.vuln_engine.registry import VulnerabilityRegistry
 from backend.core.ctf_flag_detector import CTFFlagDetector
 from backend.db.database import async_session_factory
@@ -433,13 +433,28 @@ async def _run_lab_test(
             # Build focused prompt for isolated testing
             if vuln_type == "ctf_challenge":
                 focused_prompt = (
-                    "You are solving a CTF challenge. Test ALL vulnerability types: "
-                    "XSS, SQLi, command injection, SSTI, SSRF, path traversal, auth bypass, IDOR, "
-                    "file upload, XXE, CSRF, business logic flaws, and more. "
-                    "Enumerate all input vectors: URL params, form fields, headers, cookies, JSON bodies. "
-                    "Try common CTF techniques: source code review, robots.txt, directory bruteforce, "
-                    "hidden parameters, JWT manipulation, cookie tampering. "
-                    "Be aggressive and fast - the goal is to find and capture flags."
+                    "You are solving a CTF challenge. Work in three phases:\n\n"
+                    "PHASE 1 — RAPID ENUMERATION (first 2 minutes):\n"
+                    "- Fetch /robots.txt, /sitemap.xml, /.well-known/\n"
+                    "- Probe API paths: /api/, /rest/, /graphql, /v1/, /v2/\n"
+                    "- Check for admin panels: /admin, /administrator, /console, /dashboard\n"
+                    "- Discover SPA routes and JS bundles (look for .js.map, webpack chunks)\n"
+                    "- Enumerate forms, login pages, and search functionality\n\n"
+                    "PHASE 2 — HIGH-VALUE ATTACKS:\n"
+                    "- SQLi on login forms (try admin'--, ' OR 1=1--, UNION SELECT)\n"
+                    "- Search parameter injection (q=<script>, q=' OR 1=1--)\n"
+                    "- IDOR on user endpoints (/api/users/1, /api/users/2, /profile?id=)\n"
+                    "- Path traversal (/ftp, /download?file=../../../etc/passwd)\n"
+                    "- XSS in every form field and URL parameter\n"
+                    "- Exposed API endpoints (Swagger, GraphQL introspection)\n"
+                    "- Default credentials (admin/admin, admin/password)\n\n"
+                    "PHASE 3 — BROAD SWEEP:\n"
+                    "- Test ALL vulnerability types across ALL discovered endpoints\n"
+                    "- JWT/cookie/parameter manipulation on every auth-gated route\n"
+                    "- SSTI, SSRF, XXE, command injection on all input vectors\n"
+                    "- File upload bypass, deserialization, race conditions\n"
+                    "- Check headers: Host injection, CORS, cache poisoning\n"
+                    "Cast the widest net possible — test every input with every technique."
                 )
             else:
                 focused_prompt = (
@@ -479,7 +494,10 @@ async def _run_lab_test(
                 "ctf_mode": ctf_mode,
             }
 
-            scope = create_vuln_lab_scope(target, vuln_type)
+            if ctf_mode:
+                scope = create_ctf_scope(target)
+            else:
+                scope = create_vuln_lab_scope(target, vuln_type)
             governance = GovernanceAgent(scope, log_callback=log_callback)
 
             async with AutonomousAgent(

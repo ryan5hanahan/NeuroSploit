@@ -74,6 +74,7 @@ class ScopeProfile(str, Enum):
     VULN_LAB = "vuln_lab"
     FULL_AUTO = "full_auto"
     RECON_ONLY = "recon_only"
+    CTF = "ctf"
     CUSTOM = "custom"
 
 
@@ -280,6 +281,21 @@ def create_full_auto_scope(target_url: str) -> ScanScope:
         skip_port_scan=False,
         max_recon_depth="full",
         nuclei_template_tags=None,
+    )
+
+
+def create_ctf_scope(target_url: str) -> ScanScope:
+    """Permissive scope for CTF challenges — all vuln types, medium recon."""
+    domain = _extract_domain(target_url)
+    return ScanScope(
+        profile=ScopeProfile.CTF,
+        allowed_domains=frozenset({domain}),
+        allowed_vuln_types=frozenset(),   # empty = ALL types allowed
+        allowed_phases=frozenset(),       # all phases allowed
+        skip_subdomain_enum=True,
+        skip_port_scan=True,
+        max_recon_depth="medium",
+        nuclei_template_tags=None,        # run all Nuclei templates
     )
 
 
