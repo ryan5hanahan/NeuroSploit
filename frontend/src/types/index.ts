@@ -409,6 +409,28 @@ export interface VulnLabChallenge {
   logs?: VulnLabLogEntry[]
   logs_count?: number
   endpoints_count?: number
+  ctf_mode?: boolean
+  ctf_flag_patterns?: string[] | null
+  ctf_flags_captured?: Array<{
+    flag_value: string
+    platform: string
+    source: string
+    found_in_url: string
+    found_in_field: string
+    request_method: string
+    request_payload: string
+    timestamp: string
+    finding_id: string
+  }>
+  ctf_flags_count?: number
+  ctf_time_to_first_flag?: number | null
+  ctf_metrics?: {
+    flags_captured: number
+    unique_platforms: string[]
+    time_to_first_flag: number | null
+    elapsed_seconds: number
+    flag_timeline: Array<{ flag: string; platform: string; elapsed_seconds: number }>
+  } | null
   created_at: string | null
 }
 
@@ -420,6 +442,8 @@ export interface VulnLabRunRequest {
   auth_value?: string
   custom_headers?: Record<string, string>
   notes?: string
+  ctf_mode?: boolean
+  ctf_flag_patterns?: string[]
 }
 
 export interface VulnLabRunResponse {
@@ -444,6 +468,20 @@ export interface VulnLabRealtimeStatus {
   agent_id: string | null
   vuln_type?: string
   target?: string
+  ctf_mode?: boolean
+  ctf_flags?: Array<{
+    flag_value: string
+    platform: string
+    source: string
+    found_in_url: string
+    timestamp: string
+  }>
+  ctf_metrics?: {
+    flags_captured: number
+    unique_platforms: string[]
+    time_to_first_flag: number | null
+    elapsed_seconds: number
+  } | null
   source: string
 }
 
@@ -467,6 +505,7 @@ export interface VulnLabStats {
   detection_rate: number
   by_type: Record<string, { detected: number; not_detected: number; error: number; total: number }>
   by_category: Record<string, { detected: number; not_detected: number; error: number; total: number }>
+  ctf_stats?: { total_ctf_challenges: number; total_flags_captured: number }
 }
 
 // Sandbox Container types

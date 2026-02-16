@@ -4,7 +4,7 @@ import {
   FlaskConical, ChevronDown, ChevronUp, Loader2, Lock,
   AlertTriangle, CheckCircle2, XCircle, Play, Square,
   Trash2, Eye, Search, BarChart3, Clock, Target,
-  Terminal, Shield, Globe, FileText, ChevronRight
+  Terminal, Shield, Globe, FileText, ChevronRight, Flag
 } from 'lucide-react'
 import { vulnLabApi } from '../services/api'
 import type { VulnTypeCategory, VulnLabChallenge, VulnLabStats, VulnLabLogEntry } from '../types'
@@ -70,6 +70,8 @@ export default function VulnLabPage() {
   const [authValue, setAuthValue] = useState('')
   const [notes, setNotes] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
+  const [ctfMode, setCtfMode] = useState(false)
+  const [ctfPatterns, setCtfPatterns] = useState('')
 
   // Data state
   const [categories, setCategories] = useState<Record<string, VulnTypeCategory>>({})
@@ -160,6 +162,9 @@ export default function VulnLabPage() {
     setShowLogs(true)
 
     try {
+      const ctfPatternsArr = ctfPatterns.trim()
+        ? ctfPatterns.split('\n').map(p => p.trim()).filter(Boolean)
+        : undefined
       const resp = await vulnLabApi.run({
         target_url: targetUrl.trim(),
         vuln_type: selectedVulnType,
@@ -167,6 +172,8 @@ export default function VulnLabPage() {
         auth_type: authType || undefined,
         auth_value: authValue || undefined,
         notes: notes || undefined,
+        ctf_mode: ctfMode || undefined,
+        ctf_flag_patterns: ctfPatternsArr,
       })
       setRunningChallengeId(resp.challenge_id)
     } catch (err: any) {
@@ -457,6 +464,62 @@ export default function VulnLabPage() {
               />
             </div>
 
+            {/* CTF Mode Toggle */}
+            <div className="mb-6">
+              <div
+                className={`p-4 rounded-xl border transition-colors ${
+                  ctfMode
+                    ? 'bg-yellow-500/10 border-yellow-500/30'
+                    : 'bg-dark-900 border-dark-600'
+                }`}
+              >
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <Flag className={`w-5 h-5 ${ctfMode ? 'text-yellow-400' : 'text-dark-500'}`} />
+                    <div>
+                      <span className={`text-sm font-medium ${ctfMode ? 'text-yellow-300' : 'text-dark-300'}`}>
+                        CTF Mode
+                      </span>
+                      <p className="text-xs text-dark-500 mt-0.5">
+                        Auto-detect flags from NetWars, HTB, THM, PortSwigger, PicoCTF
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={ctfMode}
+                    onClick={() => setCtfMode(!ctfMode)}
+                    disabled={isRunning}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      ctfMode ? 'bg-yellow-500' : 'bg-dark-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                      ctfMode ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </label>
+
+                {/* Custom patterns textarea (collapsible) */}
+                {ctfMode && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-yellow-400/70 mb-1">
+                      Custom Flag Patterns (optional, one regex per line)
+                    </label>
+                    <textarea
+                      value={ctfPatterns}
+                      onChange={e => setCtfPatterns(e.target.value)}
+                      rows={3}
+                      disabled={isRunning}
+                      placeholder={"secret\\{[^}]+\\}\nMY_FLAG_[A-Z0-9]+"}
+                      className="w-full px-3 py-2 bg-dark-900 border border-yellow-500/20 rounded-lg text-yellow-300 text-xs font-mono placeholder-dark-600 focus:outline-none focus:border-yellow-500/40 disabled:opacity-50"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Error */}
             {error && (
               <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2">
@@ -553,14 +616,44 @@ export default function VulnLabPage() {
                   </div>
                 )}
 
+                {/* CTF Flag Cards */}
+                {runningStatus.ctf_mode && runningStatus.ctf_flags && runningStatus.ctf_flags.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    <h4 className="text-xs font-medium text-yellow-400 flex items-center gap-1">
+                      <Flag className="w-3.5 h-3.5" /> Captured Flags ({runningStatus.ctf_flags.length})
+                    </h4>
+                    {runningStatus.ctf_flags.map((f: any, i: number) => (
+                      <div key={i} className="p-2 bg-yellow-500/5 border border-yellow-500/20 rounded-lg flex items-center gap-3">
+                        <Flag className="w-4 h-4 text-yellow-400 shrink-0" />
+                        <code className="text-sm text-yellow-300 font-mono break-all flex-1">{f.flag_value}</code>
+                        <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs shrink-0">
+                          {f.platform}
+                        </span>
+                      </div>
+                    ))}
+                    {runningStatus.ctf_metrics?.time_to_first_flag != null && (
+                      <p className="text-xs text-dark-500">
+                        Time to first flag: {runningStatus.ctf_metrics.time_to_first_flag}s
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Result badge on completion */}
                 {runningStatus.result && (
                   <div className="mt-4 flex items-center gap-3">
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      RESULT_BADGE[runningStatus.result]?.bg || 'bg-gray-500/20'
-                    } ${RESULT_BADGE[runningStatus.result]?.text || 'text-gray-400'}`}>
-                      {RESULT_BADGE[runningStatus.result]?.label || runningStatus.result}
-                    </span>
+                    {runningStatus.ctf_mode && runningStatus.ctf_flags?.length > 0 ? (
+                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-yellow-500/20 text-yellow-400 flex items-center gap-1.5">
+                        <Flag className="w-3.5 h-3.5" />
+                        Solved ({runningStatus.ctf_flags.length} flag{runningStatus.ctf_flags.length !== 1 ? 's' : ''})
+                      </span>
+                    ) : (
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        RESULT_BADGE[runningStatus.result]?.bg || 'bg-gray-500/20'
+                      } ${RESULT_BADGE[runningStatus.result]?.text || 'text-gray-400'}`}>
+                        {RESULT_BADGE[runningStatus.result]?.label || runningStatus.result}
+                      </span>
+                    )}
                     {runningStatus.scan_id && (
                       <button
                         onClick={() => navigate(`/scan/${runningStatus.scan_id}`)}
@@ -675,9 +768,19 @@ export default function VulnLabPage() {
                             <span className={`px-2 py-0.5 rounded text-xs ${statusBadge.bg} ${statusBadge.text}`}>
                               {ch.status}
                             </span>
-                            {resultBadge && (
+                            {ch.ctf_mode && (ch.ctf_flags_count ?? 0) > 0 ? (
+                              <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400 flex items-center gap-1">
+                                <Flag className="w-3 h-3" />
+                                Solved ({ch.ctf_flags_count} flag{ch.ctf_flags_count !== 1 ? 's' : ''})
+                              </span>
+                            ) : resultBadge ? (
                               <span className={`px-2 py-0.5 rounded text-xs ${resultBadge.bg} ${resultBadge.text}`}>
                                 {resultBadge.label}
+                              </span>
+                            ) : null}
+                            {ch.ctf_mode && (
+                              <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/10 text-yellow-500/70">
+                                CTF
                               </span>
                             )}
                           </div>
@@ -765,6 +868,37 @@ export default function VulnLabPage() {
                             </div>
                           ) : expandedChallengeData ? (
                             <div className="p-4 space-y-4">
+                              {/* Captured Flags (CTF mode) */}
+                              {expandedChallengeData.ctf_mode && (expandedChallengeData.ctf_flags_captured || expandedChallengeData.ctf_flags || []).length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium text-yellow-400 mb-2 flex items-center gap-2">
+                                    <Flag className="w-4 h-4" />
+                                    Captured Flags ({(expandedChallengeData.ctf_flags_captured || expandedChallengeData.ctf_flags || []).length})
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {(expandedChallengeData.ctf_flags_captured || expandedChallengeData.ctf_flags || []).map((f: any, i: number) => (
+                                      <div key={i} className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <Flag className="w-4 h-4 text-yellow-400" />
+                                          <code className="text-sm text-yellow-300 font-mono break-all">{f.flag_value}</code>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-xs text-dark-500 mt-1">
+                                          <span className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-400/70 rounded">{f.platform}</span>
+                                          <span>Source: {f.source}</span>
+                                          {f.found_in_url && <span className="truncate max-w-[200px]">{f.found_in_url}</span>}
+                                          {f.timestamp && <span>{new Date(f.timestamp).toLocaleTimeString()}</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {expandedChallengeData.ctf_time_to_first_flag != null && (
+                                    <p className="text-xs text-dark-500 mt-2">
+                                      Time to first flag: {expandedChallengeData.ctf_time_to_first_flag}s
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Findings Detail */}
                               {(expandedChallengeData.findings_detail || expandedChallengeData.findings || []).length > 0 && (
                                 <div>
@@ -921,6 +1055,26 @@ export default function VulnLabPage() {
                         </div>
                       )
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* CTF Performance Card */}
+              {stats.ctf_stats && stats.ctf_stats.total_ctf_challenges > 0 && (
+                <div className="bg-dark-800 border border-yellow-500/30 rounded-2xl p-6">
+                  <h3 className="text-yellow-400 font-semibold mb-4 flex items-center gap-2">
+                    <Flag className="w-5 h-5" />
+                    CTF Performance
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-yellow-500/5 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-400">{stats.ctf_stats.total_flags_captured}</div>
+                      <div className="text-xs text-dark-500 mt-1">Total Flags Captured</div>
+                    </div>
+                    <div className="text-center p-3 bg-yellow-500/5 rounded-lg">
+                      <div className="text-2xl font-bold text-yellow-400">{stats.ctf_stats.total_ctf_challenges}</div>
+                      <div className="text-xs text-dark-500 mt-1">CTF Challenges</div>
+                    </div>
                   </div>
                 </div>
               )}

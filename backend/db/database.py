@@ -215,6 +215,18 @@ async def _run_migrations(conn):
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN logs JSON DEFAULT '[]'"))
             if "endpoints_count" not in columns:
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN endpoints_count INTEGER DEFAULT 0"))
+            if "ctf_mode" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_mode BOOLEAN DEFAULT 0"))
+            if "ctf_flag_patterns" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_flag_patterns JSON"))
+            if "ctf_flags_captured" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_flags_captured JSON DEFAULT '[]'"))
+            if "ctf_flags_count" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_flags_count INTEGER DEFAULT 0"))
+            if "ctf_time_to_first_flag" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_time_to_first_flag FLOAT"))
+            if "ctf_metrics" not in columns:
+                await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_metrics JSON"))
 
         logger.info("Database migrations completed")
     except Exception as e:

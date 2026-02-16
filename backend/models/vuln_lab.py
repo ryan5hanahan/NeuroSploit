@@ -62,6 +62,14 @@ class VulnLabChallenge(Base):
     # Endpoints discovered count
     endpoints_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # CTF mode fields
+    ctf_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    ctf_flag_patterns: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
+    ctf_flags_captured: Mapped[List] = mapped_column(JSON, default=list)
+    ctf_flags_count: Mapped[int] = mapped_column(Integer, default=0)
+    ctf_time_to_first_flag: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ctf_metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -90,5 +98,11 @@ class VulnLabChallenge(Base):
             "notes": self.notes,
             "logs": self.logs or [],
             "endpoints_count": self.endpoints_count,
+            "ctf_mode": self.ctf_mode,
+            "ctf_flag_patterns": self.ctf_flag_patterns,
+            "ctf_flags_captured": self.ctf_flags_captured or [],
+            "ctf_flags_count": self.ctf_flags_count,
+            "ctf_time_to_first_flag": self.ctf_time_to_first_flag,
+            "ctf_metrics": self.ctf_metrics,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

@@ -13,6 +13,7 @@ from sqlalchemy import select, func, text
 from backend.core.autonomous_agent import AutonomousAgent, OperationMode
 from backend.core.governance import GovernanceAgent, create_vuln_lab_scope
 from backend.core.vuln_engine.registry import VulnerabilityRegistry
+from backend.core.ctf_flag_detector import CTFFlagDetector
 from backend.db.database import async_session_factory
 from backend.models import Scan, Target, Vulnerability, Endpoint, Report, VulnLabChallenge
 
@@ -38,6 +39,8 @@ class VulnLabRunRequest(BaseModel):
     auth_value: Optional[str] = Field(None, description="Auth credential value")
     custom_headers: Optional[Dict[str, str]] = Field(None, description="Custom HTTP headers")
     notes: Optional[str] = Field(None, description="Notes about this challenge")
+    ctf_mode: bool = Field(False, description="Enable CTF flag detection mode")
+    ctf_flag_patterns: Optional[List[str]] = Field(None, description="Custom regex patterns for flag detection")
 
 
 class VulnLabResponse(BaseModel):
@@ -231,6 +234,8 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
             agent_id=agent_id,
             started_at=datetime.utcnow(),
             notes=request.notes,
+            ctf_mode=request.ctf_mode,
+            ctf_flag_patterns=request.ctf_flag_patterns,
         )
         db.add(challenge)
         await db.commit()
@@ -246,6 +251,9 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         "phase": "initializing",
         "findings": [],
         "logs": [],
+        "ctf_mode": request.ctf_mode,
+        "ctf_flags": [],
+        "ctf_metrics": None,
     }
 
     # Also register in agent.py's shared results dict so /agent/status works
@@ -273,6 +281,8 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         auth_headers,
         request.challenge_name,
         request.notes,
+        request.ctf_mode,
+        request.ctf_flag_patterns,
     )
 
     return VulnLabResponse(
@@ -292,6 +302,8 @@ async def _run_lab_test(
     auth_headers: Dict,
     challenge_name: Optional[str] = None,
     notes: Optional[str] = None,
+    ctf_mode: bool = False,
+    ctf_flag_patterns: Optional[List[str]] = None,
 ):
     """Background task: run the agent focused on a single vuln type"""
     import asyncio
@@ -299,6 +311,9 @@ async def _run_lab_test(
     logs = []
     findings_list = []
     scan_id = None
+
+    # Init CTF flag detector if CTF mode is enabled
+    flag_detector = CTFFlagDetector(custom_patterns=ctf_flag_patterns) if ctf_mode else None
 
     async def log_callback(level: str, message: str):
         source = "llm" if any(tag in message for tag in ["[AI]", "[LLM]", "[USER PROMPT]", "[AI RESPONSE]"]) else "script"
@@ -310,6 +325,16 @@ async def _run_lab_test(
         # Also update agent.py's shared dict so /agent/logs works
         if agent_id in agent_results:
             agent_results[agent_id]["logs"] = logs
+        # CTF flag scanning in log messages
+        if flag_detector and "[CTF]" not in message:
+            new_flags = flag_detector.scan_text(message, source="log")
+            for nf in new_flags:
+                flag_msg = f"[CTF] FLAG CAPTURED: {nf.flag_value} (platform: {nf.platform}, source: {nf.source})"
+                flag_entry = {"level": "info", "message": flag_msg, "time": datetime.utcnow().isoformat(), "source": "script"}
+                logs.append(flag_entry)
+                if challenge_id in lab_results:
+                    lab_results[challenge_id]["ctf_flags"] = flag_detector.to_serializable()
+                    lab_results[challenge_id]["ctf_metrics"] = flag_detector.get_metrics()
 
     async def progress_callback(progress: int, phase: str):
         if challenge_id in lab_results:
@@ -326,6 +351,24 @@ async def _run_lab_test(
         if agent_id in agent_results:
             agent_results[agent_id]["findings"] = findings_list
             agent_results[agent_id]["findings_count"] = len(findings_list)
+        # CTF flag scanning in findings
+        if flag_detector:
+            resp_body = str(finding.get("response", "") or "") + str(finding.get("evidence", "") or "")
+            resp_dict = {"body": resp_body, "headers": {}}
+            req_url = finding.get("affected_endpoint", "") or finding.get("url", "")
+            new_flags = flag_detector.scan_response(
+                resp_dict, request_url=req_url,
+                method=finding.get("request_method", ""),
+                payload=str(finding.get("payload", "") or ""),
+            )
+            for nf in new_flags:
+                nf.finding_id = finding.get("id", "")
+                flag_msg = f"[CTF] FLAG CAPTURED: {nf.flag_value} (platform: {nf.platform}, source: finding)"
+                flag_entry = {"level": "info", "message": flag_msg, "time": datetime.utcnow().isoformat(), "source": "script"}
+                logs.append(flag_entry)
+            if new_flags and challenge_id in lab_results:
+                lab_results[challenge_id]["ctf_flags"] = flag_detector.to_serializable()
+                lab_results[challenge_id]["ctf_metrics"] = flag_detector.get_metrics()
 
     try:
         async with async_session_factory() as db:
@@ -388,11 +431,23 @@ async def _run_lab_test(
             if notes:
                 focused_prompt += f"\n\nUSER NOTES: {notes}"
 
+            if ctf_mode:
+                focused_prompt += (
+                    "\n\nCTF MODE ACTIVE: This is a CTF challenge. Prioritize SPEED and FLAG CAPTURE. "
+                    "Look for flags in response bodies, headers, page content, and error messages. "
+                    "Common flag formats: flag{...}, HTB{...}, THM{...}, picoCTF{...}, CTF{...}. "
+                    "For PortSwigger labs, look for 'Congratulations, you solved the lab' banners. "
+                    "Try broad payload sets quickly rather than methodical enumeration. "
+                    "If you find a flag or solve confirmation, report it immediately. "
+                    "Cast a wide net: test all input fields, URL params, headers, cookies, and JSON bodies."
+                )
+
             lab_ctx = {
                 "challenge_name": challenge_name,
                 "notes": notes,
                 "vuln_type": vuln_type,
                 "is_lab": True,
+                "ctf_mode": ctf_mode,
             }
 
             scope = create_vuln_lab_scope(target, vuln_type)
@@ -491,21 +546,25 @@ async def _run_lab_test(
                         )
                     db.add(endpoint)
 
-                # Determine result - more flexible matching
-                # Check if any finding matches the target vuln type
-                target_type_findings = [
-                    f for f in findings
-                    if _vuln_type_matches(vuln_type, f.get("vulnerability_type", ""))
-                ]
-                # If the agent found ANY vulnerability, it detected something
-                # (since we told it to focus on one type, any finding is relevant)
-                if target_type_findings:
-                    result_status = "detected"
-                elif len(findings) > 0:
-                    # Found other vulns but not the exact type
+                # CTF mode: flag captured = solved, regardless of vuln matching
+                if ctf_mode and flag_detector and flag_detector.captured_flags:
                     result_status = "detected"
                 else:
-                    result_status = "not_detected"
+                    # Determine result - more flexible matching
+                    # Check if any finding matches the target vuln type
+                    target_type_findings = [
+                        f for f in findings
+                        if _vuln_type_matches(vuln_type, f.get("vulnerability_type", ""))
+                    ]
+                    # If the agent found ANY vulnerability, it detected something
+                    # (since we told it to focus on one type, any finding is relevant)
+                    if target_type_findings:
+                        result_status = "detected"
+                    elif len(findings) > 0:
+                        # Found other vulns but not the exact type
+                        result_status = "detected"
+                    else:
+                        result_status = "not_detected"
 
                 # Update scan
                 scan.status = "completed"
@@ -552,6 +611,14 @@ async def _run_lab_test(
                     challenge.findings_detail = findings_detail
                     challenge.logs = persisted_logs
                     challenge.endpoints_count = endpoints_count
+                    if ctf_mode and flag_detector:
+                        challenge.ctf_flags_captured = flag_detector.to_serializable()
+                        challenge.ctf_flags_count = len(flag_detector.captured_flags)
+                        challenge.ctf_time_to_first_flag = (
+                            round(flag_detector.first_flag_time - flag_detector.start_time, 2)
+                            if flag_detector.first_flag_time else None
+                        )
+                        challenge.ctf_metrics = flag_detector.get_metrics()
 
                 await db.commit()
 
@@ -701,6 +768,9 @@ async def get_challenge(challenge_id: str):
             "agent_id": mem.get("agent_id"),
             "vuln_type": mem.get("vuln_type"),
             "target": mem.get("target"),
+            "ctf_mode": mem.get("ctf_mode", False),
+            "ctf_flags": mem.get("ctf_flags", []),
+            "ctf_metrics": mem.get("ctf_metrics"),
             "source": "realtime",
         }
 
@@ -784,6 +854,22 @@ async def get_lab_stats():
         completed = status_counts.get("completed", 0)
         detection_rate = round((detected / completed * 100), 1) if completed > 0 else 0
 
+        # CTF aggregate stats
+        ctf_count_q = await db.execute(
+            select(func.count(VulnLabChallenge.id)).where(
+                VulnLabChallenge.ctf_mode == True,
+                VulnLabChallenge.status == "completed",
+            )
+        )
+        total_ctf_challenges = ctf_count_q.scalar() or 0
+
+        ctf_flags_q = await db.execute(
+            select(func.sum(VulnLabChallenge.ctf_flags_count)).where(
+                VulnLabChallenge.ctf_mode == True,
+            )
+        )
+        total_flags_captured = ctf_flags_q.scalar() or 0
+
         return {
             "total": total,
             "running": running,
@@ -792,6 +878,10 @@ async def get_lab_stats():
             "detection_rate": detection_rate,
             "by_type": type_stats,
             "by_category": cat_stats,
+            "ctf_stats": {
+                "total_ctf_challenges": total_ctf_challenges,
+                "total_flags_captured": total_flags_captured,
+            },
         }
 
 
