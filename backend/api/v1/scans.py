@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from backend.db.database import get_db
 from backend.models import Scan, Target, Endpoint, Vulnerability
+from backend.models.tradecraft import Tradecraft, ScanTradecraft
 from backend.schemas.scan import ScanCreate, ScanUpdate, ScanResponse, ScanListResponse, ScanProgress
 from backend.services.scan_service import run_scan_task, skip_to_phase as _skip_to_phase, PHASE_ORDER
 from backend.core import scan_registry
@@ -228,6 +229,14 @@ async def create_scan(
         )
         db.add(target)
         targets.append(target)
+
+    # Associate tradecraft TTPs if specified
+    if scan_data.tradecraft_ids:
+        for tid in scan_data.tradecraft_ids:
+            tc_result = await db.execute(select(Tradecraft).where(Tradecraft.id == tid))
+            if tc_result.scalar_one_or_none() is None:
+                raise HTTPException(status_code=400, detail=f"Tradecraft TTP not found: {tid}")
+            db.add(ScanTradecraft(scan_id=scan.id, tradecraft_id=tid))
 
     await db.commit()
     await db.refresh(scan)
@@ -447,6 +456,13 @@ async def repeat_scan(
         )
         db.add(new_target)
         new_targets.append(new_target)
+
+    # Clone tradecraft associations from original scan
+    tc_result = await db.execute(
+        select(ScanTradecraft).where(ScanTradecraft.scan_id == scan_id)
+    )
+    for st in tc_result.scalars().all():
+        db.add(ScanTradecraft(scan_id=new_scan.id, tradecraft_id=st.tradecraft_id))
 
     await db.commit()
     await db.refresh(new_scan)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.db.database import init_db, close_db
-from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox
+from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft
 from backend.api.websocket import manager as ws_manager
 
 
@@ -22,6 +22,16 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     await init_db()
     print("Database initialized")
+
+    # Seed built-in tradecraft TTPs
+    try:
+        from backend.api.v1.tradecraft import seed_builtin_tradecraft
+        from backend.db.database import async_session_maker as _asm
+        async with _asm() as seed_db:
+            await seed_builtin_tradecraft(seed_db)
+        print("Tradecraft TTPs seeded")
+    except Exception as e:
+        print(f"Tradecraft seed skipped: {e}")
 
     # Initialize scheduler
     try:
@@ -100,6 +110,7 @@ app.include_router(scheduler.router, prefix="/api/v1/scheduler", tags=["Schedule
 app.include_router(vuln_lab.router, prefix="/api/v1/vuln-lab", tags=["Vulnerability Lab"])
 app.include_router(terminal.router, prefix="/api/v1/terminal", tags=["Terminal Agent"])
 app.include_router(sandbox.router, prefix="/api/v1/sandbox", tags=["Sandbox"])
+app.include_router(tradecraft.router, prefix="/api/v1/tradecraft", tags=["Tradecraft"])
 
 
 @app.get("/api/health")

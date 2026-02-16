@@ -28,6 +28,7 @@ class ScanCreate(BaseModel):
     config: dict = Field(default_factory=dict, description="Additional configuration")
     auth: Optional[AuthConfig] = Field(None, description="Authentication configuration")
     custom_headers: Optional[dict] = Field(None, description="Custom HTTP headers to include")
+    tradecraft_ids: Optional[List[str]] = Field(None, description="TTP IDs to use for this scan")
 
 
 class ScanUpdate(BaseModel):

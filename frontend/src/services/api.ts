@@ -4,7 +4,8 @@ import type {
   AgentTask, AgentRequest, AgentResponse, AgentStatus, AgentLog, AgentMode,
   ScanAgentTask, ActivityFeedItem, ScheduleJob, ScheduleJobRequest, AgentRole,
   VulnLabChallenge, VulnLabRunRequest, VulnLabRunResponse, VulnLabRealtimeStatus,
-  VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse
+  VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
+  TradecraftTTP
 } from '../types'
 
 const api = axios.create({
@@ -35,6 +36,7 @@ export const scansApi = {
     recon_enabled?: boolean
     custom_prompt?: string
     prompt_id?: string
+    tradecraft_ids?: string[]
   }): Promise<Scan> => {
     const response = await api.post('/scans', data)
     return response.data
@@ -661,6 +663,48 @@ export const sandboxApi = {
 
   cleanupOrphans: async () => {
     const response = await api.post('/sandbox/cleanup-orphans')
+    return response.data
+  },
+}
+
+// Tradecraft TTP API
+export const tradecraftApi = {
+  list: async (category?: string, enabled?: boolean): Promise<TradecraftTTP[]> => {
+    const params = new URLSearchParams()
+    if (category) params.append('category', category)
+    if (enabled !== undefined) params.append('enabled', String(enabled))
+    const qs = params.toString()
+    const response = await api.get(`/tradecraft${qs ? `?${qs}` : ''}`)
+    return response.data
+  },
+
+  get: async (id: string): Promise<TradecraftTTP> => {
+    const response = await api.get(`/tradecraft/${id}`)
+    return response.data
+  },
+
+  create: async (data: { name: string; content: string; category: string; description?: string; enabled?: boolean }): Promise<TradecraftTTP> => {
+    const response = await api.post('/tradecraft', data)
+    return response.data
+  },
+
+  update: async (id: string, data: { name?: string; content?: string; category?: string; description?: string; enabled?: boolean }): Promise<TradecraftTTP> => {
+    const response = await api.put(`/tradecraft/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`/tradecraft/${id}`)
+    return response.data
+  },
+
+  bulkToggle: async (ids: string[], enabled: boolean) => {
+    const response = await api.post('/tradecraft/toggle', { ids, enabled })
+    return response.data
+  },
+
+  getForScan: async (scanId: string): Promise<TradecraftTTP[]> => {
+    const response = await api.get(`/tradecraft/for-scan/${scanId}`)
     return response.data
   },
 }

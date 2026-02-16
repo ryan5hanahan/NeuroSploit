@@ -491,6 +491,19 @@ export interface SandboxPoolStatus {
   error?: string
 }
 
+// Tradecraft TTP types
+export interface TradecraftTTP {
+  id: string
+  name: string
+  description: string | null
+  content: string
+  category: string
+  is_builtin: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 // Activity Feed types
 // Scan Comparison types
 export interface ScanComparisonSummary {

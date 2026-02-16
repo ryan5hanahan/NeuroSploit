@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.models import Scan, Target, Endpoint, Vulnerability, VulnerabilityTest, AgentTask
+from backend.models.tradecraft import Tradecraft, ScanTradecraft
 from backend.api.websocket import manager as ws_manager
 from backend.api.v1.prompts import PRESET_PROMPTS
 from backend.db.database import async_session_factory
@@ -157,6 +158,33 @@ class ScanService:
         except ValueError:
             pass
         return None
+
+    async def _get_tradecraft_guidance(self, scan_id: str) -> str:
+        """Build tradecraft guidance text block from TTPs associated with a scan."""
+        # Check for scan-specific TTP associations first
+        result = await self.db.execute(
+            select(Tradecraft)
+            .join(ScanTradecraft, ScanTradecraft.tradecraft_id == Tradecraft.id)
+            .where(ScanTradecraft.scan_id == scan_id)
+        )
+        ttps = result.scalars().all()
+
+        if not ttps:
+            # Fall back to all globally-enabled TTPs
+            result = await self.db.execute(
+                select(Tradecraft).where(Tradecraft.enabled == True)
+            )
+            ttps = result.scalars().all()
+
+        if not ttps:
+            return ""
+
+        lines = ["\nTRADECRAFT GUIDANCE:", "=" * 40]
+        for ttp in ttps:
+            lines.append(f"\n[{ttp.category.upper()}] {ttp.name}")
+            lines.append(ttp.content)
+        lines.append("=" * 40)
+        return "\n".join(lines)
 
     async def _create_agent_task(
         self,
@@ -502,8 +530,14 @@ class ScanService:
             )
 
                 try:
-                    # Enhance prompt with authorization
-                    enhanced_prompt = f"{GLOBAL_AUTHORIZATION}\n\nUSER REQUEST:\n{prompt_content}"
+                    # Build tradecraft guidance from TTPs
+                    tradecraft_block = await self._get_tradecraft_guidance(scan_id)
+                    if tradecraft_block:
+                        ttp_count = tradecraft_block.count("[EVASION]") + tradecraft_block.count("[RECONNAISSANCE]") + tradecraft_block.count("[EXPLOITATION]") + tradecraft_block.count("[VALIDATION]")
+                        await ws_manager.broadcast_log(scan_id, "info", f"Loaded {ttp_count} tradecraft TTPs into prompt pipeline")
+
+                    # Enhance prompt with authorization + tradecraft + user request
+                    enhanced_prompt = f"{GLOBAL_AUTHORIZATION}{tradecraft_block}\n\nUSER REQUEST:\n{prompt_content}"
 
                     # Get AI-generated testing plan
                     await ws_manager.broadcast_log(scan_id, "info", "AI processing prompt and determining attack strategy...")
