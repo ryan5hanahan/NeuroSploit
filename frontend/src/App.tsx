@@ -15,6 +15,7 @@ import VulnLabPage from './pages/VulnLabPage'
 import TerminalAgentPage from './pages/TerminalAgentPage'
 import SandboxDashboardPage from './pages/SandboxDashboardPage'
 import CompareScanPage from './pages/CompareScanPage'
+import PromptsPage from './pages/PromptsPage'
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
         <Route path="/compare" element={<CompareScanPage />} />
         <Route path="/agent/:agentId" element={<AgentStatusPage />} />
         <Route path="/tasks" element={<TaskLibraryPage />} />
+        <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/realtime" element={<RealtimeTaskPage />} />
         <Route path="/scheduler" element={<SchedulerPage />} />
         <Route path="/sandboxes" element={<SandboxDashboardPage />} />

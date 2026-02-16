@@ -143,6 +143,21 @@ export const promptsApi = {
     return response.data
   },
 
+  get: async (id: string): Promise<Prompt> => {
+    const response = await api.get(`/prompts/${id}`)
+    return response.data
+  },
+
+  update: async (id: string, data: { name?: string; description?: string; content?: string; category?: string }): Promise<Prompt> => {
+    const response = await api.put(`/prompts/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`/prompts/${id}`)
+    return response.data
+  },
+
   upload: async (file: File) => {
     const formData = new FormData()
     formData.append('file', file)

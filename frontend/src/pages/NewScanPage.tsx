@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Upload, Link as LinkIcon, FileText, Play, AlertTriangle,
   Bot, Search, Target, Brain, BookOpen, ChevronDown, Key, Settings,
@@ -66,6 +66,7 @@ const TASK_CATEGORIES = [
 
 export default function NewScanPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Target state
@@ -100,6 +101,15 @@ export default function NewScanPage() {
 
   // UI state
   const [isLoading, setIsLoading] = useState(false)
+
+  // Accept prompt content from navigation state (e.g. from Prompt Library)
+  useEffect(() => {
+    const state = location.state as { promptContent?: string } | null
+    if (state?.promptContent) {
+      setUseCustomPrompt(true)
+      setCustomPrompt(state.promptContent)
+    }
+  }, [location.state])
 
   // Load tasks on mount
   useEffect(() => {
