@@ -428,6 +428,66 @@ class BrowserValidator:
         else:
             logger.warning(f"Unknown interaction action: {action}")
 
+    async def capture_screenshot(self, url: str,
+                                selector: Optional[str] = None,
+                                timeout: int = 30000) -> Dict:
+        """Capture a screenshot of a URL, optionally scoped to a CSS selector.
+
+        Manages its own browser lifecycle — starts if needed, cleans up on finish.
+
+        Args:
+            url: Target URL to screenshot
+            selector: Optional CSS selector to clip the screenshot to
+            timeout: Navigation timeout in milliseconds
+
+        Returns:
+            Dict with 'screenshot' (base64), 'url', 'title', 'status_code', or 'error'
+        """
+        started_here = False
+        if not self.browser:
+            await self.start()
+            started_here = True
+
+        context = None
+        try:
+            context = await self.browser.new_context(
+                ignore_https_errors=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            response = await page.goto(url, wait_until="networkidle", timeout=timeout)
+
+            status_code = response.status if response else None
+            title = await page.title()
+
+            if selector:
+                element = await page.query_selector(selector)
+                if element:
+                    screenshot_bytes = await element.screenshot()
+                else:
+                    screenshot_bytes = await page.screenshot(full_page=True)
+            else:
+                screenshot_bytes = await page.screenshot(full_page=True)
+
+            import base64
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
+
+            return {
+                "screenshot": screenshot_b64,
+                "url": url,
+                "title": title,
+                "status_code": status_code,
+            }
+        except Exception as e:
+            logger.error(f"Screenshot capture error for {url}: {e}")
+            return {"error": str(e), "screenshot": None}
+        finally:
+            if context:
+                await context.close()
+            if started_here:
+                await self.stop()
+
     async def batch_validate(self, findings: List[Dict],
                               headless: bool = True) -> List[Dict]:
         """Validate multiple findings in sequence.

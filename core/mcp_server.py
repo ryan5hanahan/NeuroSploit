@@ -94,7 +94,15 @@ async def _screenshot_capture(url: str, selector: Optional[str] = None) -> Dict:
     try:
         bv = BrowserValidator()
         result = await bv.capture_screenshot(url, selector=selector)
-        return {"url": url, "screenshot_base64": result.get("screenshot", ""), "status": "ok"}
+        if result.get("error"):
+            return {"error": result["error"], "screenshot": None}
+        return {
+            "url": url,
+            "screenshot_base64": result.get("screenshot", ""),
+            "title": result.get("title", ""),
+            "status_code": result.get("status_code"),
+            "status": "ok",
+        }
     except Exception as e:
         return {"error": str(e), "screenshot": None}
 
