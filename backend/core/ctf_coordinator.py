@@ -9,11 +9,30 @@ Orchestrates a pipeline of specialized agents for CTF challenges:
 """
 
 import asyncio
+import base64
 import copy
 import json
 import aiohttp
+from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable, Set
 from datetime import datetime
+
+try:
+    from core.browser_validator import BrowserValidator, HAS_PLAYWRIGHT
+except ImportError:
+    try:
+        from backend.core.browser_validator import BrowserValidator, HAS_PLAYWRIGHT
+    except ImportError:
+        HAS_PLAYWRIGHT = False
+
+
+def _embed_screenshot(filepath: str) -> str:
+    """Convert screenshot file path to base64 data URI."""
+    path = Path(filepath)
+    if not path.exists():
+        return ""
+    with open(path, 'rb') as f:
+        return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
 
 
 class CTFCoordinator:
@@ -84,6 +103,13 @@ class CTFCoordinator:
             await self._progress_callback(20, "ctf_pipeline:quick_wins")
             await self._run_quick_wins()
             await self._check_newly_solved("quick_wins")
+            if self._cancelled:
+                return self._build_final_report(start_time)
+
+            # Phase 1.6: Browser-based probes (DOM XSS, hidden pages, client-side)
+            await self._progress_callback(22, "ctf_pipeline:browser_probes")
+            await self._run_browser_probes()
+            await self._check_newly_solved("browser_probes")
             if self._cancelled:
                 return self._build_final_report(start_time)
 
@@ -842,6 +868,212 @@ class CTFCoordinator:
                     continue
         return findings
 
+    # ------------------------------------------------------------------
+    # Phase 1.6: Browser Probes
+    # ------------------------------------------------------------------
+
+    async def _run_browser_probes(self):
+        """Run browser-based probes for client-side vulnerabilities."""
+        if not HAS_PLAYWRIGHT:
+            await self._log_callback("info", "[PIPELINE] Playwright not available, skipping browser probes")
+            return
+
+        await self._log_callback("info", "[PIPELINE] Phase 1.6: Browser probes — DOM XSS, hidden pages, client-side")
+
+        validator = BrowserValidator(screenshots_dir="reports/screenshots")
+        await validator.start(headless=True)
+        try:
+            await self._probe_dom_xss(validator)
+            await self._probe_hidden_pages(validator)
+            await self._probe_client_side_exploits(validator)
+        except Exception as e:
+            await self._log_callback("warning", f"[BrowserProbe] Error: {e}")
+        finally:
+            await validator.stop()
+
+    async def _probe_dom_xss(self, validator):
+        """Test for DOM-based XSS via URL fragments and query params."""
+        base = self.target.rstrip("/")
+        payloads = [
+            '<img src=x onerror=alert(document.domain)>',
+            '"><svg onload=alert(1)>',
+        ]
+        # Test fragments on a small representative set of pages
+        test_urls = [base]
+        if self._recon_data:
+            test_urls += [
+                (e if isinstance(e, str) else e.get("url", ""))
+                for e in self._recon_data.endpoints[:20]
+            ]
+        test_urls = list(dict.fromkeys(u for u in test_urls if u))[:5]  # dedup, limit to 5
+
+        for url in test_urls:
+            found = False
+            for payload in payloads:
+                if found:
+                    break
+                for injection in [f"{url}#{payload}", f"{url}?q={payload}"]:
+                    try:
+                        result = await validator.validate_finding(
+                            finding_id=f"dom_xss_{hash(injection) % 100000}",
+                            url=injection, payload=payload, timeout=8000,
+                        )
+                        # Only trust actual dialog execution — triggers_found alone
+                        # matches framework code patterns (Angular, etc.), not real XSS
+                        if result.get("dialog_detected"):
+                            dialog_msgs = result.get("dialog_messages", [])
+                            # Verify dialog is from our payload, not app's own dialogs
+                            is_ours = any(
+                                "1" in d.get("message", "") or "document.domain" in d.get("message", "")
+                                or d.get("type") == "alert"
+                                for d in dialog_msgs
+                            ) if dialog_msgs else True
+                            if not is_ours:
+                                continue
+                            evidence = result.get("evidence", "DOM XSS triggered")
+                            screenshots = result.get("screenshots", [])
+                            finding = self._make_finding(
+                                "DOM-Based XSS", "xss_dom", "high",
+                                url, "fragment/query", payload, evidence, "GET"
+                            )
+                            finding["agent_label"] = "BrowserProbe"
+                            finding["screenshots"] = [
+                                _embed_screenshot(s) for s in screenshots if s
+                            ]
+                            self._all_findings.append(finding)
+                            await self._finding_callback(finding)
+                            await self._log_callback("warning", f"[BrowserProbe] DOM XSS at {url[:60]}")
+                            found = True
+                            break
+                    except Exception:
+                        continue
+
+    async def _probe_hidden_pages(self, validator):
+        """Find hidden pages that only render in-browser (SPA routes, admin panels)."""
+        base = self.target.rstrip("/")
+        hidden_paths = [
+            "/#/score-board", "/#/administration", "/#/accounting",
+            "/#/privacy-security/last-login-ip", "/#/order-history",
+            "/#/recycle", "/#/complain", "/#/chatbot",
+            "/admin", "/dashboard", "/debug", "/console",
+        ]
+        context = await validator.browser.new_context(
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+        )
+        try:
+            page = await context.new_page()
+
+            # Capture baseline: navigate to homepage and fingerprint its content
+            await page.goto(base, wait_until="networkidle", timeout=10000)
+            home_text = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
+
+            for path in hidden_paths:
+                url = f"{base}{path}"
+                try:
+                    resp = await page.goto(url, wait_until="networkidle", timeout=10000)
+                    if not resp or resp.status >= 400:
+                        continue
+                    title = await page.title()
+                    page_text = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
+
+                    # Skip if same as homepage (SPA fallback)
+                    if page_text == home_text:
+                        continue
+                    # Skip generic error indicators
+                    if any(k in page_text.lower() for k in ("page not found", "404", "not authorized", "forbidden")):
+                        continue
+                    # Must have meaningful distinct content
+                    if len(page_text.strip()) < 50:
+                        continue
+
+                    # Take screenshot as evidence
+                    ss_bytes = await page.screenshot(full_page=True)
+                    ss_b64 = f"data:image/png;base64,{base64.b64encode(ss_bytes).decode()}"
+
+                    finding = self._make_finding(
+                        f"Hidden Page Accessible ({path})", "broken_access_control", "medium",
+                        url, "", "", f"Hidden/admin page accessible. Title: {title}", "GET"
+                    )
+                    finding["agent_label"] = "BrowserProbe"
+                    finding["screenshots"] = [ss_b64]
+                    self._all_findings.append(finding)
+                    await self._finding_callback(finding)
+                    await self._log_callback("info", f"[BrowserProbe] Hidden page found: {path}")
+                except Exception:
+                    continue
+        finally:
+            await context.close()
+
+    async def _probe_client_side_exploits(self, validator):
+        """Test client-side exploits: cookie manipulation, localStorage exposure, etc."""
+        base = self.target.rstrip("/")
+        context = await validator.browser.new_context(
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+        )
+        try:
+            page = await context.new_page()
+            await page.goto(base, wait_until="networkidle", timeout=15000)
+
+            # Check for sensitive data in localStorage/sessionStorage
+            storage_data = await page.evaluate("""() => {
+                const result = {};
+                try {
+                    result.localStorage = {};
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        result.localStorage[key] = localStorage.getItem(key);
+                    }
+                } catch(e) {}
+                try {
+                    result.sessionStorage = {};
+                    for (let i = 0; i < sessionStorage.length; i++) {
+                        const key = sessionStorage.key(i);
+                        result.sessionStorage[key] = sessionStorage.getItem(key);
+                    }
+                } catch(e) {}
+                try { result.cookies = document.cookie; } catch(e) {}
+                return result;
+            }""")
+
+            # Check for tokens/secrets in storage
+            storage_str = json.dumps(storage_data).lower()
+            sensitive_keys = ["token", "jwt", "auth", "session", "password", "secret", "api_key"]
+            for key in sensitive_keys:
+                if key in storage_str:
+                    finding = self._make_finding(
+                        "Sensitive Data in Client Storage", "information_disclosure", "medium",
+                        base, "localStorage/cookies", key,
+                        f"Sensitive data ({key}) found in client-side storage: {json.dumps(storage_data)[:500]}",
+                        "GET"
+                    )
+                    finding["agent_label"] = "BrowserProbe"
+                    self._all_findings.append(finding)
+                    await self._finding_callback(finding)
+                    await self._log_callback("warning", f"[BrowserProbe] Sensitive data in client storage: {key}")
+                    break  # Report once
+
+            # Check for verbose error pages by triggering 404
+            try:
+                await page.goto(f"{base}/nonexistent_page_12345", wait_until="networkidle", timeout=8000)
+                error_content = await page.content()
+                if any(p in error_content for p in ["stack trace", "Traceback", "Exception", "at Object.", "node_modules"]):
+                    finding = self._make_finding(
+                        "Verbose Error Page", "information_disclosure", "low",
+                        f"{base}/nonexistent_page_12345", "", "",
+                        "Error page reveals stack trace or internal details",
+                        "GET"
+                    )
+                    finding["agent_label"] = "BrowserProbe"
+                    self._all_findings.append(finding)
+                    await self._finding_callback(finding)
+            except Exception:
+                pass
+
+        finally:
+            await context.close()
+
     def _make_finding(self, title: str, vuln_type: str, severity: str,
                       url: str, parameter: str, payload: str,
                       evidence: str, method: str = "GET") -> Dict:
@@ -940,6 +1172,22 @@ class CTFCoordinator:
 
             # Update baseline so we don't count it again
             self._baseline_solved.add(cid)
+
+            # Create a finding for each solved challenge
+            difficulty_severity = {1: "info", 2: "low", 3: "medium", 4: "high", 5: "critical", 6: "critical"}
+            severity = difficulty_severity.get(difficulty, "medium")
+            finding = self._make_finding(
+                f"CTF Challenge Solved: {challenge_name}",
+                f"ctf_{category.lower().replace(' ', '_')}",
+                severity,
+                f"{self.target.rstrip('/')}/api/Challenges/{cid}",
+                "challenge_id", str(cid),
+                f"Flag: {flag_value} | Category: {category} | Difficulty: {difficulty}/6",
+                "GET"
+            )
+            finding["agent_label"] = "CTF"
+            self._all_findings.append(finding)
+            await self._finding_callback(finding)
 
         if newly_solved:
             await self._log_callback("info", f"[CTF] {len(newly_solved)} new challenge(s) solved during {phase_name} phase!")
