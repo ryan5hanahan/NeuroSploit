@@ -110,7 +110,7 @@ class KaliSandbox(BaseSandbox):
 
             self._container = self._client.containers.run(
                 self.image,
-                command="sleep infinity",
+                command=["sleep infinity"],  # Single element: image ENTRYPOINT is [bash, -c]
                 name=self.container_name,
                 detach=True,
                 network_mode=self.network_mode,

@@ -3371,14 +3371,19 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 await self.log("warning", f"[HEALTH] Target may be unhealthy: {reason}")
                 await self.log("warning", "[HEALTH] Proceeding with caution - results may be unreliable")
 
-        # Phase 1: Reconnaissance
+        # Phase 1: Reconnaissance + Sandbox tools (concurrent)
         skip_target = self._check_skip("recon")
         if skip_target:
             await self.log("warning", f">> SKIPPING Reconnaissance -> jumping to {skip_target}")
             await self._update_progress(20, f"recon_skipped")
+            # Still run sandbox tools even if recon is skipped
+            await self._run_sandbox_scan()
         else:
-            await self.log("info", "[PHASE 1/5] Reconnaissance")
-            await self._run_recon_only()
+            await self.log("info", "[PHASE 1/5] Reconnaissance + Sandbox tools")
+            await asyncio.gather(
+                self._run_recon_only(),
+                self._run_sandbox_scan(),
+            )
             await self._update_progress(20, "Reconnaissance complete")
 
         # Phase 1b: WAF Detection
@@ -3445,6 +3450,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
 
         try:
             sandbox = await get_sandbox(scan_id=self.scan_id)
+            self._sandbox = sandbox  # Store ref so __aexit__ can clean up
             if not sandbox.is_available:
                 await self.log("info", "  Sandbox container not running, skipping sandbox tools")
                 return
@@ -3453,7 +3459,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             import time as _time
             _nuclei_start = _time.time()
             nuclei_result = await sandbox.run_nuclei(
-                target=self.target_url,
+                target=self.target,
                 severity="critical,high,medium",
                 rate_limit=150,
                 timeout=600,
@@ -3463,7 +3469,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             # Track tool execution
             self.tool_executions.append({
                 "tool": "nuclei",
-                "command": f"nuclei -u {self.target_url} -severity critical,high,medium -rl 150",
+                "command": f"nuclei -u {self.target} -severity critical,high,medium -rl 150",
                 "duration": _nuclei_duration,
                 "findings_count": len(nuclei_result.findings) if nuclei_result.findings else 0,
                 "stdout_preview": nuclei_result.stdout[:2000] if hasattr(nuclei_result, 'stdout') and nuclei_result.stdout else "",
@@ -3481,7 +3487,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                             title=nf.get("title", "Nuclei Finding"),
                             severity=nf.get("severity", "info"),
                             vuln_type=vuln_type,
-                            endpoint=nf.get("affected_endpoint", self.target_url),
+                            endpoint=nf.get("affected_endpoint", self.target),
                             evidence=f"Nuclei template: {nf.get('template_id', 'unknown')}. {nf.get('evidence', '')}",
                             ai_verified=False,
                             description=nf.get("description", ""),
@@ -3491,7 +3497,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 await self.log("info", f"  [Sandbox] Nuclei: no findings ({_nuclei_duration}s)")
 
             # Naabu port scan
-            parsed = urlparse(self.target_url)
+            parsed = urlparse(self.target)
             host = parsed.hostname or parsed.netloc
             if host:
                 await self.log("info", "  [Sandbox] Running Naabu port scanner...")

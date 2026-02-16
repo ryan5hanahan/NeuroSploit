@@ -91,11 +91,6 @@
         "profiles_file": "config/opsec_profiles.json"
     },
     "sandbox": {
-        "enabled": false,
-        "mode": "per_scan",
-        "image": "neurosploit-sandbox:latest",
-        "container_name": "neurosploit-sandbox",
-        "auto_start": false,
         "kali": {
             "enabled": true,
             "image": "neurosploit-kali:latest",
