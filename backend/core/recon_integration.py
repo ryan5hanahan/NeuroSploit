@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.api.websocket import manager as ws_manager
+from backend.core import scan_registry
 
 
 class ReconIntegration:
@@ -193,24 +194,36 @@ class ReconIntegration:
         }.get(depth, medium_phases)
 
     async def _run_command(self, cmd: List[str], timeout: int = 120) -> str:
-        """Run a shell command asynchronously"""
+        """Run a shell command asynchronously with PID tracking"""
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout
-            )
-            return stdout.decode('utf-8', errors='ignore')
-        except asyncio.TimeoutError:
+            scan_registry.track_pid(self.scan_id, process.pid)
             try:
-                process.kill()
-            except:
-                pass
-            return ""
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=timeout
+                )
+                return stdout.decode('utf-8', errors='ignore')
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                raise
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                return ""
+            finally:
+                scan_registry.untrack_pid(self.scan_id, process.pid)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             return ""
 
@@ -278,20 +291,35 @@ class ReconIntegration:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(input=f"{domain}\n".encode()),
-                timeout=30
-            )
-            if stdout:
-                for line in stdout.decode().strip().split("\n"):
-                    if line:
-                        results["live_hosts"].append(line)
-                        results["endpoints"].append({
-                            "url": line,
-                            "method": "GET",
-                            "path": "/",
-                            "source": "httprobe"
-                        })
+            scan_registry.track_pid(self.scan_id, process.pid)
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(input=f"{domain}\n".encode()),
+                    timeout=30
+                )
+                if stdout:
+                    for line in stdout.decode().strip().split("\n"):
+                        if line:
+                            results["live_hosts"].append(line)
+                            results["endpoints"].append({
+                                "url": line,
+                                "method": "GET",
+                                "path": "/",
+                                "source": "httprobe"
+                            })
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                raise
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            finally:
+                scan_registry.untrack_pid(self.scan_id, process.pid)
 
         # Fallback to curl
         if not results["live_hosts"]:
@@ -642,15 +670,30 @@ class ReconIntegration:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(input=f"{base_url}\n".encode()),
-                timeout=120
-            )
-            if stdout:
-                for url in stdout.decode().strip().split("\n"):
-                    if url and url.startswith("http"):
-                        results["urls"].append(url)
-                        results["endpoints"].append({"url": url, "source": "hakrawler"})
+            scan_registry.track_pid(self.scan_id, process.pid)
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(input=f"{base_url}\n".encode()),
+                    timeout=120
+                )
+                if stdout:
+                    for url in stdout.decode().strip().split("\n"):
+                        if url and url.startswith("http"):
+                            results["urls"].append(url)
+                            results["endpoints"].append({"url": url, "source": "hakrawler"})
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                raise
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            finally:
+                scan_registry.untrack_pid(self.scan_id, process.pid)
 
         await self.log("info", f"✓ Crawled {len(results['endpoints'])} endpoints, {len(results['js_files'])} JS files")
         return results

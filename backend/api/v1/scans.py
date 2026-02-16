@@ -1,9 +1,10 @@
 """
 NeuroSploit v3 - Scans API Endpoints
 """
+import asyncio
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -13,6 +14,7 @@ from backend.db.database import get_db
 from backend.models import Scan, Target, Endpoint, Vulnerability
 from backend.schemas.scan import ScanCreate, ScanUpdate, ScanResponse, ScanListResponse, ScanProgress
 from backend.services.scan_service import run_scan_task, skip_to_phase as _skip_to_phase, PHASE_ORDER
+from backend.core import scan_registry
 
 router = APIRouter()
 
@@ -169,7 +171,6 @@ async def list_scans(
 @router.post("", response_model=ScanResponse)
 async def create_scan(
     scan_data: ScanCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new scan with optional authentication for authenticated testing"""
@@ -332,7 +333,6 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{scan_id}/start")
 async def start_scan(
     scan_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Start a scan execution"""
@@ -352,8 +352,10 @@ async def start_scan(
     scan.progress = 0
     await db.commit()
 
-    # Start scan in background with its own database session
-    background_tasks.add_task(run_scan_task, scan_id)
+    # Register in scan registry BEFORE creating task to avoid race condition
+    handle = scan_registry.register(scan_id)
+    task = asyncio.create_task(run_scan_task(scan_id))
+    handle.task = task
 
     return {"message": "Scan started", "scan_id": scan_id}
 
@@ -361,7 +363,6 @@ async def start_scan(
 @router.post("/{scan_id}/repeat", response_model=ScanResponse)
 async def repeat_scan(
     scan_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Clone a completed/stopped/failed scan's config and immediately start a new scan"""
@@ -423,7 +424,10 @@ async def repeat_scan(
     new_scan.progress = 0
     await db.commit()
 
-    background_tasks.add_task(run_scan_task, new_scan.id)
+    # Register in scan registry BEFORE creating task to avoid race condition
+    handle = scan_registry.register(new_scan.id)
+    task = asyncio.create_task(run_scan_task(new_scan.id))
+    handle.task = task
 
     scan_dict = new_scan.to_dict()
     scan_dict["targets"] = [t.to_dict() for t in new_targets]
@@ -445,7 +449,10 @@ async def stop_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     if scan.status not in ("running", "paused"):
         raise HTTPException(status_code=400, detail="Scan is not running or paused")
 
-    # Signal the running agent to stop
+    # Cancel via scan registry (handles both ScanService and Agent paths)
+    scan_registry.cancel(scan_id)
+
+    # Also signal the agent instance directly for backward compatibility
     agent_id = scan_to_agent.get(scan_id)
     if agent_id and agent_id in agent_instances:
         agent_instances[agent_id].cancel()

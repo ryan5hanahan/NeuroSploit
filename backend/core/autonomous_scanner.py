@@ -16,14 +16,17 @@ All tests are performed with explicit authorization from the target owner.
 
 import asyncio
 import aiohttp
-import subprocess
+import shutil
 import json
 import re
 import os
+import tempfile
 from typing import Dict, List, Any, Optional, Callable
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from backend.core import scan_registry
 
 
 @dataclass
@@ -429,24 +432,18 @@ class AutonomousScanner:
             ) as resp:
                 exists = resp.status < 400 and resp.status != 404
                 return {"exists": exists, "status": resp.status}
-        except:
+        except Exception:
             return {"exists": False, "status": 0}
 
     async def _tool_available(self, tool_name: str) -> bool:
-        """Check if a tool is available"""
-        try:
-            result = subprocess.run(
-                ["which", tool_name],
-                capture_output=True,
-                timeout=5
-            )
-            return result.returncode == 0
-        except:
-            return False
+        """Check if a tool is available (non-blocking)"""
+        return shutil.which(tool_name) is not None
 
     async def _run_ffuf(self, base_url: str) -> List[str]:
         """Run ffuf for directory discovery"""
         found = []
+        fd, out_path = tempfile.mkstemp(suffix=".json", prefix=f"ffuf_{self.scan_id}_")
+        os.close(fd)
         try:
             wordlist = self.wordlist_path if os.path.exists(self.wordlist_path) else None
             if not wordlist:
@@ -459,7 +456,7 @@ class AutonomousScanner:
                 "-mc", "200,201,301,302,307,401,403,500",
                 "-t", "20",
                 "-timeout", "10",
-                "-o", "/tmp/ffuf_out.json",
+                "-o", out_path,
                 "-of", "json",
                 "-s"  # Silent
             ]
@@ -469,20 +466,35 @@ class AutonomousScanner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
+            scan_registry.track_pid(self.scan_id, process.pid)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=120)
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                raise
+            finally:
+                scan_registry.untrack_pid(self.scan_id, process.pid)
 
-            await asyncio.wait_for(process.wait(), timeout=120)
-
-            if os.path.exists("/tmp/ffuf_out.json"):
-                with open("/tmp/ffuf_out.json", "r") as f:
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                with open(out_path, "r") as f:
                     data = json.load(f)
                     for result in data.get("results", []):
                         path = "/" + result.get("input", {}).get("FUZZ", "")
                         if path and path != "/":
                             found.append(path)
-                os.remove("/tmp/ffuf_out.json")
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             await self.log("debug", f"ffuf error: {str(e)}")
+        finally:
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
 
         return found
 
@@ -596,29 +608,47 @@ class AutonomousScanner:
                     if "test123" in body or resp.status == 200:
                         found_params.add(param)
 
-            except:
+            except Exception:
                 pass
 
         # Try arjun if available
         if await self._tool_available("arjun"):
             await self.log("debug", "  Running arjun parameter discovery...")
+            fd, arjun_out = tempfile.mkstemp(suffix=".json", prefix=f"arjun_{self.scan_id}_")
+            os.close(fd)
             try:
                 process = await asyncio.create_subprocess_exec(
-                    "arjun", "-u", url, "-o", "/tmp/arjun_out.json", "-q",
+                    "arjun", "-u", url, "-o", arjun_out, "-q",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                await asyncio.wait_for(process.wait(), timeout=60)
+                scan_registry.track_pid(self.scan_id, process.pid)
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=60)
+                except asyncio.CancelledError:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+                    raise
+                finally:
+                    scan_registry.untrack_pid(self.scan_id, process.pid)
 
-                if os.path.exists("/tmp/arjun_out.json"):
-                    with open("/tmp/arjun_out.json", "r") as f:
+                if os.path.exists(arjun_out) and os.path.getsize(arjun_out) > 0:
+                    with open(arjun_out, "r") as f:
                         data = json.load(f)
                         for url_data in data.values():
                             if isinstance(url_data, list):
                                 found_params.update(url_data)
-                    os.remove("/tmp/arjun_out.json")
-            except:
+            except asyncio.CancelledError:
+                raise
+            except Exception:
                 pass
+            finally:
+                try:
+                    os.remove(arjun_out)
+                except OSError:
+                    pass
 
         return list(found_params)
 
@@ -724,7 +754,7 @@ class AutonomousScanner:
                     "body": body[:5000],
                     "payload": payload
                 }
-        except:
+        except Exception:
             return None
 
     async def _test_xss(self, url: str) -> Optional[TestResult]:
@@ -945,7 +975,7 @@ class AutonomousScanner:
                                     request={"url": test_url, "method": "GET"},
                                     response={"status": resp.status, "location": location}
                                 )
-                except:
+                except Exception:
                     pass
 
         return None

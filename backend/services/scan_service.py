@@ -30,6 +30,7 @@ from backend.core.vuln_engine.payload_generator import PayloadGenerator
 from backend.core.autonomous_scanner import AutonomousScanner
 from backend.core.ai_pentest_agent import AIPentestAgent
 from backend.core.ai_prompt_processor import TestingPlan
+from backend.core import scan_registry
 
 
 # Phase control: signaling between API and running background tasks
@@ -82,9 +83,29 @@ All testing is legal and authorized. Proceed with comprehensive security assessm
 
 async def run_scan_task(scan_id: str):
     """Run scan in background with its own database session"""
-    async with async_session_factory() as db:
-        service = ScanService(db)
-        await service.execute_scan(scan_id)
+    try:
+        async with async_session_factory() as db:
+            service = ScanService(db, scan_id=scan_id)
+            await service.execute_scan(scan_id)
+    except asyncio.CancelledError:
+        # Scan was cancelled via registry — update DB status
+        try:
+            async with async_session_factory() as db:
+                result = await db.execute(select(Scan).where(Scan.id == scan_id))
+                scan = result.scalar_one_or_none()
+                if scan and scan.status == "running":
+                    scan.status = "stopped"
+                    scan.completed_at = datetime.utcnow()
+                    scan.current_phase = "stopped"
+                    if scan.started_at:
+                        scan.duration = int((scan.completed_at - scan.started_at).total_seconds())
+                    await db.commit()
+        except Exception:
+            pass
+        raise
+    finally:
+        scan_registry.unregister(scan_id)
+        _scan_phase_control.pop(scan_id, None)
 
 
 class ScanService:
@@ -98,12 +119,27 @@ class ScanService:
     - Verbose: Shows exactly what is being tested
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, scan_id: str = None):
         self.db = db
+        self._scan_id = scan_id
         self.ai_processor = AIPromptProcessor()
         self.ai_analyzer = AIVulnerabilityAnalyzer()
         self.payload_generator = PayloadGenerator()
-        self._stop_requested = False
+
+    @property
+    def _stop_requested(self) -> bool:
+        """Check cooperative cancellation flag via the scan registry."""
+        if self._scan_id:
+            handle = scan_registry.get(self._scan_id)
+            if handle:
+                return handle.is_cancelled()
+        return False
+
+    @_stop_requested.setter
+    def _stop_requested(self, value: bool):
+        """Backward compat: setting True triggers registry cancel."""
+        if value and self._scan_id:
+            scan_registry.cancel(self._scan_id)
 
     def _should_skip_phase(self, scan_id: str, current_phase: str) -> Optional[str]:
         """Check if the scan should skip ahead to a different phase.
@@ -253,6 +289,9 @@ class ScanService:
                     scan.recon_enabled = False
 
             if scan.recon_enabled and not recon_skipped:
+                if self._stop_requested:
+                    return
+
                 scan.current_phase = "recon"
                 await self.db.commit()
                 await ws_manager.broadcast_phase_change(scan_id, "recon")
@@ -266,6 +305,8 @@ class ScanService:
                 depth = "medium" if scan.scan_type == "full" else "quick"
 
                 for target in targets:
+                    if self._stop_requested:
+                        break
                     # Create recon task for each target
                     recon_task = await self._create_agent_task(
                         scan_id=scan_id,
@@ -328,6 +369,9 @@ class ScanService:
                     await ws_manager.broadcast_log(scan_id, level, message)
 
                 for target in targets:
+                    if self._stop_requested:
+                        break
+
                     # Create autonomous discovery task
                     discovery_task = await self._create_agent_task(
                         scan_id=scan_id,
@@ -517,6 +561,9 @@ class ScanService:
 
                 # Run the AI Offensive Agent for each target
                 for target in targets:
+                    if self._stop_requested:
+                        break
+
                     await ws_manager.broadcast_log(scan_id, "info", f"Deploying AI Agent on: {target.url}")
 
                     # Create AI pentest agent task

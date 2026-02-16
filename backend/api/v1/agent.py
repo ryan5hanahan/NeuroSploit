@@ -8,7 +8,7 @@ NOW WITH DATABASE PERSISTENCE - Findings are saved to the database
 and visible in the dashboard!
 """
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 import asyncio
 import aiohttp
@@ -22,6 +22,7 @@ from backend.core.autonomous_agent import AutonomousAgent, OperationMode
 from backend.core.task_library import get_task_library
 from backend.db.database import async_session_factory
 from backend.models import Scan, Target, Vulnerability, Endpoint, Report
+from backend.core import scan_registry
 
 router = APIRouter()
 
@@ -34,6 +35,36 @@ agent_instances: Dict[str, AutonomousAgent] = {}
 agent_to_scan: Dict[str, str] = {}
 # Reverse map: scan_id to agent_id for ScanDetailsPage lookups
 scan_to_agent: Dict[str, str] = {}
+
+# Maximum number of completed agent entries to retain in memory
+_MAX_RETAINED_AGENTS = 50
+
+
+def _cleanup_stale_agents():
+    """Remove oldest completed/errored/stopped agent entries when over limit.
+
+    Keeps running agents untouched. Only prunes terminal states to prevent
+    unbounded memory growth on long-running servers.
+    """
+    terminal = [
+        (aid, data)
+        for aid, data in agent_results.items()
+        if data.get("status") in ("completed", "error", "stopped")
+    ]
+    if len(terminal) <= _MAX_RETAINED_AGENTS:
+        return
+
+    # Sort by completed_at (oldest first), prune excess
+    terminal.sort(key=lambda x: x[1].get("completed_at", ""))
+    to_remove = terminal[: len(terminal) - _MAX_RETAINED_AGENTS]
+
+    for aid, _ in to_remove:
+        sid = agent_to_scan.pop(aid, None)
+        if sid:
+            scan_to_agent.pop(sid, None)
+        agent_results.pop(aid, None)
+        agent_tasks.pop(aid, None)
+        agent_instances.pop(aid, None)
 
 
 @router.get("/status")
@@ -142,7 +173,7 @@ class TaskResponse(BaseModel):
 
 
 @router.post("/run", response_model=AgentResponse)
-async def run_agent(request: AgentRequest, background_tasks: BackgroundTasks):
+async def run_agent(request: AgentRequest):
     """
     Run the Autonomous AI Security Agent
 
@@ -204,18 +235,20 @@ async def run_agent(request: AgentRequest, background_tasks: BackgroundTasks):
         "rejected_findings_count": 0,
     }
 
-    # Run agent in background
-    background_tasks.add_task(
-        _run_agent_task,
-        agent_id,
-        request.target,
-        request.mode,
-        auth_headers,
-        request.max_depth,
-        task,
-        request.prompt,
-        request.recon_depth,
+    # Run agent as asyncio task
+    bg_task = asyncio.create_task(
+        _run_agent_task(
+            agent_id,
+            request.target,
+            request.mode,
+            auth_headers,
+            request.max_depth,
+            task,
+            request.prompt,
+            request.recon_depth,
+        )
     )
+    agent_tasks[agent_id] = bg_task
 
     mode_descriptions = {
         "full_auto": "Full autonomous pentest: Recon -> Analyze -> Test -> Report",
@@ -313,6 +346,10 @@ async def _run_agent_task(
             scan_to_agent[scan_id] = agent_id
             agent_results[agent_id]["scan_id"] = scan_id
 
+            # Register in scan registry for cancellation support
+            handle = scan_registry.register(scan_id)
+            handle.task = agent_tasks.get(agent_id)
+
             # Map mode
             mode_map = {
                 AgentMode.FULL_AUTO: OperationMode.FULL_AUTO,
@@ -337,6 +374,16 @@ async def _run_agent_task(
             ) as agent:
                 # Store agent instance for stop functionality
                 agent_instances[agent_id] = agent
+
+                # Bridge agent's is_cancelled to also check scan registry
+                original_is_cancelled = agent.is_cancelled
+                def _bridged_is_cancelled():
+                    if original_is_cancelled():
+                        return True
+                    h = scan_registry.get(scan_id)
+                    return h.is_cancelled() if h else False
+                agent.is_cancelled = _bridged_is_cancelled
+
                 report = await agent.run()
                 # Remove instance after completion
                 agent_instances.pop(agent_id, None)
@@ -466,6 +513,39 @@ async def _run_agent_task(
                 agent_results[agent_id]["progress"] = 100
                 agent_results[agent_id]["phase"] = "completed"
 
+            # Unregister from scan registry on successful completion
+            if scan_id:
+                scan_registry.unregister(scan_id)
+
+            _cleanup_stale_agents()
+
+    except asyncio.CancelledError:
+        # Scan was cancelled via registry
+        agent_results[agent_id]["status"] = "stopped"
+        agent_results[agent_id]["phase"] = "stopped"
+        agent_results[agent_id]["completed_at"] = datetime.utcnow().isoformat()
+        agent_instances.pop(agent_id, None)
+
+        if scan_id:
+            try:
+                async with async_session_factory() as db:
+                    from sqlalchemy import select
+                    result = await db.execute(select(Scan).where(Scan.id == scan_id))
+                    scan = result.scalar_one_or_none()
+                    if scan and scan.status == "running":
+                        scan.status = "stopped"
+                        scan.completed_at = datetime.utcnow()
+                        scan.current_phase = "stopped"
+                        if scan.started_at:
+                            scan.duration = int((scan.completed_at - scan.started_at).total_seconds())
+                        await db.commit()
+            except Exception:
+                pass
+            scan_registry.unregister(scan_id)
+
+        _cleanup_stale_agents()
+        raise
+
     except Exception as e:
         import traceback
         print(f"Agent error: {traceback.format_exc()}")
@@ -473,6 +553,7 @@ async def _run_agent_task(
         agent_results[agent_id]["status"] = "error"
         agent_results[agent_id]["error"] = str(e)
         agent_results[agent_id]["phase"] = "error"
+        agent_results[agent_id]["completed_at"] = datetime.utcnow().isoformat()
 
         # Update scan status in database
         if scan_id:
@@ -486,8 +567,11 @@ async def _run_agent_task(
                         scan.error_message = str(e)
                         scan.completed_at = datetime.utcnow()
                         await db.commit()
-            except:
+            except Exception:
                 pass
+            scan_registry.unregister(scan_id)
+
+        _cleanup_stale_agents()
 
 
 @router.get("/by-scan/{scan_id}")
@@ -645,7 +729,12 @@ async def stop_agent(agent_id: str):
     if agent_results[agent_id]["status"] != "running":
         return {"message": "Agent is not running", "status": agent_results[agent_id]["status"]}
 
-    # Cancel the agent immediately
+    # Cancel via scan registry (kills subprocesses + cancels asyncio task)
+    scan_id = agent_to_scan.get(agent_id)
+    if scan_id:
+        scan_registry.cancel(scan_id)
+
+    # Also cancel the agent instance directly
     if agent_id in agent_instances:
         agent_instances[agent_id].cancel()
 
@@ -655,7 +744,6 @@ async def stop_agent(agent_id: str):
     agent_results[agent_id]["completed_at"] = datetime.utcnow().isoformat()
 
     # Update database: save findings + generate report
-    scan_id = agent_to_scan.get(agent_id)
     report_id = None
     target = agent_results[agent_id].get("target", "Unknown")
 
@@ -1797,7 +1885,7 @@ async def _discover_endpoints(session: aiohttp.ClientSession, target: str, rt_se
                             "affected_endpoint": url,
                             "remediation": f"Restrict access to {path} via web server configuration."
                         })
-        except:
+        except Exception:
             pass
 
     if found_endpoints:
