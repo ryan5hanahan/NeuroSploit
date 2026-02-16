@@ -673,6 +673,7 @@ class AutonomousAgent:
         self.scan_id = scan_id
         self.governance = governance
         self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
+        self.knowledge_augmentation_enabled = os.getenv('ENABLE_KNOWLEDGE_AUGMENTATION', 'false').lower() == 'true'
         self._cancelled = False
         self._paused = False
         self._skip_to_phase: Optional[str] = None  # Phase skip target
@@ -4201,19 +4202,20 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             except Exception:
                 pass
 
-        # Knowledge augmentation from bug bounty patterns
+        # Knowledge augmentation from bug bounty patterns (opt-in via env)
         knowledge_context = ""
-        try:
-            from core.knowledge_augmentor import KnowledgeAugmentor
-            augmentor = KnowledgeAugmentor()
-            for tech in self.recon.technologies[:3]:
-                patterns = augmentor.get_relevant_patterns(
-                    vuln_type=None, technologies=[tech]
-                )
-                if patterns:
-                    knowledge_context += patterns[:500] + "\n"
-        except Exception:
-            pass
+        if self.knowledge_augmentation_enabled:
+            try:
+                from core.knowledge_augmentor import KnowledgeAugmentor
+                augmentor = KnowledgeAugmentor()
+                for tech in self.recon.technologies[:3]:
+                    patterns = augmentor.get_relevant_patterns(
+                        vulnerability_type=tech, technologies=[tech]
+                    )
+                    if patterns:
+                        knowledge_context += patterns[:500] + "\n"
+            except Exception as e:
+                logger.debug(f"Knowledge augmentation skipped: {e}")
 
         prompt = f"""Analyze this attack surface and create a prioritized, focused testing plan.
 

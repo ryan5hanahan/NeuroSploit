@@ -761,6 +761,17 @@ Document any vulnerabilities found during testing with CVSS scores."""
         existing_vulns = context.get('vulnerabilities', {}).get('all', [])[:10]
         unique_params = data.get('unique_params', {})
 
+        # Knowledge augmentation — inject bug bounty patterns when enabled
+        ka_context = ""
+        if self.augmentor:
+            vuln_types = ['xss', 'sqli', 'ssrf']  # Default high-value types
+            # Add types from existing findings
+            for v in existing_vulns:
+                vtype = v.get('type', '') if isinstance(v, dict) else ''
+                if vtype and vtype not in vuln_types:
+                    vuln_types.append(vtype)
+            ka_context = self.get_augmented_context(vuln_types[:5])
+
         analysis_prompt = f"""You are an elite penetration tester. Analyze this RECON CONTEXT and create an attack plan.
 
 USER REQUEST: {user_input}
@@ -786,7 +797,7 @@ TARGET: {target}
 
 **Vulnerabilities Already Found:**
 {json.dumps(existing_vulns, indent=2) if existing_vulns else 'None yet'}
-
+{ka_context}
 === YOUR TASK ===
 
 Based on this context, generate SPECIFIC tests to find vulnerabilities.

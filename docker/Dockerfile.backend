@@ -89,6 +89,7 @@ COPY core/ ./core/
 COPY config/ ./config/
 COPY prompts/ ./prompts/
 COPY tools/ ./tools/
+COPY models/ ./models/
 
 # Create data directories
 RUN mkdir -p data/reports data/scans data/recon /root/.config/nuclei
