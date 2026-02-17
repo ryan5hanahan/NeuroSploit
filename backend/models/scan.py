@@ -63,8 +63,21 @@ class Scan(Base):
     reports: Mapped[List["Report"]] = relationship("Report", back_populates="scan", cascade="all, delete-orphan")
     agent_tasks: Mapped[List["AgentTask"]] = relationship("AgentTask", back_populates="scan", cascade="all, delete-orphan")
 
+    @staticmethod
+    def _redact_credentials(creds: dict) -> dict:
+        """Redact sensitive values from auth credentials for API responses."""
+        if not creds:
+            return {}
+        redacted = {}
+        for key, value in creds.items():
+            if isinstance(value, str) and len(value) > 4:
+                redacted[key] = value[:2] + "*" * (len(value) - 4) + value[-2:]
+            else:
+                redacted[key] = "***"
+        return redacted
+
     def to_dict(self) -> dict:
-        """Convert to dictionary"""
+        """Convert to dictionary with sensitive fields redacted."""
         return {
             "id": self.id,
             "name": self.name,
@@ -77,7 +90,7 @@ class Scan(Base):
             "custom_prompt": self.custom_prompt,
             "prompt_id": self.prompt_id,
             "auth_type": self.auth_type,
-            "auth_credentials": self.auth_credentials,  # Careful: may contain sensitive data
+            "auth_credentials": self._redact_credentials(self.auth_credentials) if self.auth_credentials else None,
             "custom_headers": self.custom_headers,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,

@@ -759,7 +759,7 @@ async def _run_lab_test(
                         scan.error_message = str(e)
                         scan.completed_at = datetime.utcnow()
                         await db.commit()
-        except:
+        except Exception:
             pass
     finally:
         lab_agents.pop(challenge_id, None)
@@ -989,7 +989,7 @@ async def stop_challenge(challenge_id: str):
                 challenge.status = "stopped"
                 challenge.completed_at = datetime.utcnow()
                 await db.commit()
-    except:
+    except Exception:
         pass
 
     if challenge_id in lab_results:

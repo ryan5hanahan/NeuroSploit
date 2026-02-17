@@ -1399,7 +1399,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] CORS misconfiguration at {url[:50]}")
                             break
-                except:
+                except Exception:
                     pass
 
     async def _test_information_disclosure(self):
@@ -1470,7 +1470,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 ai_verified=False  # Detected by inspection
                             )
                             await self._add_finding(finding)
-            except:
+            except Exception:
                 pass
 
     async def _test_misconfigurations(self):
@@ -1551,7 +1551,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 await self._add_finding(finding)
                                 await self.log("warning", f"  [FOUND] {vuln_type} at {path}")
                                 break  # One finding per vuln type is enough
-                except:
+                except Exception:
                     pass
 
     async def _test_data_exposure(self):
@@ -1614,7 +1614,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                     await self._add_finding(finding)
                                     await self.log("warning", f"  [FOUND] {vuln_type} at {path}")
                                     break
-                except:
+                except Exception:
                     pass
 
     async def _test_ssl_crypto(self):
@@ -1632,7 +1632,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                 try:
                     async with self.session.get(https_url, timeout=5) as resp:
                         has_https = resp.status < 400
-                except:
+                except Exception:
                     pass
                 if not has_https:
                     info = self.vuln_registry.VULNERABILITY_INFO.get(vt, {})
@@ -1676,7 +1676,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                             ai_verified=False
                         )
                         await self._add_finding(finding)
-        except:
+        except Exception:
             pass
 
     async def _test_graphql_introspection(self):
@@ -1721,7 +1721,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 await self._add_finding(finding)
                                 await self.log("warning", f"  [FOUND] GraphQL introspection at {path}")
                                 return
-            except:
+            except Exception:
                 pass
 
     async def _test_csrf_inspection(self):
@@ -2032,7 +2032,7 @@ Respond in JSON:
                 if content_type == "application/json" and isinstance(body, str):
                     try:
                         body = json.loads(body)
-                    except:
+                    except Exception:
                         pass
                 async with self.session.post(url, headers=headers, data=body if isinstance(body, str) else None, json=body if isinstance(body, dict) else None, allow_redirects=False) as resp:
                     response_body = await resp.text()
@@ -2136,7 +2136,7 @@ Respond in JSON:
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] XXE at {endpoint[:50]}")
                             return
-                except:
+                except Exception:
                     pass
 
     async def _test_race_condition_fallback(self):
@@ -2168,7 +2168,7 @@ Respond in JSON:
                 if len(set(statuses)) > 1:
                     await self.log("info", f"  Inconsistent responses detected at {endpoint[:50]} - potential race condition")
 
-            except:
+            except Exception:
                 pass
 
     async def _test_rate_limit_fallback(self):
@@ -2195,7 +2195,7 @@ Respond in JSON:
                                 break
                             if i == 19:
                                 await self.log("warning", f"  [POTENTIAL] No rate limiting detected with header bypass")
-                except:
+                except Exception:
                     pass
 
     async def _test_idor_fallback(self):
@@ -2219,7 +2219,7 @@ Respond in JSON:
                                 body = await resp.text()
                                 if len(body) > 100:
                                     await self.log("debug", f"  Got response for {param}={test_id}")
-                    except:
+                    except Exception:
                         pass
 
     async def _test_bfla_fallback(self):
@@ -2236,7 +2236,7 @@ Respond in JSON:
                         await self.log("warning", f"  [POTENTIAL] Admin endpoint accessible: {url}")
                     elif resp.status in [401, 403]:
                         await self.log("debug", f"  Protected: {url}")
-            except:
+            except Exception:
                 pass
 
     async def _test_jwt_fallback(self):
@@ -2258,7 +2258,7 @@ Respond in JSON:
                     async with self.session.get(endpoint, headers=headers) as resp:
                         if resp.status == 200:
                             await self.log("debug", f"  JWT accepted at {endpoint[:50]}")
-                except:
+                except Exception:
                     pass
 
     async def _test_graphql_fallback(self):
@@ -2291,7 +2291,7 @@ Respond in JSON:
                             )
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] GraphQL introspection at {url}")
-            except:
+            except Exception:
                 pass
 
     async def _test_nosql_fallback(self):
@@ -2318,7 +2318,7 @@ Respond in JSON:
                             body = await resp.text()
                             if resp.status == 200 and len(body) > 100:
                                 await self.log("debug", f"  NoSQL payload accepted: {param}={payload[:30]}")
-                    except:
+                    except Exception:
                         pass
 
     async def _test_waf_bypass_fallback(self):
@@ -2344,7 +2344,7 @@ Respond in JSON:
                             body = await resp.text()
                             if payload in body or "alert(1)" in body:
                                 await self.log("warning", f"  [POTENTIAL] WAF bypass: {payload[:30]}")
-                except:
+                except Exception:
                     pass
 
     async def _test_csp_bypass_fallback(self):
@@ -2386,7 +2386,7 @@ Respond in JSON:
                     )
                     await self._add_finding(finding)
                     await self.log("warning", f"  [FOUND] Weak CSP: {', '.join(weaknesses)}")
-        except:
+        except Exception:
             pass
 
     async def _ai_test_vulnerability(self, vuln_type: str):
@@ -3500,7 +3500,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     }
                     if endpoint_data not in self.recon.endpoints:
                         self.recon.endpoints.append(endpoint_data)
-        except:
+        except Exception:
             pass
 
     async def _crawl_page(self, url: str):
@@ -3512,7 +3512,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 body = await resp.text()
                 await self._extract_links(body, url)
                 await self._extract_forms(body, url)
-        except:
+        except Exception:
             pass
 
     async def _extract_links(self, body: str, base_url: str):
@@ -7013,7 +7013,7 @@ Respond with exactly one of:
                 return False
 
             return True
-        except:
+        except Exception:
             # If AI fails, do NOT blindly trust - apply strict technical check
             await self.log("debug", f"  AI confirmation failed, using strict technical verification")
             return self._strict_technical_verify(vuln_type, payload, response if isinstance(response, str) else "", evidence)
@@ -7822,7 +7822,7 @@ Respond with your execution plan in JSON format:
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
                 return json.loads(match.group())
-        except:
+        except Exception:
             pass
 
         # Fallback: parse prompt keywords to determine steps
@@ -7998,7 +7998,7 @@ Provide your analysis:"""
         try:
             return await self.llm.generate(prompt,
                 get_system_prompt("reporting"))
-        except:
+        except Exception:
             return "Analysis failed"
 
     # ==================== REPORT GENERATION ====================
@@ -8290,7 +8290,7 @@ Write in a professional, non-technical tone suitable for C-level executives and 
         try:
             return await self.llm.generate(prompt,
                 get_system_prompt("reporting"))
-        except:
+        except Exception:
             return "Assessment completed. Review findings for details."
 
     def _calculate_risk_level(self, counts: Dict) -> str:

@@ -437,7 +437,7 @@ class ReconIntegration:
                         await self.log("warning", f"🚨 Interesting: {path} [{response.status}]")
                     else:
                         await self.log("info", f"Found: {path} [{response.status}]")
-        except:
+        except Exception:
             pass
 
     async def _subdomain_enum(self, domain: str, base_url: str) -> Dict:
@@ -812,7 +812,7 @@ class ReconIntegration:
                             "length": result.get("length", 0),
                             "source": "ffuf"
                         })
-                except:
+                except Exception:
                     pass
 
         # Try gobuster
@@ -875,7 +875,7 @@ class ReconIntegration:
 
                         severity = vuln.get("info", {}).get("severity", "unknown").upper()
                         await self.log("warning", f"☢ NUCLEI [{severity}]: {vuln.get('info', {}).get('name')}")
-                    except:
+                    except Exception:
                         pass
 
         await self.log("info", f"✓ Nuclei found {len(results['vulnerabilities'])} issues")

@@ -946,7 +946,7 @@ Always include ethical considerations and legal boundaries.""")
 
         try:
             return json.loads(response)
-        except:
+        except Exception:
             return {"raw_response": response}
 
     def generate_payload(self, target_info: Dict, vulnerability_type: str) -> str:
@@ -1003,7 +1003,7 @@ Consider Windows, Linux, and Active Directory environments.""")
         try:
             result = json.loads(response)
             return result.get('techniques', [])
-        except:
+        except Exception:
             return []
     
     def analyze_network_topology(self, scan_results: Dict) -> Dict:
@@ -1034,7 +1034,7 @@ Consider defense-in-depth and detection mechanisms.""")
         
         try:
             return json.loads(response)
-        except:
+        except Exception:
             return {"raw_response": response}
 
     def analyze_web_vulnerability(self, vulnerability_type: str, vulnerability_data: Dict) -> Dict:

@@ -22,12 +22,28 @@ router = APIRouter()
 ENV_FILE_PATH = Path(__file__).parent.parent.parent.parent / ".env"
 
 
+def _sanitize_env_value(value: str) -> str:
+    """Sanitize a value for safe .env file inclusion.
+
+    Prevents newline injection (which could create extra KEY=VALUE lines)
+    and strips control characters that could corrupt the file.
+    """
+    # Remove newlines, carriage returns, and null bytes
+    sanitized = value.replace("\n", "").replace("\r", "").replace("\0", "")
+    # If value contains spaces, quotes, or special chars, wrap in quotes
+    if any(c in sanitized for c in (" ", "'", '"', "#", "=", "$", "`")):
+        # Escape existing double quotes and wrap
+        sanitized = '"' + sanitized.replace('"', '\\"') + '"'
+    return sanitized
+
+
 def _update_env_file(updates: Dict[str, str]) -> bool:
     """
     Update key=value pairs in the .env file without breaking formatting.
     - If the key exists (even commented out), update its value
     - If the key doesn't exist, append it
     - Preserves comments and blank lines
+    - Sanitizes values to prevent newline injection
     """
     if not ENV_FILE_PATH.exists():
         return False
@@ -45,8 +61,8 @@ def _update_env_file(updates: Dict[str, str]) -> bool:
                 # Match: KEY=..., # KEY=..., #KEY=...
                 pattern = rf'^#?\s*{re.escape(key)}\s*='
                 if re.match(pattern, stripped):
-                    # Replace with uncommented key=value
-                    new_lines.append(f"{key}={value}")
+                    # Replace with uncommented key=sanitized_value
+                    new_lines.append(f"{key}={_sanitize_env_value(value)}")
                     updated_keys.add(key)
                     matched = True
                     break
@@ -57,7 +73,7 @@ def _update_env_file(updates: Dict[str, str]) -> bool:
         # Append any keys that weren't found in existing file
         for key, value in updates.items():
             if key not in updated_keys:
-                new_lines.append(f"{key}={value}")
+                new_lines.append(f"{key}={_sanitize_env_value(value)}")
 
         # Write back with trailing newline
         ENV_FILE_PATH.write_text("\n".join(new_lines) + "\n")

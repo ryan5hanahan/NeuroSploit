@@ -844,7 +844,7 @@ class ScanService:
                     scan.error_message = str(e)
                     scan.completed_at = datetime.utcnow()
                     await self.db.commit()
-            except:
+            except Exception:
                 pass
 
             await ws_manager.broadcast_error(scan_id, error_msg)

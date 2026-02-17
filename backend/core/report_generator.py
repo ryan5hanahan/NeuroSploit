@@ -594,7 +594,7 @@ class HTMLReportGenerator:
         try:
             created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
             created_str = created_dt.strftime('%B %d, %Y')
-        except:
+        except Exception:
             created_str = created
 
         return f"""
