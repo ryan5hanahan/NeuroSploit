@@ -199,5 +199,24 @@ class CTFFlagDetector:
             "flag_timeline": self._flag_timeline,
         }
 
+    def register_flag(self, captured: CapturedFlag) -> bool:
+        """Register a captured flag if not already seen.
+
+        Returns True if the flag was new and registered, False if duplicate.
+        """
+        if captured.flag_value in self._seen_flags:
+            return False
+        self._seen_flags.add(captured.flag_value)
+        self.captured_flags.append(captured)
+        now = time.time()
+        if self.first_flag_time is None:
+            self.first_flag_time = now
+        self._flag_timeline.append({
+            "flag": captured.flag_value[:80],
+            "platform": captured.platform,
+            "elapsed_seconds": round(now - self.start_time, 2),
+        })
+        return True
+
     def to_serializable(self) -> List[dict]:
         return [f.to_dict() for f in self.captured_flags]
