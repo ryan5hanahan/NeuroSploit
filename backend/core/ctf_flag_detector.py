@@ -30,6 +30,9 @@ BUILTIN_FLAG_PATTERNS: Dict[str, List[re.Pattern]] = {
     "picoctf": [
         re.compile(r'picoCTF\{[^\}]{1,200}\}'),
     ],
+    "metactf": [
+        re.compile(r'MetaCTF\{[^\}]{1,200}\}'),
+    ],
     "generic": [
         re.compile(r'[Cc][Tt][Ff]\{[^\}]{1,200}\}'),
     ],
@@ -47,6 +50,9 @@ class CapturedFlag:
     request_payload: str = ""
     timestamp: str = ""
     finding_id: str = ""
+    # Submission tracking
+    submitted: bool = False
+    submit_message: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)

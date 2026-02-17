@@ -73,6 +73,7 @@ class HTMLReportGenerator:
         {self._generate_findings_summary(stats)}
         {self._generate_findings_detail(sorted_findings)}
         {self._generate_scan_results(scan_results) if scan_results else ''}
+        {self._generate_ctf_section(session_data.get('ctf_data')) if session_data.get('ctf_data') else ''}
         {self._generate_recommendations(sorted_findings)}
         {self._generate_methodology()}
         {self._generate_footer(session_data)}
@@ -985,6 +986,133 @@ class HTMLReportGenerator:
                 <h4>Screenshots</h4>
                 <div class="screenshot-grid">{cards}</div>
             </div>'''
+
+    def _generate_ctf_section(self, ctf_data: Optional[Dict]) -> str:
+        """Generate CTF flags / exploits / timing section for CTF mode reports."""
+        if not ctf_data:
+            return ""
+
+        flags = ctf_data.get("flags", [])
+        metrics = ctf_data.get("metrics", {})
+        submit_url = ctf_data.get("submit_url")
+
+        if not flags and not metrics:
+            return ""
+
+        total_flags = metrics.get("flags_captured", len(flags))
+        platforms = metrics.get("unique_platforms", [])
+        ttff = metrics.get("time_to_first_flag")
+        elapsed = metrics.get("elapsed_seconds", 0)
+        timeline = metrics.get("flag_timeline", [])
+
+        # Submission stats
+        submitted_count = sum(1 for f in flags if f.get("submitted"))
+        submission_rate = round(submitted_count / total_flags * 100, 1) if total_flags else 0
+
+        # Summary stats row
+        stats_html = f"""
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #7c3aed, #5b21b6); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{total_flags}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Flags Captured</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #059669, #047857); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{len(platforms)}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Platforms</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{f'{ttff:.0f}s' if ttff is not None else 'N/A'}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Time to First Flag</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #ea580c, #c2410c); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{elapsed:.0f}s</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Elapsed</div>
+                </div>
+            </div>"""
+
+        # Flags table
+        rows_html = ""
+        for f in flags:
+            flag_val = html.escape(f.get("flag_value", "")[:80])
+            platform = html.escape(f.get("platform", ""))
+            source_url = html.escape(f.get("found_in_url", "")[:60])
+            method = html.escape(f.get("request_method", ""))
+            payload = html.escape((f.get("request_payload", "") or "")[:60])
+            ts = html.escape(f.get("timestamp", ""))
+            submitted = f.get("submitted", False)
+            submit_msg = html.escape((f.get("submit_message", "") or "")[:60])
+            status_badge = (
+                '<span style="color: #22c55e; font-weight: 600;">Accepted</span>'
+                if submitted else
+                f'<span style="color: #94a3b8;">{submit_msg or "Not submitted"}</span>'
+            )
+            exploit_html = f"{method} {payload}" if method or payload else "-"
+
+            rows_html += f"""
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.8rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{flag_val}</td>
+                    <td>{platform}</td>
+                    <td style="font-size: 0.8rem; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{source_url}</td>
+                    <td style="font-size: 0.8rem;">{exploit_html}</td>
+                    <td style="font-size: 0.8rem;">{ts[11:19] if len(ts) > 19 else ts}</td>
+                    <td>{status_badge}</td>
+                </tr>"""
+
+        table_html = f"""
+            <table>
+                <thead>
+                    <tr>
+                        <th>Flag</th>
+                        <th>Platform</th>
+                        <th>Source URL</th>
+                        <th>Exploit</th>
+                        <th>Time</th>
+                        <th>Submission</th>
+                    </tr>
+                </thead>
+                <tbody>{rows_html}</tbody>
+            </table>""" if flags else ""
+
+        # Timeline bar chart (CSS-based)
+        timeline_html = ""
+        if timeline and elapsed > 0:
+            max_elapsed = max(t.get("elapsed_seconds", 0) for t in timeline) or 1
+            bars = ""
+            for t in timeline:
+                pct = min(100, t.get("elapsed_seconds", 0) / max_elapsed * 100)
+                label = html.escape(t.get("flag", "")[:30])
+                secs = t.get("elapsed_seconds", 0)
+                bars += f"""
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <div style="width: {pct}%; min-width: 4px; height: 20px; background: linear-gradient(90deg, #7c3aed, #3b82f6); border-radius: 4px;"></div>
+                        <span style="font-size: 0.75rem; color: #94a3b8; white-space: nowrap;">{secs:.0f}s — {label}</span>
+                    </div>"""
+            timeline_html = f"""
+                <div style="margin-top: 24px;">
+                    <h4 style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 12px;">Flag Timeline</h4>
+                    {bars}
+                </div>"""
+
+        # Submission summary
+        submission_html = ""
+        if submit_url:
+            submission_html = f"""
+                <div style="margin-top: 16px; padding: 12px 16px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px;">
+                    <span style="color: #22c55e; font-weight: 600;">Submission Rate: {submission_rate}%</span>
+                    <span style="color: #94a3b8; margin-left: 12px;">({submitted_count}/{total_flags} flags accepted)</span>
+                </div>"""
+
+        return f"""
+        <section class="card">
+            <div class="card-header">
+                <div class="icon" style="background: #7c3aed;">&#127937;</div>
+                <h2>CTF Flags Captured</h2>
+            </div>
+            {stats_html}
+            {table_html}
+            {timeline_html}
+            {submission_html}
+        </section>"""
 
     def _generate_scan_results(self, scan_results: List[Dict]) -> str:
         """Generate tool scan results section"""

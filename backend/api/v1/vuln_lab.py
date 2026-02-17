@@ -42,6 +42,8 @@ class VulnLabRunRequest(BaseModel):
     ctf_mode: bool = Field(False, description="Enable CTF flag detection mode")
     ctf_flag_patterns: Optional[List[str]] = Field(None, description="Custom regex patterns for flag detection")
     ctf_agent_count: Optional[int] = Field(None, description="Number of agents for CTF pipeline (2-6)")
+    ctf_submit_url: Optional[str] = Field(None, description="CTF platform flag submission endpoint URL")
+    ctf_platform_token: Optional[str] = Field(None, description="Auth token for CTF platform API")
 
 
 class VulnLabResponse(BaseModel):
@@ -301,6 +303,8 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         request.ctf_mode,
         request.ctf_flag_patterns,
         request.ctf_agent_count,
+        request.ctf_submit_url,
+        request.ctf_platform_token,
     )
 
     return VulnLabResponse(
@@ -323,6 +327,8 @@ async def _run_lab_test(
     ctf_mode: bool = False,
     ctf_flag_patterns: Optional[List[str]] = None,
     ctf_agent_count: Optional[int] = None,
+    ctf_submit_url: Optional[str] = None,
+    ctf_platform_token: Optional[str] = None,
 ):
     """Background task: run the agent focused on a single vuln type"""
     import asyncio
@@ -530,6 +536,8 @@ async def _run_lab_test(
                     notes=notes,
                     lab_context=lab_ctx,
                     scan_id=scan_id,
+                    ctf_submit_url=ctf_submit_url or "",
+                    ctf_platform_token=ctf_platform_token or "",
                 )
                 lab_agents[challenge_id] = coordinator
                 report = await coordinator.run()
