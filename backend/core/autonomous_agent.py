@@ -714,6 +714,7 @@ class AutonomousAgent:
         self.governance = governance
         self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
         self.knowledge_augmentation_enabled = os.getenv('ENABLE_KNOWLEDGE_AUGMENTATION', 'false').lower() == 'true'
+        self.persistent_memory_enabled = os.getenv('ENABLE_PERSISTENT_MEMORY', 'true').lower() == 'true'
         self._cancelled = False
         self._paused = False
         self._skip_to_phase: Optional[str] = None  # Phase skip target
@@ -774,6 +775,26 @@ class AutonomousAgent:
         self.tool_executions: List[Dict] = []
         self.rejected_findings: List[Finding] = []
         self._sandbox = None  # Lazy-init sandbox reference for tool runner
+
+        # Persistent cross-session memory
+        self.persistent_mem = None
+        if self.persistent_memory_enabled:
+            try:
+                from backend.core.persistent_memory import PersistentMemory
+                from backend.db.database import async_session_maker
+                self.persistent_mem = PersistentMemory(async_session_maker)
+            except Exception:
+                pass
+
+        # Observability tracer
+        self.tracer = None
+        if os.getenv('ENABLE_TRACING', 'false').lower() == 'true' and scan_id:
+            try:
+                from backend.core.tracer import ScanTracer
+                from backend.db.database import async_session_maker as _tracer_asm
+                self.tracer = ScanTracer(scan_id, _tracer_asm)
+            except Exception:
+                pass
 
         # MCP tool client (direct in-process transport)
         self.mcp_client = None
@@ -2533,6 +2554,24 @@ NOT_VULNERABLE: <reason>"""
             except Exception:
                 pass
 
+        # Record in persistent cross-session memory
+        if self.persistent_mem:
+            try:
+                domain = urlparse(self.target).netloc
+                await self.persistent_mem.record_attack(
+                    domain=domain,
+                    vuln_type=finding.vulnerability_type,
+                    success=True,
+                    payload=finding.payload,
+                    parameter=finding.parameter,
+                    endpoint=finding.affected_endpoint,
+                    tech_stack=list(self.recon.technologies) if self.recon.technologies else None,
+                    confidence=float(finding.confidence_score) if finding.confidence_score else 0.0,
+                    severity=finding.severity,
+                )
+            except Exception:
+                pass
+
         # Capture screenshot for the confirmed finding
         await self._capture_finding_screenshot(finding)
 
@@ -2654,10 +2693,22 @@ NOT_VULNERABLE: <reason>"""
             cookie_jar=aiohttp.CookieJar(unsafe=True)
         )
 
+        # Resolve opsec jitter range from profile
+        jitter_range = None
+        try:
+            from core.opsec_manager import OpsecManager
+            opsec = OpsecManager()
+            jitter_range = opsec.get_jitter_range()
+            if jitter_range and jitter_range[1] > 0:
+                await self.log("info", f"Opsec jitter enabled: {jitter_range[0]*1000:.0f}-{jitter_range[1]*1000:.0f}ms")
+        except Exception:
+            pass
+
         # Initialize autonomy modules that depend on session
         self.request_engine = RequestEngine(
             self.session, default_delay=0.1, max_retries=3,
-            is_cancelled_fn=self.is_cancelled
+            is_cancelled_fn=self.is_cancelled,
+            jitter_range=jitter_range,
         )
         self.waf_detector = WAFDetector(self.request_engine)
         self.strategy = StrategyAdapter(self.memory)
@@ -2695,6 +2746,35 @@ NOT_VULNERABLE: <reason>"""
         if self.session:
             await self.session.close()
 
+    async def _init_bugbounty_scope(self):
+        """Initialize bug bounty scope checking if enabled."""
+        self._scope_parser = None
+        if os.getenv('ENABLE_BUGBOUNTY_INTEGRATION', 'false').lower() != 'true':
+            return
+        try:
+            from backend.core.bugbounty.hackerone_client import HackerOneClient
+            from backend.core.bugbounty.scope_parser import ScopeParser
+            client = HackerOneClient()
+            if not client.enabled:
+                return
+            # Derive program handle from lab_context or scan metadata
+            handle = (self.lab_context or {}).get("bugbounty_handle", "")
+            if not handle:
+                return
+            async with aiohttp.ClientSession() as sess:
+                scope_data = await client.get_scope(handle, sess)
+            if scope_data.get("in_scope"):
+                self._scope_parser = ScopeParser(scope_data)
+                await self.log("info", f"Bug bounty scope loaded: {len(scope_data['in_scope'])} in-scope assets")
+        except Exception as e:
+            await self.log("warning", f"Bug bounty scope init failed: {e}")
+
+    def _is_url_in_scope(self, url: str) -> bool:
+        """Check if URL is within bug bounty scope. Returns True if no scope set."""
+        if not hasattr(self, '_scope_parser') or not self._scope_parser:
+            return True
+        return self._scope_parser.is_in_scope(url)
+
     async def run(self) -> Dict[str, Any]:
         """Main execution method"""
         await self.log("info", "=" * 60)
@@ -2702,6 +2782,9 @@ NOT_VULNERABLE: <reason>"""
         await self.log("info", "=" * 60)
         await self.log("info", f"Target: {self.target}")
         await self.log("info", f"Mode: {self.mode.value}")
+
+        # Initialize bug bounty scope checking
+        await self._init_bugbounty_scope()
 
         if self.llm.is_available():
             await self.log("success", f"LLM Provider: {self.llm.provider.upper()} (Connected)")

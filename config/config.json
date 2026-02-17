@@ -29,7 +29,9 @@
                 "search_context_level": "high",
                 "pdf_support_enabled": true,
                 "guardrails_enabled": true,
-                "hallucination_mitigation_strategy": "self_reflection"
+                "hallucination_mitigation_strategy": "self_reflection",
+                "extended_thinking": true,
+                "thinking_budget_tokens": 10000
             }
         }
     },

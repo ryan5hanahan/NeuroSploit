@@ -67,6 +67,9 @@ class LLMManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_OUTPUT_TOKENS value: {env_max_tokens}")
 
+        # Tracer hook for observability (set externally by agent)
+        self._tracer_hook = None  # callable(input_tokens, output_tokens)
+
         # Model router — auto-initialize when enabled (skip for child instances to prevent recursion)
         self._model_router = None
         if not _routing_disabled:
@@ -336,6 +339,15 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not set. Please set the environment variable or configure in config.yaml")
 
+        # Extended thinking mode
+        thinking_enabled = (
+            os.getenv('ENABLE_EXTENDED_THINKING', 'false').lower() == 'true'
+            or self.active_profile.get('extended_thinking', False)
+        )
+        thinking_budget = int(
+            self.active_profile.get('thinking_budget_tokens', 10000)
+        )
+
         url = "https://api.anthropic.com/v1/messages"
         headers = {
             "x-api-key": self.api_key,
@@ -346,9 +358,19 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         data = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
             "messages": [{"role": "user", "content": prompt}]
         }
+
+        if thinking_enabled:
+            # Extended thinking requires temperature=1 and the beta header
+            headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
+            data["temperature"] = 1
+            data["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+            # Ensure max_tokens is large enough to include thinking + response
+            data["max_tokens"] = max(self.max_tokens, thinking_budget + 4096)
+            logger.info(f"Extended thinking enabled (budget: {thinking_budget} tokens)")
+        else:
+            data["temperature"] = self.temperature
 
         if system_prompt:
             data["system"] = system_prompt
@@ -366,6 +388,23 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
 
                 if response.status_code == 200:
                     result = response.json()
+                    # Record token usage for tracing
+                    usage = result.get("usage", {})
+                    if self._tracer_hook and usage:
+                        try:
+                            self._tracer_hook(
+                                usage.get("input_tokens", 0),
+                                usage.get("output_tokens", 0),
+                            )
+                        except Exception:
+                            pass
+                    # When extended thinking is enabled, extract only text blocks
+                    if thinking_enabled:
+                        text_parts = []
+                        for block in result.get("content", []):
+                            if block.get("type") == "text":
+                                text_parts.append(block["text"])
+                        return "\n".join(text_parts) if text_parts else result["content"][0]["text"]
                     return result["content"][0]["text"]
 
                 elif response.status_code == 401:
@@ -781,6 +820,15 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
                 logger.debug(f"Bedrock API request attempt {attempt + 1}/{MAX_RETRIES}")
                 client = boto3.client('bedrock-runtime', region_name=region)
 
+                # Extended thinking for Bedrock Claude models
+                bedrock_thinking = (
+                    os.getenv('ENABLE_EXTENDED_THINKING', 'false').lower() == 'true'
+                    or self.active_profile.get('extended_thinking', False)
+                )
+                bedrock_thinking_budget = int(
+                    self.active_profile.get('thinking_budget_tokens', 10000)
+                )
+
                 converse_params = {
                     "modelId": self.model,
                     "messages": [{"role": "user", "content": [{"text": prompt}]}],
@@ -790,10 +838,31 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
                     }
                 }
 
+                if bedrock_thinking and "claude" in self.model.lower():
+                    converse_params["inferenceConfig"]["temperature"] = 1
+                    converse_params["inferenceConfig"]["maxTokens"] = max(
+                        self.max_tokens, bedrock_thinking_budget + 4096
+                    )
+                    converse_params["additionalModelRequestFields"] = {
+                        "thinking": {
+                            "type": "enabled",
+                            "budget_tokens": bedrock_thinking_budget
+                        }
+                    }
+                    logger.info(f"Bedrock extended thinking enabled (budget: {bedrock_thinking_budget})")
+
                 if system_prompt:
                     converse_params["system"] = [{"text": system_prompt}]
 
                 response = client.converse(**converse_params)
+
+                # Extract text blocks only (skip thinking blocks)
+                if bedrock_thinking and "claude" in self.model.lower():
+                    text_parts = []
+                    for block in response["output"]["message"]["content"]:
+                        if block.get("type") == "text" or "text" in block:
+                            text_parts.append(block.get("text", ""))
+                    return "\n".join(text_parts) if text_parts else response["output"]["message"]["content"][0]["text"]
                 return response["output"]["message"]["content"][0]["text"]
 
             except NoCredentialsError:

@@ -50,6 +50,21 @@ class Settings(BaseSettings):
     # Feature Flags
     ENABLE_KNOWLEDGE_AUGMENTATION: bool = False
     ENABLE_BROWSER_VALIDATION: bool = False
+    ENABLE_EXTENDED_THINKING: bool = False
+    ENABLE_PERSISTENT_MEMORY: bool = True
+    ENABLE_TRACING: bool = False
+    ENABLE_BUGBOUNTY_INTEGRATION: bool = False
+
+    # Bug Bounty API
+    HACKERONE_API_TOKEN: Optional[str] = os.getenv("HACKERONE_API_TOKEN")
+    HACKERONE_USERNAME: Optional[str] = os.getenv("HACKERONE_USERNAME")
+
+    # OSINT API Keys
+    SHODAN_API_KEY: Optional[str] = os.getenv("SHODAN_API_KEY")
+    CENSYS_API_ID: Optional[str] = os.getenv("CENSYS_API_ID")
+    CENSYS_API_SECRET: Optional[str] = os.getenv("CENSYS_API_SECRET")
+    VIRUSTOTAL_API_KEY: Optional[str] = os.getenv("VIRUSTOTAL_API_KEY")
+    BUILTWITH_API_KEY: Optional[str] = os.getenv("BUILTWITH_API_KEY")
 
     # Scan Settings
     MAX_CONCURRENT_SCANS: int = 3

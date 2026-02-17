@@ -7,10 +7,11 @@ and error classification for autonomous pentesting.
 
 import asyncio
 import logging
+import random
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, Optional, Any
+from typing import Callable, Dict, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class RequestEngine:
         circuit_timeout: float = 30.0,
         default_timeout: float = 10.0,
         is_cancelled_fn: Optional[Callable] = None,
+        jitter_range: Optional[Tuple[float, float]] = None,
     ):
         self.session = session
         self.default_delay = default_delay
@@ -90,6 +92,7 @@ class RequestEngine:
         self.circuit_timeout = circuit_timeout
         self.default_timeout = default_timeout
         self.is_cancelled = is_cancelled_fn or (lambda: False)
+        self.jitter_range = jitter_range  # (min_seconds, max_seconds) or None
         
         # Per-host state
         self._hosts: Dict[str, HostState] = {}
@@ -214,7 +217,13 @@ class RequestEngine:
         elapsed = now - host_state.last_request_time
         if elapsed < host_state.delay:
             await asyncio.sleep(host_state.delay - elapsed)
-        
+
+        # Stealth jitter: add random delay per opsec profile
+        if self.jitter_range:
+            jmin, jmax = self.jitter_range
+            if jmax > 0:
+                await asyncio.sleep(random.uniform(jmin, jmax))
+
         # Determine timeout
         req_timeout = timeout or self._get_adaptive_timeout(host_state)
         

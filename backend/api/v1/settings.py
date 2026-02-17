@@ -86,7 +86,21 @@ class SettingsUpdate(BaseModel):
     enable_model_routing: Optional[bool] = None
     enable_knowledge_augmentation: Optional[bool] = None
     enable_browser_validation: Optional[bool] = None
+    enable_extended_thinking: Optional[bool] = None
     max_output_tokens: Optional[int] = None
+    # OSINT API keys
+    shodan_api_key: Optional[str] = None
+    censys_api_id: Optional[str] = None
+    censys_api_secret: Optional[str] = None
+    virustotal_api_key: Optional[str] = None
+    builtwith_api_key: Optional[str] = None
+    # Tracing & memory
+    enable_tracing: Optional[bool] = None
+    enable_persistent_memory: Optional[bool] = None
+    # Bug bounty
+    enable_bugbounty_integration: Optional[bool] = None
+    hackerone_api_token: Optional[str] = None
+    hackerone_username: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -103,10 +117,22 @@ class SettingsResponse(BaseModel):
     enable_model_routing: bool = False
     enable_knowledge_augmentation: bool = False
     enable_browser_validation: bool = False
+    enable_extended_thinking: bool = False
     max_output_tokens: Optional[int] = None
     aws_bedrock_region: str = "us-east-1"
     aws_bedrock_model: str = ""
     llm_model: str = ""
+    # OSINT API key presence (masked)
+    has_shodan_key: bool = False
+    has_censys_key: bool = False
+    has_virustotal_key: bool = False
+    has_builtwith_key: bool = False
+    # Tracing & memory
+    enable_tracing: bool = False
+    enable_persistent_memory: bool = True
+    # Bug bounty
+    enable_bugbounty_integration: bool = False
+    has_hackerone_config: bool = False
 
 
 def _load_settings_from_env() -> dict:
@@ -168,7 +194,21 @@ def _load_settings_from_env() -> dict:
         "enable_model_routing": _env_bool("ENABLE_MODEL_ROUTING", False),
         "enable_knowledge_augmentation": _env_bool("ENABLE_KNOWLEDGE_AUGMENTATION", False),
         "enable_browser_validation": _env_bool("ENABLE_BROWSER_VALIDATION", False),
+        "enable_extended_thinking": _env_bool("ENABLE_EXTENDED_THINKING", False),
         "max_output_tokens": _env_int("MAX_OUTPUT_TOKENS", None),
+        # OSINT API keys
+        "shodan_api_key": os.getenv("SHODAN_API_KEY", ""),
+        "censys_api_id": os.getenv("CENSYS_API_ID", ""),
+        "censys_api_secret": os.getenv("CENSYS_API_SECRET", ""),
+        "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+        "builtwith_api_key": os.getenv("BUILTWITH_API_KEY", ""),
+        # Tracing & memory
+        "enable_tracing": _env_bool("ENABLE_TRACING", False),
+        "enable_persistent_memory": _env_bool("ENABLE_PERSISTENT_MEMORY", True),
+        # Bug bounty
+        "enable_bugbounty_integration": _env_bool("ENABLE_BUGBOUNTY_INTEGRATION", False),
+        "hackerone_api_token": os.getenv("HACKERONE_API_TOKEN", ""),
+        "hackerone_username": os.getenv("HACKERONE_USERNAME", ""),
     }
 
 
@@ -195,10 +235,25 @@ async def get_settings():
         enable_model_routing=_settings["enable_model_routing"],
         enable_knowledge_augmentation=_settings["enable_knowledge_augmentation"],
         enable_browser_validation=_settings["enable_browser_validation"],
+        enable_extended_thinking=_settings["enable_extended_thinking"],
         max_output_tokens=_settings["max_output_tokens"],
         aws_bedrock_region=_settings.get("aws_bedrock_region", "us-east-1"),
         aws_bedrock_model=_settings.get("aws_bedrock_model", ""),
         llm_model=_settings.get("llm_model", ""),
+        has_shodan_key=bool(_settings.get("shodan_api_key") or os.getenv("SHODAN_API_KEY")),
+        has_censys_key=bool(
+            (_settings.get("censys_api_id") or os.getenv("CENSYS_API_ID"))
+            and (_settings.get("censys_api_secret") or os.getenv("CENSYS_API_SECRET"))
+        ),
+        has_virustotal_key=bool(_settings.get("virustotal_api_key") or os.getenv("VIRUSTOTAL_API_KEY")),
+        has_builtwith_key=bool(_settings.get("builtwith_api_key") or os.getenv("BUILTWITH_API_KEY")),
+        enable_tracing=_settings["enable_tracing"],
+        enable_persistent_memory=_settings["enable_persistent_memory"],
+        enable_bugbounty_integration=_settings["enable_bugbounty_integration"],
+        has_hackerone_config=bool(
+            (_settings.get("hackerone_api_token") or os.getenv("HACKERONE_API_TOKEN"))
+            and (_settings.get("hackerone_username") or os.getenv("HACKERONE_USERNAME"))
+        ),
     )
 
 
@@ -304,11 +359,47 @@ async def update_settings(settings_data: SettingsUpdate):
         os.environ["ENABLE_BROWSER_VALIDATION"] = val
         env_updates["ENABLE_BROWSER_VALIDATION"] = val
 
+    if settings_data.enable_extended_thinking is not None:
+        _settings["enable_extended_thinking"] = settings_data.enable_extended_thinking
+        val = str(settings_data.enable_extended_thinking).lower()
+        os.environ["ENABLE_EXTENDED_THINKING"] = val
+        env_updates["ENABLE_EXTENDED_THINKING"] = val
+
     if settings_data.max_output_tokens is not None:
         _settings["max_output_tokens"] = settings_data.max_output_tokens
         if settings_data.max_output_tokens:
             os.environ["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
             env_updates["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
+
+    # Tracing, memory, bug bounty toggles
+    for field_name, env_key in [
+        ("enable_tracing", "ENABLE_TRACING"),
+        ("enable_persistent_memory", "ENABLE_PERSISTENT_MEMORY"),
+        ("enable_bugbounty_integration", "ENABLE_BUGBOUNTY_INTEGRATION"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            str_val = str(val).lower()
+            os.environ[env_key] = str_val
+            env_updates[env_key] = str_val
+
+    # OSINT API keys
+    for field_name, env_key in [
+        ("shodan_api_key", "SHODAN_API_KEY"),
+        ("censys_api_id", "CENSYS_API_ID"),
+        ("censys_api_secret", "CENSYS_API_SECRET"),
+        ("virustotal_api_key", "VIRUSTOTAL_API_KEY"),
+        ("builtwith_api_key", "BUILTWITH_API_KEY"),
+        ("hackerone_api_token", "HACKERONE_API_TOKEN"),
+        ("hackerone_username", "HACKERONE_USERNAME"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            if val:
+                os.environ[env_key] = val
+                env_updates[env_key] = val
 
     # Persist to .env file on disk
     if env_updates:

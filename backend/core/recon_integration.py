@@ -89,12 +89,45 @@ class ReconIntegration:
             "interesting_paths": [],
             "dns_records": [],
             "screenshots": [],
-            "secrets": []
+            "secrets": [],
+            "osint": {},
         }
 
         # Extract domain from URL
         domain = self._extract_domain(target)
         base_url = target if target.startswith("http") else f"https://{target}"
+
+        # Phase 0: OSINT API enrichment (if any API keys configured)
+        try:
+            from backend.core.osint import OSINTAggregator
+            osint = OSINTAggregator()
+            if osint.enabled:
+                await self.log("info", f"▶ Running OSINT API enrichment ({', '.join(osint.client_names)})...")
+                import aiohttp
+                async with aiohttp.ClientSession() as osint_session:
+                    osint_data = await osint.enrich_target(domain, osint_session)
+                results["osint"] = osint_data
+                summary = osint_data.get("summary", {})
+                # Feed Shodan ports into results for nmap targeting
+                if summary.get("ports"):
+                    results["ports"].extend([str(p) for p in summary["ports"]])
+                    await self.log("info", f"  OSINT found {len(summary['ports'])} ports")
+                # Feed subdomains
+                if summary.get("subdomains"):
+                    results["subdomains"].extend(summary["subdomains"])
+                    await self.log("info", f"  OSINT found {len(summary['subdomains'])} subdomains")
+                # Feed technologies for vuln prioritization
+                if summary.get("technologies"):
+                    tech_names = [t.get("name", "") for t in summary["technologies"] if t.get("name")]
+                    results["technologies"].extend(tech_names)
+                    await self.log("info", f"  OSINT found {len(tech_names)} technologies")
+                if summary.get("known_vulns"):
+                    await self.log("info", f"  OSINT found {len(summary['known_vulns'])} known CVEs")
+                await self.log("info", "✓ OSINT enrichment complete")
+        except ImportError:
+            pass
+        except Exception as e:
+            await self.log("warning", f"⚠ OSINT enrichment failed: {e}")
 
         # Run recon phases based on depth
         phases = self._get_phases(depth)

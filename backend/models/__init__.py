@@ -8,6 +8,8 @@ from backend.models.agent_task import AgentTask
 from backend.models.vuln_lab import VulnLabChallenge
 from backend.models.llm_test_result import LlmTestResult
 from backend.models.tradecraft import Tradecraft, ScanTradecraft
+from backend.models.memory import AttackPatternMemory, TargetFingerprint, SuccessfulPayload
+from backend.models.trace import TraceSpan
 
 __all__ = [
     "Scan",
@@ -22,4 +24,8 @@ __all__ = [
     "LlmTestResult",
     "Tradecraft",
     "ScanTradecraft",
+    "AttackPatternMemory",
+    "TargetFingerprint",
+    "SuccessfulPayload",
+    "TraceSpan",
 ]
