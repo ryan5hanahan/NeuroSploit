@@ -171,15 +171,20 @@ class DockerToolExecutor:
             self.client = docker.from_env()
             self.client.ping()
 
+            # Docker socket is reachable — mark as initialized so status shows available
+            self._initialized = True
+
             # Check if tools image exists
             try:
                 self.client.images.get(self.DOCKER_IMAGE)
-                self._initialized = True
                 return True, "Docker initialized with tools image"
             except docker.errors.ImageNotFound:
                 # Try to build the image
                 logger.info("Building security tools Docker image...")
-                return await self._build_tools_image()
+                ok, msg = await self._build_tools_image()
+                if not ok:
+                    logger.warning(f"Tools image not available: {msg}. Docker is connected but tool execution will fail until image is built.")
+                return True, "Docker connected (tools image pending)"
 
         except docker.errors.DockerException as e:
             return False, f"Docker not available: {str(e)}"
