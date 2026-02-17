@@ -126,6 +126,61 @@ class AuthManager:
         self._login_attempts = 0
         self._successful_logins = 0
 
+    # --- Credential Set Seeding ------------------------------------------
+
+    def seed_from_credential_sets(self, credential_sets: List[Dict]):
+        """Seed contexts from externally-provided credential sets.
+
+        Replaces the default user_a/user_b/admin contexts with labeled
+        contexts built from the provided credential sets.
+
+        Direct-injection types (bearer, cookie, header, basic) are immediately
+        marked as authenticated. Login types store credentials for later
+        authenticate() calls.
+        """
+        # Clear default contexts
+        self.contexts.clear()
+
+        for cs in credential_sets:
+            label = cs.get("label", f"ctx_{len(self.contexts)}")
+            role = cs.get("role", "user")
+            auth_type = cs.get("auth_type", "none")
+
+            ctx = SessionContext(name=label, role=role)
+
+            if auth_type == "bearer" and cs.get("bearer_token"):
+                ctx.headers["Authorization"] = f"Bearer {cs['bearer_token']}"
+                ctx.state = "authenticated"
+
+            elif auth_type == "cookie" and cs.get("cookie"):
+                # Parse cookie string into dict
+                for pair in cs["cookie"].split(";"):
+                    pair = pair.strip()
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        ctx.cookies[k.strip()] = v.strip()
+                ctx.state = "authenticated"
+
+            elif auth_type == "header" and cs.get("header_name") and cs.get("header_value"):
+                ctx.headers[cs["header_name"]] = cs["header_value"]
+                ctx.state = "authenticated"
+
+            elif auth_type == "basic" and cs.get("username") and cs.get("password"):
+                import base64
+                cred_str = f"{cs['username']}:{cs['password']}"
+                encoded = base64.b64encode(cred_str.encode()).decode()
+                ctx.headers["Authorization"] = f"Basic {encoded}"
+                ctx.state = "authenticated"
+
+            elif auth_type == "login" and cs.get("username") and cs.get("password"):
+                # Store credentials for later authenticate() call
+                self.add_credentials(cs["username"], cs["password"], role=role, source="provided")
+                ctx.credential = Credentials(cs["username"], cs["password"], role, "provided")
+                ctx.state = "unauthenticated"  # Will authenticate later
+
+            self.contexts[label] = ctx
+            logger.info(f"Seeded context '{label}' (role={role}, auth_type={auth_type}, state={ctx.state})")
+
     # --- Credential Management -------------------------------------------
 
     def add_credentials(self, username: str, password: str, role: str = "user", source: str = "provided"):

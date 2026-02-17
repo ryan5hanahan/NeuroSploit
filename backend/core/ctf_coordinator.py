@@ -59,6 +59,7 @@ class CTFCoordinator:
         scan_id: Optional[str] = None,
         ctf_submit_url: str = "",
         ctf_platform_token: str = "",
+        credential_sets: Optional[List[Dict]] = None,
     ):
         self.target = target
         self.agent_count = max(2, min(6, agent_count))
@@ -81,6 +82,9 @@ class CTFCoordinator:
         self._recon_data = None
         self._all_findings: List[Dict] = []
         self._harvested_auth_headers: Dict[str, str] = {}  # Auth tokens from successful logins
+        self.credential_sets = credential_sets
+        self._multi_context_headers: Dict[str, Dict] = {}  # label → headers dict
+        self._diff_engine = None
 
     def cancel(self):
         """Cancel all agents - called by stop_challenge endpoint."""
@@ -106,6 +110,10 @@ class CTFCoordinator:
             if self._cancelled:
                 return self._build_final_report(start_time)
 
+            # Phase 1.52: Initialize multi-credential contexts
+            if self.credential_sets and len(self.credential_sets) >= 2:
+                await self._initialize_credential_contexts()
+
             # Phase 1.55: Credential harvesting + authenticated probes
             await self._harvest_and_reuse_credentials()
             if self._cancelled:
@@ -127,7 +135,12 @@ class CTFCoordinator:
             await self._progress_callback(35, "ctf_pipeline:testing")
             await self._run_testing_phase(assignments)
 
-            # Phase 3.5: Submit captured flags to CTF platform
+            # Phase 3.5: Differential access control testing
+            if self._diff_engine and not self._cancelled:
+                await self._progress_callback(90, "ctf_pipeline:differential")
+                await self._run_differential_access_control()
+
+            # Phase 3.6: Submit captured flags to CTF platform
             if self.flag_detector and self.ctf_submit_url:
                 await self._progress_callback(93, "ctf_pipeline:submitting_flags")
                 await self._submit_captured_flags()
@@ -357,6 +370,144 @@ class CTFCoordinator:
     # ------------------------------------------------------------------
     # Phase 4: Aggregation
     # ------------------------------------------------------------------
+
+    async def _initialize_credential_contexts(self):
+        """Build multi-context headers from credential_sets for differential testing."""
+        if not self.credential_sets:
+            return
+
+        from backend.core.access_control_diff import AccessControlDiffEngine
+        import base64
+
+        await self._log_callback("info", f"[PIPELINE] Initializing {len(self.credential_sets)} credential contexts")
+
+        context_labels = []
+        for cs in self.credential_sets:
+            label = cs.get("label", f"ctx_{len(self._multi_context_headers)}")
+            role = cs.get("role", "user")
+            auth_type = cs.get("auth_type", "none")
+            headers = dict(self.auth_headers)  # Start with base headers
+
+            if auth_type == "bearer" and cs.get("bearer_token"):
+                headers["Authorization"] = f"Bearer {cs['bearer_token']}"
+            elif auth_type == "cookie" and cs.get("cookie"):
+                headers["Cookie"] = cs["cookie"]
+            elif auth_type == "header" and cs.get("header_name") and cs.get("header_value"):
+                headers[cs["header_name"]] = cs["header_value"]
+            elif auth_type == "basic" and cs.get("username") and cs.get("password"):
+                encoded = base64.b64encode(f"{cs['username']}:{cs['password']}".encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+            elif auth_type == "login" and cs.get("username") and cs.get("password"):
+                # Try to login and extract token
+                token = await self._login_for_context(cs["username"], cs["password"])
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                    await self._log_callback("info", f"[PIPELINE] Context '{label}' authenticated via login")
+                else:
+                    await self._log_callback("warning", f"[PIPELINE] Context '{label}' login failed — skipping")
+                    continue
+
+            self._multi_context_headers[label] = headers
+            context_labels.append((label, role))
+
+        if len(context_labels) >= 2:
+            self._diff_engine = AccessControlDiffEngine(context_labels)
+            await self._log_callback("info", f"[PIPELINE] Diff engine ready with {len(context_labels)} contexts")
+
+    async def _login_for_context(self, username: str, password: str) -> Optional[str]:
+        """Attempt login and return JWT token if successful."""
+        from urllib.parse import urlparse
+        parsed = urlparse(self.target)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        login_paths = ["/rest/user/login", "/api/login", "/api/auth/login", "/login", "/api/v1/auth/login"]
+
+        async with aiohttp.ClientSession() as sess:
+            for path in login_paths:
+                try:
+                    url = f"{base}{path}"
+                    payload = {"email": username, "password": password}
+                    async with sess.post(url, json=payload, ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status in (200, 201):
+                            data = await resp.json()
+                            # Extract token from common response shapes
+                            for key_path in [["token"], ["access_token"], ["authentication", "token"], ["data", "token"]]:
+                                obj = data
+                                for k in key_path:
+                                    if isinstance(obj, dict):
+                                        obj = obj.get(k)
+                                    else:
+                                        obj = None
+                                        break
+                                if isinstance(obj, str) and len(obj) > 20:
+                                    return obj
+                except Exception:
+                    continue
+        return None
+
+    async def _run_differential_access_control(self):
+        """Probe API endpoints with all contexts and diff responses."""
+        if not self._diff_engine or len(self._multi_context_headers) < 2:
+            return
+
+        from backend.core.access_control_diff import ContextResponse
+
+        # Also add auto-harvested credentials as a context
+        if self._harvested_auth_headers:
+            for label, headers in self._harvested_auth_headers.items():
+                if label not in self._multi_context_headers:
+                    merged = dict(self.auth_headers)
+                    merged.update(headers if isinstance(headers, dict) else {"Authorization": f"Bearer {headers}"})
+                    self._multi_context_headers[label] = merged
+
+        # Collect API endpoints from recon
+        endpoints = []
+        if self._recon_data:
+            for ep in self._recon_data.api_endpoints[:25]:
+                if ep:
+                    endpoints.append((ep, "GET"))
+            for ep in self._recon_data.endpoints[:20]:
+                url = ep if isinstance(ep, str) else ep.get("url", "")
+                if url and (url, "GET") not in endpoints:
+                    endpoints.append((url, "GET"))
+
+        if not endpoints:
+            return
+
+        await self._log_callback("info", f"[PIPELINE] Differential access control: {len(endpoints)} endpoints x {len(self._multi_context_headers)} contexts")
+        total_diff_findings = 0
+
+        async with aiohttp.ClientSession() as sess:
+            for ep_url, ep_method in endpoints:
+                if self._cancelled:
+                    break
+
+                responses = []
+                for label, headers in self._multi_context_headers.items():
+                    try:
+                        role = self._diff_engine._label_to_role.get(label, "user")
+                        async with sess.request(
+                            ep_method, ep_url, headers=headers,
+                            allow_redirects=False, ssl=False,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as resp:
+                            body = await resp.text()
+                            responses.append(ContextResponse(
+                                label=label, role=role, status=resp.status,
+                                body=body[:10000], headers=dict(resp.headers),
+                            ))
+                    except Exception:
+                        continue
+
+                diffs = self._diff_engine.compare(ep_url, ep_method, responses)
+                for diff in diffs:
+                    if diff.confidence < 0.55:
+                        continue
+                    finding_dict = self._diff_engine.finding_to_dict(diff)
+                    self._all_findings.append(finding_dict)
+                    await self._finding_callback(finding_dict)
+                    total_diff_findings += 1
+
+        await self._log_callback("info", f"[PIPELINE] Differential testing: {total_diff_findings} findings")
 
     def _build_final_report(self, start_time: datetime) -> Dict:
         """Merge and deduplicate findings from all agents."""

@@ -61,6 +61,10 @@ async def _run_migrations(conn):
             logger.info("Adding 'repeated_from_id' column to scans table...")
             await conn.execute(text("ALTER TABLE scans ADD COLUMN repeated_from_id VARCHAR(36)"))
 
+        if "credential_sets" not in columns:
+            logger.info("Adding 'credential_sets' column to scans table...")
+            await conn.execute(text("ALTER TABLE scans ADD COLUMN credential_sets JSON"))
+
         # Check and add columns to reports table
         result = await conn.execute(text("PRAGMA table_info(reports)"))
         columns = [row[1] for row in result.fetchall()]
@@ -114,6 +118,14 @@ async def _run_migrations(conn):
             if "poc_code" not in columns:
                 logger.info("Adding 'poc_code' column to vulnerabilities table...")
                 await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN poc_code TEXT"))
+
+            if "credential_label" not in columns:
+                logger.info("Adding 'credential_label' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN credential_label VARCHAR(100)"))
+
+            if "auth_context" not in columns:
+                logger.info("Adding 'auth_context' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN auth_context JSON"))
 
         # Check if agent_tasks table exists
         result = await conn.execute(

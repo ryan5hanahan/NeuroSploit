@@ -147,6 +147,8 @@ class Finding:
     negative_controls: str = ""   # Control test results
     ai_status: str = "confirmed"  # "confirmed" | "rejected" | "pending"
     rejection_reason: str = ""
+    credential_label: str = ""
+    auth_context: Dict = field(default_factory=dict)
 
 
 @dataclass
@@ -698,6 +700,7 @@ class AutonomousAgent:
         preset_recon: Optional['ReconData'] = None,
         focus_vuln_types: Optional[List[str]] = None,
         agent_label: Optional[str] = None,
+        credential_sets: Optional[List[Dict]] = None,
     ):
         self.target = self._normalize_target(target)
         self.mode = mode
@@ -768,6 +771,8 @@ class AutonomousAgent:
         self.preset_recon = preset_recon
         self.focus_vuln_types = focus_vuln_types
         self.agent_label = agent_label or ""
+        self.credential_sets = credential_sets
+        self._diff_engine = None  # Lazy-init in __aenter__ when credential_sets present
         if preset_recon:
             self.recon = preset_recon
         self.memory = AgentMemory()
@@ -2623,6 +2628,105 @@ NOT_VULNERABLE: <reason>"""
             except Exception as e:
                 print(f"Finding callback error: {e}")
 
+    async def _run_differential_probes(self):
+        """Run differential access control probes using multiple credential contexts.
+
+        For each discovered endpoint, make requests with each authenticated context
+        and use the diff engine to detect BOLA/BFLA/privilege escalation.
+        """
+        if not self._diff_engine or not self.auth_manager or not self.session:
+            return
+
+        from backend.core.access_control_diff import ContextResponse
+
+        # Collect endpoints to probe
+        endpoints = []
+        for ep in self.recon.endpoints[:30]:
+            url = _get_endpoint_url(ep)
+            method = _get_endpoint_method(ep)
+            if url:
+                endpoints.append((url, method))
+        for url in self.recon.api_endpoints[:20]:
+            if url and (url, "GET") not in endpoints:
+                endpoints.append((url, "GET"))
+
+        if not endpoints:
+            await self.log("info", "[DIFF] No endpoints to probe for differential testing")
+            return
+
+        authenticated_contexts = [
+            (label, ctx) for label, ctx in self.auth_manager.contexts.items()
+            if ctx.state == "authenticated"
+        ]
+        if len(authenticated_contexts) < 2:
+            await self.log("info", f"[DIFF] Need 2+ authenticated contexts, have {len(authenticated_contexts)} — skipping")
+            return
+
+        await self.log("info", f"[DIFF] Probing {len(endpoints)} endpoints with {len(authenticated_contexts)} contexts")
+        total_findings = 0
+
+        for ep_url, ep_method in endpoints:
+            if self.is_cancelled():
+                break
+
+            responses = []
+            for label, ctx in authenticated_contexts:
+                try:
+                    req_kwargs = self.auth_manager.get_request_kwargs(label)
+                    headers = {**self.auth_headers, **req_kwargs.get("headers", {})}
+                    cookies = req_kwargs.get("cookies", {})
+                    if cookies:
+                        cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+                        headers["Cookie"] = cookie_str
+
+                    import time as _time
+                    t0 = _time.time()
+                    async with self.session.request(
+                        ep_method, ep_url, headers=headers,
+                        allow_redirects=False, ssl=False, timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        body = await resp.text()
+                        latency = (_time.time() - t0) * 1000
+                        responses.append(ContextResponse(
+                            label=label,
+                            role=ctx.role,
+                            status=resp.status,
+                            body=body[:10000],
+                            headers=dict(resp.headers),
+                            latency_ms=latency,
+                        ))
+                except Exception as e:
+                    responses.append(ContextResponse(
+                        label=label, role=ctx.role, status=0, error=str(e),
+                    ))
+
+            # Run diff analysis
+            diffs = self._diff_engine.compare(ep_url, ep_method, responses)
+            for diff in diffs:
+                if diff.confidence < 0.55:
+                    continue
+                finding_dict = self._diff_engine.finding_to_dict(diff)
+                finding = Finding(
+                    id=f"diff_{hashlib.md5(f'{ep_url}_{diff.finding_type}_{diff.attacker_label}'.encode()).hexdigest()[:12]}",
+                    title=finding_dict["title"],
+                    severity=finding_dict["severity"],
+                    vulnerability_type=finding_dict["vulnerability_type"],
+                    affected_endpoint=finding_dict["affected_endpoint"],
+                    evidence=finding_dict["evidence"],
+                    description=finding_dict["description"],
+                    remediation=finding_dict.get("remediation", ""),
+                    cwe_id=finding_dict.get("cwe_id", ""),
+                    references=finding_dict.get("references", []),
+                    credential_label=finding_dict.get("credential_label", ""),
+                    auth_context=finding_dict.get("auth_context", {}),
+                    confidence=str(int(diff.confidence * 100)),
+                    confidence_score=int(diff.confidence * 100),
+                )
+                await self._add_finding(finding)
+                total_findings += 1
+
+        await self.log("info", f"[DIFF] Differential testing complete: {total_findings} findings")
+
     async def _capture_finding_screenshot(self, finding: Finding):
         """Capture a browser screenshot for a confirmed vulnerability finding.
 
@@ -2713,6 +2817,29 @@ NOT_VULNERABLE: <reason>"""
         self.waf_detector = WAFDetector(self.request_engine)
         self.strategy = StrategyAdapter(self.memory)
         self.auth_manager = AuthManager(self.request_engine, self.recon)
+
+        # Multi-credential differential access control testing
+        if self.credential_sets and len(self.credential_sets) >= 2:
+            try:
+                from backend.core.access_control_diff import AccessControlDiffEngine
+                self.auth_manager.seed_from_credential_sets(self.credential_sets)
+                context_labels = [
+                    (cs.get("label", f"ctx_{i}"), cs.get("role", "user"))
+                    for i, cs in enumerate(self.credential_sets)
+                ]
+                self._diff_engine = AccessControlDiffEngine(context_labels)
+                await self.log("info", f"[DIFF] Access control diff engine initialized with {len(self.credential_sets)} contexts")
+                # Authenticate any login-flow contexts
+                for label, ctx in self.auth_manager.contexts.items():
+                    if ctx.state == "unauthenticated" and ctx.credential:
+                        success = await self.auth_manager.authenticate(label)
+                        if success:
+                            await self.log("info", f"[DIFF] Authenticated context '{label}' via login flow")
+                        else:
+                            await self.log("warning", f"[DIFF] Failed to authenticate context '{label}'")
+            except Exception as e:
+                await self.log("warning", f"[DIFF] Failed to init diff engine: {e}")
+                self._diff_engine = None
 
         # Connect MCP tools
         if self.mcp_client and self.mcp_client.enabled:
@@ -3906,6 +4033,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self._test_all_vulnerabilities(attack_plan)
             await self._update_progress(70, "Vulnerability testing complete")
 
+        # Phase 3.5: Differential Access Control Probes
+        if self._diff_engine and not self.is_cancelled():
+            await self.log("info", "[PHASE 3.5/5] Differential Access Control Testing")
+            await self._run_differential_probes()
+            await self._update_progress(75, "Differential testing complete")
+
         # Phase 4: AI Finding Enhancement
         skip_target = self._check_skip("enhancement")
         if skip_target:
@@ -4135,7 +4268,13 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         await self._test_all_vulnerabilities(attack_plan)
         await self._update_progress(75, "Deep testing complete")
 
-        # ── FINALIZATION PHASE (75-100%) ──
+        # ── DIFFERENTIAL ACCESS CONTROL (75-80%) ──
+        if self._diff_engine and not self.is_cancelled():
+            await self.log("info", "[DIFF] Differential Access Control Testing")
+            await self._run_differential_probes()
+            await self._update_progress(80, "Differential testing complete")
+
+        # ── FINALIZATION PHASE (80-100%) ──
         await self.log("info", "[FINAL] Screenshot Capture")
         for finding in self.findings:
             if self.is_cancelled():

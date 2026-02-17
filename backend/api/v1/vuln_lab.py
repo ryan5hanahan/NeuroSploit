@@ -44,6 +44,7 @@ class VulnLabRunRequest(BaseModel):
     ctf_agent_count: Optional[int] = Field(None, description="Number of agents for CTF pipeline (2-6)")
     ctf_submit_url: Optional[str] = Field(None, description="CTF platform flag submission endpoint URL")
     ctf_platform_token: Optional[str] = Field(None, description="Auth token for CTF platform API")
+    credential_sets: Optional[List[Dict]] = Field(None, description="Multiple credential sets for differential access control testing")
 
 
 class VulnLabResponse(BaseModel):
@@ -305,6 +306,7 @@ async def run_vuln_lab(request: VulnLabRunRequest, background_tasks: BackgroundT
         request.ctf_agent_count,
         request.ctf_submit_url,
         request.ctf_platform_token,
+        request.credential_sets,
     )
 
     return VulnLabResponse(
@@ -329,6 +331,7 @@ async def _run_lab_test(
     ctf_agent_count: Optional[int] = None,
     ctf_submit_url: Optional[str] = None,
     ctf_platform_token: Optional[str] = None,
+    credential_sets: Optional[List[Dict]] = None,
 ):
     """Background task: run the agent focused on a single vuln type"""
     import asyncio
@@ -538,6 +541,7 @@ async def _run_lab_test(
                     scan_id=scan_id,
                     ctf_submit_url=ctf_submit_url or "",
                     ctf_platform_token=ctf_platform_token or "",
+                    credential_sets=credential_sets,
                 )
                 lab_agents[challenge_id] = coordinator
                 report = await coordinator.run()
@@ -553,6 +557,7 @@ async def _run_lab_test(
                     finding_callback=finding_callback,
                     lab_context=lab_ctx,
                     governance=governance,
+                    credential_sets=credential_sets,
                 ) as agent:
                     lab_agents[challenge_id] = agent
                     # Also register in agent.py's shared instances so stop works
@@ -611,6 +616,8 @@ async def _run_lab_test(
                     screenshots=finding.get("screenshots", []),
                     url=finding.get("url", finding.get("affected_endpoint", "")),
                     parameter=finding.get("parameter", finding.get("poc_parameter", "")),
+                    credential_label=finding.get("credential_label"),
+                    auth_context=finding.get("auth_context"),
                 )
                 db.add(vuln)
 

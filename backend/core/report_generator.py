@@ -56,6 +56,10 @@ class HTMLReportGenerator:
         # Calculate statistics
         stats = self._calculate_stats(sorted_findings)
 
+        # Separate access control differential findings
+        ac_findings = [f for f in sorted_findings if f.get('auth_context')]
+        regular_findings = [f for f in sorted_findings if not f.get('auth_context')]
+
         # Generate report sections
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -71,6 +75,7 @@ class HTMLReportGenerator:
         {self._generate_executive_summary(session_data, stats, sorted_findings)}
         {self._generate_scope_section(session_data)}
         {self._generate_findings_summary(stats)}
+        {self._generate_access_control_section(ac_findings, session_data) if ac_findings else ''}
         {self._generate_findings_detail(sorted_findings)}
         {self._generate_scan_results(scan_results) if scan_results else ''}
         {self._generate_ctf_section(session_data.get('ctf_data')) if session_data.get('ctf_data') else ''}
@@ -768,6 +773,118 @@ class HTMLReportGenerator:
                     <div class="label">Total</div>
                 </div>
             </div>
+        </section>"""
+
+    def _generate_access_control_section(self, ac_findings: List[Dict], session_data: Dict) -> str:
+        """Generate Access Control Differential Testing section"""
+        if not ac_findings:
+            return ""
+
+        # Collect credential set labels from session data
+        cred_sets = session_data.get('credential_sets', [])
+        cred_html = ""
+        if cred_sets:
+            cred_rows = ""
+            for cs in cred_sets:
+                label = html.escape(cs.get('label', ''))
+                role = html.escape(cs.get('role', 'user'))
+                auth_type = html.escape(cs.get('auth_type', 'none'))
+                cred_rows += f"<tr><td>{label}</td><td>{role}</td><td>{auth_type}</td></tr>"
+            cred_html = f"""
+            <div style="margin-bottom: 20px;">
+                <h4 style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 8px;">Credential Sets Used</h4>
+                <table>
+                    <thead><tr><th>Label</th><th>Role</th><th>Auth Type</th></tr></thead>
+                    <tbody>{cred_rows}</tbody>
+                </table>
+            </div>"""
+
+        # Group by delta_type
+        by_type: Dict[str, List[Dict]] = {}
+        for f in ac_findings:
+            dt = f.get('auth_context', {}).get('delta_type', 'unknown')
+            by_type.setdefault(dt, []).append(f)
+
+        type_labels = {
+            'bola': ('BOLA', '#dc2626', 'Broken Object Level Authorization — different users see/modify each other\'s resources'),
+            'bfla': ('BFLA', '#ea580c', 'Broken Function Level Authorization — lower-privilege users access admin functions'),
+            'status_diff': ('Status Differential', '#ca8a04', 'Unexpected HTTP status code differences between privilege levels'),
+            'body_diff': ('Body Differential', '#2563eb', 'Response body contains different data fields across privilege levels'),
+            'write_diff': ('Write Differential', '#7c3aed', 'Non-admin users can perform write operations'),
+        }
+
+        findings_html = ""
+        for dt, items in by_type.items():
+            label, color, desc = type_labels.get(dt, (dt.upper(), '#6b7280', ''))
+            rows_html = ""
+            for f in items:
+                ctx = f.get('auth_context', {})
+                attacker = html.escape(ctx.get('attacker_label', '-'))
+                victim = html.escape(ctx.get('victim_label', '-'))
+                endpoint = html.escape(f.get('affected_endpoint', '-'))
+                severity = f.get('severity', 'info')
+                sev_colors = self.SEVERITY_COLORS.get(severity, self.SEVERITY_COLORS['info'])
+                confidence = ctx.get('confidence', 0)
+                evidence = html.escape(ctx.get('evidence', '')[:120])
+
+                rows_html += f"""
+                    <tr>
+                        <td><span class="severity-badge" style="background: {sev_colors['bg']}; color: {sev_colors['text']}; font-size: 0.7rem; padding: 2px 8px;">{severity.upper()}</span></td>
+                        <td style="font-size: 0.875rem;">{html.escape(f.get('title', '-'))}</td>
+                        <td style="font-family: monospace; font-size: 0.8rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{endpoint}</td>
+                        <td style="color: #ef4444;">{attacker}</td>
+                        <td style="color: #3b82f6;">{victim}</td>
+                        <td>{confidence:.0%}</td>
+                        <td style="font-size: 0.8rem; color: #94a3b8;">{evidence}</td>
+                    </tr>"""
+
+            findings_html += f"""
+                <div style="margin-bottom: 24px;">
+                    <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <span style="width: 10px; height: 10px; background: {color}; border-radius: 50%;"></span>
+                        <span style="color: {color}; font-weight: 600;">{label}</span>
+                        <span style="font-size: 0.75rem; color: #94a3b8; font-weight: 400;">({len(items)} finding{'s' if len(items) != 1 else ''})</span>
+                    </h4>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">{desc}</p>
+                    <table>
+                        <thead>
+                            <tr><th>Sev</th><th>Finding</th><th>Endpoint</th><th>Attacker</th><th>Victim</th><th>Conf</th><th>Evidence</th></tr>
+                        </thead>
+                        <tbody>{rows_html}</tbody>
+                    </table>
+                </div>"""
+
+        # Summary stats
+        total = len(ac_findings)
+        bola_count = len(by_type.get('bola', []))
+        bfla_count = len(by_type.get('bfla', []))
+
+        return f"""
+        <section class="card">
+            <div class="card-header">
+                <div class="icon" style="background: #7c3aed;">&#128274;</div>
+                <h2>Access Control Differential Testing</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #7c3aed, #5b21b6); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{total}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Total AC Findings</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #dc2626, #991b1b); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{bola_count}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">BOLA</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #ea580c, #c2410c); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{bfla_count}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">BFLA</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{len(cred_sets)}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Credential Sets</div>
+                </div>
+            </div>
+            {cred_html}
+            {findings_html}
         </section>"""
 
     def _generate_findings_detail(self, findings: List[Dict]) -> str:

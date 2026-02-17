@@ -9,6 +9,7 @@ import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
 import Textarea from '../components/common/Textarea'
+import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
 import { agentApi, targetsApi } from '../services/api'
 import type { AgentTask, AgentMode } from '../types'
 
@@ -95,6 +96,9 @@ export default function NewScanPage() {
   const [showAuthOptions, setShowAuthOptions] = useState(false)
   const [authType, setAuthType] = useState<'none' | 'cookie' | 'bearer' | 'basic' | 'header'>('none')
   const [authValue, setAuthValue] = useState('')
+
+  // Credential sets
+  const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
 
   // Advanced options
   const [maxDepth, setMaxDepth] = useState(5)
@@ -196,6 +200,12 @@ export default function NewScanPage() {
       if (authType !== 'none' && authValue.trim()) {
         request.auth_type = authType
         request.auth_value = authValue
+      }
+
+      // Add credential sets for differential testing
+      const validCredSets = credentialSets.filter(cs => cs.label.trim())
+      if (validCredSets.length >= 2) {
+        request.credential_sets = validCredSets
       }
 
       // Start agent
@@ -577,6 +587,19 @@ export default function NewScanPage() {
             />
           )}
         </div>
+      </Card>
+
+      {/* Multi-Credential Differential Testing */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-primary-500" />
+            <span>Multi-Credential Testing</span>
+            <span className="text-xs text-dark-500">(Optional)</span>
+          </div>
+        }
+      >
+        <CredentialSetsPanel credentialSets={credentialSets} onChange={setCredentialSets} />
       </Card>
 
       {/* Advanced Options */}

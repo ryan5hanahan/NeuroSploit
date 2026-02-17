@@ -930,6 +930,21 @@ export default function ScanDetailsPage() {
                           AI Confirmed
                         </span>
                       )}
+                      {/* Credential & Access Control badges */}
+                      {(vuln as any).credential_label && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> {(vuln as any).credential_label}
+                        </span>
+                      )}
+                      {(vuln as any).auth_context?.delta_type && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                          (vuln as any).auth_context.delta_type === 'bola' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                          (vuln as any).auth_context.delta_type === 'bfla' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                          'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                        }`}>
+                          {(vuln as any).auth_context.delta_type.toUpperCase()}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -961,6 +976,44 @@ export default function ScanDetailsPage() {
                         </span>
                       )}
                     </div>
+
+                    {/* Access Control Differential Context */}
+                    {(vuln as any).auth_context && (
+                      <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
+                        <p className="text-sm font-medium text-purple-400 mb-2 flex items-center gap-1">
+                          <Shield className="w-4 h-4" /> Access Control Differential Finding
+                        </p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                          {(vuln as any).auth_context.delta_type && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Type</span>
+                              <span className="text-purple-300 font-medium uppercase">{(vuln as any).auth_context.delta_type}</span>
+                            </div>
+                          )}
+                          {(vuln as any).auth_context.attacker_label && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Attacker</span>
+                              <span className="text-red-400">{(vuln as any).auth_context.attacker_label}</span>
+                            </div>
+                          )}
+                          {(vuln as any).auth_context.victim_label && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Victim</span>
+                              <span className="text-blue-400">{(vuln as any).auth_context.victim_label}</span>
+                            </div>
+                          )}
+                          {(vuln as any).auth_context.confidence && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Confidence</span>
+                              <span className="text-white">{((vuln as any).auth_context.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                          )}
+                        </div>
+                        {(vuln as any).auth_context.evidence && (
+                          <p className="text-xs text-dark-400 mt-2 border-t border-purple-500/20 pt-2">{(vuln as any).auth_context.evidence}</p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Validation Pipeline Details */}
                     {(() => {

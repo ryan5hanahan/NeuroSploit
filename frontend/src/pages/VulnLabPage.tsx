@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { vulnLabApi } from '../services/api'
 import type { VulnTypeCategory, VulnLabChallenge, VulnLabStats, VulnLabLogEntry } from '../types'
+import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-500',
@@ -73,6 +74,7 @@ export default function VulnLabPage() {
   const [ctfMode, setCtfMode] = useState(false)
   const [ctfPatterns, setCtfPatterns] = useState('')
   const [ctfAgentCount, setCtfAgentCount] = useState(4)
+  const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
 
   // Data state
   const [categories, setCategories] = useState<Record<string, VulnTypeCategory>>({})
@@ -166,6 +168,7 @@ export default function VulnLabPage() {
       const ctfPatternsArr = ctfPatterns.trim()
         ? ctfPatterns.split('\n').map(p => p.trim()).filter(Boolean)
         : undefined
+      const validCredSets = credentialSets.filter(cs => cs.label.trim())
       const resp = await vulnLabApi.run({
         target_url: targetUrl.trim(),
         vuln_type: selectedVulnType || undefined,
@@ -176,6 +179,7 @@ export default function VulnLabPage() {
         ctf_mode: ctfMode || undefined,
         ctf_flag_patterns: ctfPatternsArr,
         ctf_agent_count: ctfMode ? ctfAgentCount : undefined,
+        credential_sets: validCredSets.length >= 2 ? validCredSets : undefined,
       })
       setRunningChallengeId(resp.challenge_id)
     } catch (err: any) {
@@ -449,6 +453,11 @@ export default function VulnLabPage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Multi-Credential Differential Testing */}
+            <div className="mb-6">
+              <CredentialSetsPanel credentialSets={credentialSets} onChange={setCredentialSets} />
             </div>
 
             {/* Notes */}

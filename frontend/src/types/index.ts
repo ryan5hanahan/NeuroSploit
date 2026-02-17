@@ -446,6 +446,17 @@ export interface VulnLabRunRequest {
   ctf_mode?: boolean
   ctf_flag_patterns?: string[]
   ctf_agent_count?: number
+  credential_sets?: Array<{
+    label: string
+    auth_type: string
+    cookie?: string
+    bearer_token?: string
+    header_name?: string
+    header_value?: string
+    username?: string
+    password?: string
+    role: string
+  }>
 }
 
 export interface VulnLabRunResponse {

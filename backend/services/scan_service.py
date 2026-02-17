@@ -1008,6 +1008,22 @@ Be thorough and test all discovered endpoints aggressively.
 
         await self.db.commit()
 
+    def _build_credential_sets(self, scan: Scan) -> Optional[List[Dict]]:
+        """Extract credential_sets from scan, falling back to single auth as one-element list."""
+        if scan.credential_sets and isinstance(scan.credential_sets, list) and len(scan.credential_sets) >= 2:
+            return scan.credential_sets
+
+        # Fall back: convert single auth into one-element list (no diff testing)
+        if scan.auth_type and scan.auth_credentials:
+            return [{
+                "label": "default",
+                "auth_type": scan.auth_type,
+                "role": "user",
+                **scan.auth_credentials,
+            }]
+
+        return None
+
     def _build_auth_headers(self, scan: Scan) -> Dict[str, str]:
         """Build authentication headers from scan configuration"""
         headers = {"User-Agent": "NeuroSploit/3.0"}

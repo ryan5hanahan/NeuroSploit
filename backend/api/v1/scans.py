@@ -199,6 +199,11 @@ async def create_scan(
             auth_credentials["header_name"] = scan_data.auth.header_name
             auth_credentials["header_value"] = scan_data.auth.header_value
 
+    # Serialize credential_sets
+    credential_sets_json = None
+    if scan_data.credential_sets:
+        credential_sets_json = [cs.model_dump() for cs in scan_data.credential_sets]
+
     # Create scan
     scan = Scan(
         name=scan_data.name or f"Scan {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -210,6 +215,7 @@ async def create_scan(
         auth_type=auth_type,
         auth_credentials=auth_credentials,
         custom_headers=scan_data.custom_headers,
+        credential_sets=credential_sets_json,
         status="pending"
     )
     db.add(scan)
@@ -437,6 +443,7 @@ async def repeat_scan(
         auth_type=original.auth_type,
         auth_credentials=original.auth_credentials,
         custom_headers=original.custom_headers,
+        credential_sets=original.credential_sets,
         repeated_from_id=original.id,
         status="pending"
     )

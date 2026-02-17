@@ -17,6 +17,19 @@ class AuthConfig(BaseModel):
     header_value: Optional[str] = Field(None, description="Custom header value")
 
 
+class CredentialSet(BaseModel):
+    """A labeled credential set for multi-context access control testing"""
+    label: str = Field(..., description="Role label: 'admin', 'user_alice', 'guest'")
+    auth_type: str = Field("none", description="none, cookie, bearer, basic, header, login")
+    cookie: Optional[str] = None
+    bearer_token: Optional[str] = None
+    header_name: Optional[str] = None
+    header_value: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    role: str = Field("user", description="user, admin, moderator")
+
+
 class ScanCreate(BaseModel):
     """Schema for creating a new scan"""
     name: Optional[str] = Field(None, max_length=255, description="Scan name")
@@ -29,6 +42,7 @@ class ScanCreate(BaseModel):
     auth: Optional[AuthConfig] = Field(None, description="Authentication configuration")
     custom_headers: Optional[dict] = Field(None, description="Custom HTTP headers to include")
     tradecraft_ids: Optional[List[str]] = Field(None, description="TTP IDs to use for this scan")
+    credential_sets: Optional[List[CredentialSet]] = Field(None, description="Multiple credential sets for differential access control testing")
 
 
 class ScanUpdate(BaseModel):
