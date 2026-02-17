@@ -409,17 +409,54 @@ export interface VulnLabChallenge {
   logs?: VulnLabLogEntry[]
   logs_count?: number
   endpoints_count?: number
+  ctf_mode?: boolean
+  ctf_flag_patterns?: string[] | null
+  ctf_flags_captured?: Array<{
+    flag_value: string
+    platform: string
+    source: string
+    found_in_url: string
+    found_in_field: string
+    request_method: string
+    request_payload: string
+    timestamp: string
+    finding_id: string
+  }>
+  ctf_flags_count?: number
+  ctf_time_to_first_flag?: number | null
+  ctf_metrics?: {
+    flags_captured: number
+    unique_platforms: string[]
+    time_to_first_flag: number | null
+    elapsed_seconds: number
+    flag_timeline: Array<{ flag: string; platform: string; elapsed_seconds: number }>
+  } | null
+  ctf_agent_count?: number
   created_at: string | null
 }
 
 export interface VulnLabRunRequest {
   target_url: string
-  vuln_type: string
+  vuln_type?: string
   challenge_name?: string
   auth_type?: string
   auth_value?: string
   custom_headers?: Record<string, string>
   notes?: string
+  ctf_mode?: boolean
+  ctf_flag_patterns?: string[]
+  ctf_agent_count?: number
+  credential_sets?: Array<{
+    label: string
+    auth_type: string
+    cookie?: string
+    bearer_token?: string
+    header_name?: string
+    header_value?: string
+    username?: string
+    password?: string
+    role: string
+  }>
 }
 
 export interface VulnLabRunResponse {
@@ -444,6 +481,22 @@ export interface VulnLabRealtimeStatus {
   agent_id: string | null
   vuln_type?: string
   target?: string
+  ctf_mode?: boolean
+  ctf_flags?: Array<{
+    flag_value: string
+    platform: string
+    source: string
+    found_in_url: string
+    timestamp: string
+  }>
+  ctf_metrics?: {
+    flags_captured: number
+    unique_platforms: string[]
+    time_to_first_flag: number | null
+    elapsed_seconds: number
+  } | null
+  ctf_agent_count?: number
+  ctf_pipeline_phase?: string
   source: string
 }
 
@@ -467,6 +520,7 @@ export interface VulnLabStats {
   detection_rate: number
   by_type: Record<string, { detected: number; not_detected: number; error: number; total: number }>
   by_category: Record<string, { detected: number; not_detected: number; error: number; total: number }>
+  ctf_stats?: { total_ctf_challenges: number; total_flags_captured: number }
 }
 
 // Sandbox Container types
@@ -489,6 +543,19 @@ export interface SandboxPoolStatus {
   }
   containers: SandboxContainer[]
   error?: string
+}
+
+// Tradecraft TTP types
+export interface TradecraftTTP {
+  id: string
+  name: string
+  description: string | null
+  content: string
+  category: string
+  is_builtin: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
 }
 
 // Activity Feed types

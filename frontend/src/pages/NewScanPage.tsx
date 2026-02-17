@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Upload, Link as LinkIcon, FileText, Play, AlertTriangle,
   Bot, Search, Target, Brain, BookOpen, ChevronDown, Key, Settings,
@@ -9,6 +9,7 @@ import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
 import Textarea from '../components/common/Textarea'
+import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
 import { agentApi, targetsApi } from '../services/api'
 import type { AgentTask, AgentMode } from '../types'
 
@@ -66,6 +67,7 @@ const TASK_CATEGORIES = [
 
 export default function NewScanPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Target state
@@ -95,11 +97,23 @@ export default function NewScanPage() {
   const [authType, setAuthType] = useState<'none' | 'cookie' | 'bearer' | 'basic' | 'header'>('none')
   const [authValue, setAuthValue] = useState('')
 
+  // Credential sets
+  const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
+
   // Advanced options
   const [maxDepth, setMaxDepth] = useState(5)
 
   // UI state
   const [isLoading, setIsLoading] = useState(false)
+
+  // Accept prompt content from navigation state (e.g. from Prompt Library)
+  useEffect(() => {
+    const state = location.state as { promptContent?: string } | null
+    if (state?.promptContent) {
+      setUseCustomPrompt(true)
+      setCustomPrompt(state.promptContent)
+    }
+  }, [location.state])
 
   // Load tasks on mount
   useEffect(() => {
@@ -186,6 +200,12 @@ export default function NewScanPage() {
       if (authType !== 'none' && authValue.trim()) {
         request.auth_type = authType
         request.auth_value = authValue
+      }
+
+      // Add credential sets for differential testing
+      const validCredSets = credentialSets.filter(cs => cs.label.trim())
+      if (validCredSets.length >= 2) {
+        request.credential_sets = validCredSets
       }
 
       // Start agent
@@ -567,6 +587,19 @@ export default function NewScanPage() {
             />
           )}
         </div>
+      </Card>
+
+      {/* Multi-Credential Differential Testing */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-primary-500" />
+            <span>Multi-Credential Testing</span>
+            <span className="text-xs text-dark-500">(Optional)</span>
+          </div>
+        }
+      >
+        <CredentialSetsPanel credentialSets={credentialSets} onChange={setCredentialSets} />
       </Card>
 
       {/* Advanced Options */}

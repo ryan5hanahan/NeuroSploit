@@ -1,0 +1,162 @@
+{
+    "profiles": {
+        "stealth": {
+            "description": "Low-and-slow scanning to avoid detection. Minimal footprint.",
+            "global": {
+                "request_jitter_ms": [500, 3000],
+                "random_user_agent": true,
+                "dns_over_https": true,
+                "proxy_routing": "auto",
+                "header_randomization": true
+            },
+            "tools": {
+                "nuclei": {
+                    "rate-limit": 10,
+                    "concurrency": 2,
+                    "timeout": 900,
+                    "headless": true
+                },
+                "naabu": {
+                    "rate": 100,
+                    "scan-type": "c",
+                    "top-ports": 100
+                },
+                "httpx": {
+                    "rate-limit": 5,
+                    "delay": "1-3s",
+                    "random-agent": true
+                },
+                "katana": {
+                    "delay": 2,
+                    "rate-limit": 2,
+                    "depth": 2
+                },
+                "nmap": {
+                    "-T": 2,
+                    "--scan-delay": "1s"
+                },
+                "dnsx": {
+                    "rate": 10,
+                    "retry": 3
+                },
+                "ffuf": {
+                    "rate": 10,
+                    "-t": 2
+                },
+                "tlsx": {
+                    "rate": 10,
+                    "concurrency": 2
+                },
+                "shuffledns": {
+                    "rate": 100
+                },
+                "interactsh-client": {
+                    "poll-interval": 30,
+                    "server": "http://neurosploit-interactsh"
+                },
+                "subfinder": {
+                    "rate-limit": 5
+                }
+            }
+        },
+        "balanced": {
+            "description": "Moderate speed and stealth. Good default for most engagements.",
+            "global": {
+                "request_jitter_ms": [100, 500],
+                "random_user_agent": true,
+                "dns_over_https": false,
+                "proxy_routing": "opt-in",
+                "header_randomization": false
+            },
+            "tools": {
+                "nuclei": {
+                    "rate-limit": 50,
+                    "concurrency": 10
+                },
+                "naabu": {
+                    "rate": 500,
+                    "top-ports": 1000
+                },
+                "httpx": {
+                    "rate-limit": 50,
+                    "random-agent": true
+                },
+                "katana": {
+                    "delay": 0.5,
+                    "rate-limit": 10,
+                    "depth": 3
+                },
+                "nmap": {
+                    "-T": 3
+                },
+                "dnsx": {
+                    "rate": 100
+                },
+                "ffuf": {
+                    "rate": 50,
+                    "-t": 10
+                },
+                "tlsx": {
+                    "rate": 50,
+                    "concurrency": 10
+                },
+                "shuffledns": {
+                    "rate": 1000
+                },
+                "interactsh-client": {
+                    "poll-interval": 10
+                },
+                "subfinder": {
+                    "rate-limit": 20
+                }
+            }
+        },
+        "aggressive": {
+            "description": "Maximum speed. Use only with explicit authorization on owned targets.",
+            "global": {
+                "request_jitter_ms": [0, 0],
+                "random_user_agent": true,
+                "dns_over_https": false,
+                "proxy_routing": "off",
+                "header_randomization": false
+            },
+            "tools": {
+                "nuclei": {
+                    "rate-limit": 150,
+                    "concurrency": 25
+                },
+                "naabu": {
+                    "rate": 1000
+                },
+                "httpx": {
+                    "random-agent": true
+                },
+                "katana": {
+                    "rate-limit": 50,
+                    "depth": 5
+                },
+                "nmap": {
+                    "-T": 4
+                },
+                "dnsx": {
+                    "rate": 300
+                },
+                "ffuf": {
+                    "rate": 150,
+                    "-t": 40
+                },
+                "tlsx": {
+                    "rate": 200,
+                    "concurrency": 25
+                },
+                "shuffledns": {
+                    "rate": 5000
+                },
+                "interactsh-client": {
+                    "poll-interval": 5
+                },
+                "subfinder": {}
+            }
+        }
+    }
+}

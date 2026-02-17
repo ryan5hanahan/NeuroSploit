@@ -16,8 +16,11 @@ class ToolRegistry:
         # Go tools (pre-compiled in builder stage)
         "nuclei", "naabu", "httpx", "subfinder", "katana", "dnsx",
         "uncover", "ffuf", "gobuster", "dalfox", "waybackurls",
+        # ProjectDiscovery extended suite (pre-compiled in builder stage)
+        "interactsh-client", "cvemap", "alterx", "shuffledns",
+        "mapcidr", "asnmap", "tlsx", "cloudlist", "notify",
         # APT tools (pre-installed in runtime stage)
-        "nmap", "nikto", "sqlmap", "masscan", "whatweb",
+        "nmap", "nikto", "sqlmap", "masscan", "whatweb", "massdns",
         # System tools
         "curl", "wget", "git", "python3", "pip3", "go",
         "jq", "dig", "whois", "openssl", "netcat", "bash",

@@ -12,7 +12,9 @@ import {
   Rocket,
   FlaskConical,
   Terminal,
-  Container
+  Container,
+  MessageSquare,
+  Crosshair
 } from 'lucide-react'
 
 const navItems = [
@@ -24,6 +26,8 @@ const navItems = [
   { path: '/scan/new', icon: Bot, label: 'AI Agent' },
   { path: '/realtime', icon: Zap, label: 'Real-time Task' },
   { path: '/tasks', icon: BookOpen, label: 'Task Library' },
+  { path: '/prompts', icon: MessageSquare, label: 'Prompt Library' },
+  { path: '/tradecraft', icon: Crosshair, label: 'Tradecraft' },
   { path: '/scheduler', icon: Clock, label: 'Scheduler' },
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/settings', icon: Settings, label: 'Settings' },

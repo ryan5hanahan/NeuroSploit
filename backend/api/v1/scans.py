@@ -1,9 +1,10 @@
 """
 NeuroSploit v3 - Scans API Endpoints
 """
+import asyncio
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -11,8 +12,10 @@ from urllib.parse import urlparse
 
 from backend.db.database import get_db
 from backend.models import Scan, Target, Endpoint, Vulnerability
+from backend.models.tradecraft import Tradecraft, ScanTradecraft
 from backend.schemas.scan import ScanCreate, ScanUpdate, ScanResponse, ScanListResponse, ScanProgress
 from backend.services.scan_service import run_scan_task, skip_to_phase as _skip_to_phase, PHASE_ORDER
+from backend.core import scan_registry
 
 router = APIRouter()
 
@@ -169,10 +172,15 @@ async def list_scans(
 @router.post("", response_model=ScanResponse)
 async def create_scan(
     scan_data: ScanCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new scan with optional authentication for authenticated testing"""
+    from backend.api.v1.settings import _settings as app_settings
+
+    # Apply setting defaults when client didn't specify
+    scan_type = scan_data.scan_type if scan_data.scan_type is not None else app_settings.get("default_scan_type", "full")
+    recon_enabled = scan_data.recon_enabled if scan_data.recon_enabled is not None else app_settings.get("recon_enabled_by_default", True)
+
     # Process authentication config
     auth_type = None
     auth_credentials = None
@@ -191,17 +199,23 @@ async def create_scan(
             auth_credentials["header_name"] = scan_data.auth.header_name
             auth_credentials["header_value"] = scan_data.auth.header_value
 
+    # Serialize credential_sets
+    credential_sets_json = None
+    if scan_data.credential_sets:
+        credential_sets_json = [cs.model_dump() for cs in scan_data.credential_sets]
+
     # Create scan
     scan = Scan(
         name=scan_data.name or f"Scan {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        scan_type=scan_data.scan_type,
-        recon_enabled=scan_data.recon_enabled,
+        scan_type=scan_type,
+        recon_enabled=recon_enabled,
         custom_prompt=scan_data.custom_prompt,
         prompt_id=scan_data.prompt_id,
         config=scan_data.config,
         auth_type=auth_type,
         auth_credentials=auth_credentials,
         custom_headers=scan_data.custom_headers,
+        credential_sets=credential_sets_json,
         status="pending"
     )
     db.add(scan)
@@ -221,6 +235,14 @@ async def create_scan(
         )
         db.add(target)
         targets.append(target)
+
+    # Associate tradecraft TTPs if specified
+    if scan_data.tradecraft_ids:
+        for tid in scan_data.tradecraft_ids:
+            tc_result = await db.execute(select(Tradecraft).where(Tradecraft.id == tid))
+            if tc_result.scalar_one_or_none() is None:
+                raise HTTPException(status_code=400, detail=f"Tradecraft TTP not found: {tid}")
+            db.add(ScanTradecraft(scan_id=scan.id, tradecraft_id=tid))
 
     await db.commit()
     await db.refresh(scan)
@@ -332,10 +354,11 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{scan_id}/start")
 async def start_scan(
     scan_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Start a scan execution"""
+    from backend.api.v1.settings import _settings as app_settings
+
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalar_one_or_none()
 
@@ -345,6 +368,18 @@ async def start_scan(
     if scan.status == "running":
         raise HTTPException(status_code=400, detail="Scan is already running")
 
+    # Enforce MAX_CONCURRENT_SCANS
+    max_concurrent = app_settings.get("max_concurrent_scans", 3)
+    running_result = await db.execute(
+        select(func.count()).select_from(Scan).where(Scan.status == "running")
+    )
+    running_count = running_result.scalar() or 0
+    if running_count >= max_concurrent:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum concurrent scans reached ({max_concurrent}). Stop a running scan first."
+        )
+
     # Update scan status
     scan.status = "running"
     scan.started_at = datetime.utcnow()
@@ -352,8 +387,10 @@ async def start_scan(
     scan.progress = 0
     await db.commit()
 
-    # Start scan in background with its own database session
-    background_tasks.add_task(run_scan_task, scan_id)
+    # Register in scan registry BEFORE creating task to avoid race condition
+    handle = scan_registry.register(scan_id)
+    task = asyncio.create_task(run_scan_task(scan_id))
+    handle.task = task
 
     return {"message": "Scan started", "scan_id": scan_id}
 
@@ -361,14 +398,27 @@ async def start_scan(
 @router.post("/{scan_id}/repeat", response_model=ScanResponse)
 async def repeat_scan(
     scan_id: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Clone a completed/stopped/failed scan's config and immediately start a new scan"""
+    from backend.api.v1.settings import _settings as app_settings
+
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Scan not found")
+
+    # Enforce MAX_CONCURRENT_SCANS
+    max_concurrent = app_settings.get("max_concurrent_scans", 3)
+    running_result = await db.execute(
+        select(func.count()).select_from(Scan).where(Scan.status == "running")
+    )
+    running_count = running_result.scalar() or 0
+    if running_count >= max_concurrent:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum concurrent scans reached ({max_concurrent}). Stop a running scan first."
+        )
 
     if original.status not in ("completed", "stopped", "failed"):
         raise HTTPException(
@@ -393,6 +443,7 @@ async def repeat_scan(
         auth_type=original.auth_type,
         auth_credentials=original.auth_credentials,
         custom_headers=original.custom_headers,
+        credential_sets=original.credential_sets,
         repeated_from_id=original.id,
         status="pending"
     )
@@ -413,6 +464,13 @@ async def repeat_scan(
         db.add(new_target)
         new_targets.append(new_target)
 
+    # Clone tradecraft associations from original scan
+    tc_result = await db.execute(
+        select(ScanTradecraft).where(ScanTradecraft.scan_id == scan_id)
+    )
+    for st in tc_result.scalars().all():
+        db.add(ScanTradecraft(scan_id=new_scan.id, tradecraft_id=st.tradecraft_id))
+
     await db.commit()
     await db.refresh(new_scan)
 
@@ -423,7 +481,10 @@ async def repeat_scan(
     new_scan.progress = 0
     await db.commit()
 
-    background_tasks.add_task(run_scan_task, new_scan.id)
+    # Register in scan registry BEFORE creating task to avoid race condition
+    handle = scan_registry.register(new_scan.id)
+    task = asyncio.create_task(run_scan_task(new_scan.id))
+    handle.task = task
 
     scan_dict = new_scan.to_dict()
     scan_dict["targets"] = [t.to_dict() for t in new_targets]
@@ -445,7 +506,10 @@ async def stop_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     if scan.status not in ("running", "paused"):
         raise HTTPException(status_code=400, detail="Scan is not running or paused")
 
-    # Signal the running agent to stop
+    # Cancel via scan registry (handles both ScanService and Agent paths)
+    scan_registry.cancel(scan_id)
+
+    # Also signal the agent instance directly for backward compatibility
     agent_id = scan_to_agent.get(scan_id)
     if agent_id and agent_id in agent_instances:
         agent_instances[agent_id].cancel()

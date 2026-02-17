@@ -29,7 +29,9 @@
                 "search_context_level": "high",
                 "pdf_support_enabled": true,
                 "guardrails_enabled": true,
-                "hallucination_mitigation_strategy": "self_reflection"
+                "hallucination_mitigation_strategy": "self_reflection",
+                "extended_thinking": true,
+                "thinking_budget_tokens": 10000
             }
         }
     },
@@ -79,19 +81,20 @@
         "hydra": "/usr/bin/hydra"
     },
     "mcp_servers": {
-        "neurosploit_tools": {
-            "transport": "stdio",
-            "command": "python3",
-            "args": ["-m", "core.mcp_server"],
-            "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, Nuclei scanner, Naabu port scanner, sandbox execution"
+        "enabled": true,
+        "servers": {
+            "neurosploit_tools": {
+                "transport": "direct",
+                "args": ["-m", "core.mcp_server"],
+                "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
+            }
         }
     },
+    "opsec": {
+        "default_profile": "balanced",
+        "profiles_file": "config/opsec_profiles.json"
+    },
     "sandbox": {
-        "enabled": false,
-        "mode": "per_scan",
-        "image": "neurosploit-sandbox:latest",
-        "container_name": "neurosploit-sandbox",
-        "auto_start": false,
         "kali": {
             "enabled": true,
             "image": "neurosploit-kali:latest",
@@ -107,7 +110,9 @@
             "nuclei", "naabu", "nmap", "httpx", "subfinder", "katana",
             "dnsx", "ffuf", "gobuster", "dalfox", "nikto", "sqlmap",
             "whatweb", "curl", "dig", "whois", "masscan", "dirsearch",
-            "wfuzz", "arjun", "wafw00f", "waybackurls"
+            "wfuzz", "arjun", "wafw00f", "waybackurls",
+            "interactsh-client", "cvemap", "alterx", "shuffledns",
+            "mapcidr", "asnmap", "tlsx", "cloudlist", "notify", "massdns"
         ],
         "nuclei": {
             "rate_limit": 150,
@@ -119,6 +124,16 @@
             "rate": 1000,
             "top_ports": 1000,
             "timeout": 300
+        }
+    },
+    "model_routing": {
+        "enabled": false,
+        "routes": {
+            "reasoning": "bedrock_claude_default",
+            "analysis": "gemini_pro_default",
+            "generation": "gemini_pro_default",
+            "validation": "gemini_pro_default",
+            "default": "gemini_pro_default"
         }
     },
     "output": {

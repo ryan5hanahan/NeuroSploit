@@ -7,6 +7,7 @@ Supports: Claude, GPT, Gemini, Ollama, and custom models
 import os
 import json
 import subprocess
+import threading
 import time
 from typing import Dict, List, Optional, Any
 import logging
@@ -24,22 +25,29 @@ logger = logging.getLogger(__name__)
 
 class LLMManager:
     """Manage multiple LLM providers"""
-    
-    def __init__(self, config: Dict):
-        """Initialize LLM manager"""
+
+    def __init__(self, config: Optional[Dict] = None, _routing_disabled: bool = False):
+        """Initialize LLM manager
+
+        Args:
+            config: Full application config dict (must contain 'llm' key, may contain 'model_routing')
+            _routing_disabled: Internal flag to prevent recursive router creation
+        """
+        config = config or {}
+        self._full_config = config
         self.config = config.get('llm', {})
         self.default_profile_name = self.config.get('default_profile', 'gemini_pro_default')
         self.profiles = self.config.get('profiles', {})
-        
+
         self.active_profile = self.profiles.get(self.default_profile_name, {})
-        
+
         # Load active profile settings
         self.provider = self.active_profile.get('provider', 'gemini').lower()
         self.model = self.active_profile.get('model', 'gemini-pro')
         self.api_key = self._get_api_key(self.active_profile.get('api_key', ''))
         self.temperature = self.active_profile.get('temperature', 0.7)
         self.max_tokens = self.active_profile.get('max_tokens', 4096)
-        
+
         # New LLM parameters
         self.input_token_limit = self.active_profile.get('input_token_limit', 4096)
         self.output_token_limit = self.active_profile.get('output_token_limit', 4096)
@@ -48,6 +56,7 @@ class LLMManager:
         self.pdf_support_enabled = self.active_profile.get('pdf_support_enabled', False)
         self.guardrails_enabled = self.active_profile.get('guardrails_enabled', False)
         self.hallucination_mitigation_strategy = self.active_profile.get('hallucination_mitigation_strategy', None)
+        self._mitigation_lock = threading.Lock()
 
         # MAX_OUTPUT_TOKENS override from environment (up to 64000 for Claude)
         env_max_tokens = os.getenv('MAX_OUTPUT_TOKENS', '').strip()
@@ -60,8 +69,13 @@ class LLMManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_OUTPUT_TOKENS value: {env_max_tokens}")
 
-        # Model router (lazy init, set externally or via config)
+        # Tracer hook for observability (set externally by agent)
+        self._tracer_hook = None  # callable(input_tokens, output_tokens)
+
+        # Model router — auto-initialize when enabled (skip for child instances to prevent recursion)
         self._model_router = None
+        if not _routing_disabled:
+            self._init_model_router()
         
         # New prompt loading
         self.json_prompts_file_path = Path("prompts/library.json")
@@ -76,6 +90,32 @@ class LLMManager:
             env_var = api_key_config[2:-1]
             return os.getenv(env_var, '')
         return api_key_config
+
+    def _init_model_router(self):
+        """Initialize ModelRouter from config if model routing is enabled."""
+        try:
+            from core.model_router import ModelRouter
+        except ImportError:
+            logger.debug("ModelRouter not available, skipping model routing init")
+            return
+
+        def _profile_factory(profile_name: str) -> 'LLMManager':
+            """Create an LLMManager for a specific profile with routing disabled."""
+            child_config = dict(self._full_config)
+            child_llm = dict(child_config.get('llm', {}))
+            child_llm['default_profile'] = profile_name
+            child_config['llm'] = child_llm
+            return LLMManager(child_config, _routing_disabled=True)
+
+        try:
+            router = ModelRouter(self._full_config, _profile_factory)
+            if router.enabled:
+                self._model_router = router
+                logger.info(f"Model routing wired: routes={list(router.routes.keys())}")
+            else:
+                logger.debug("Model routing config present but disabled")
+        except Exception as e:
+            logger.warning(f"Failed to initialize model router: {e}")
     
     def _load_all_prompts(self) -> Dict:
         """Load prompts from JSON library and Markdown files (both prompts/ and prompts/md_library/)."""
@@ -145,8 +185,20 @@ class LLMManager:
         """
         return self.prompts.get(library_type, {}).get(category, {}).get(name, default)
 
-    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Generate response from LLM and apply hallucination mitigation if configured."""
+    def generate(self, prompt: str, system_prompt: Optional[str] = None, task_type: Optional[str] = None) -> str:
+        """Generate response from LLM and apply hallucination mitigation if configured.
+
+        Args:
+            prompt: The user prompt
+            system_prompt: Optional system prompt
+            task_type: Optional task type for model routing (reasoning, analysis, generation, validation)
+        """
+        # Route to specialized profile when task_type is provided and routing is enabled
+        if task_type and self._model_router:
+            routed_result = self._model_router.generate(prompt, system_prompt, task_type)
+            if routed_result is not None:
+                return routed_result
+
         raw_response = ""
         try:
             if self.provider == 'claude':
@@ -229,13 +281,18 @@ class LLMManager:
         return response
 
     def _mitigate_hallucination(self, raw_response: str, original_prompt: str, original_system_prompt: Optional[str]) -> str:
-        """Applies configured hallucination mitigation strategy."""
-        strategy = self.hallucination_mitigation_strategy
-        
-        # Temporarily disable mitigation to prevent infinite recursion when calling self.generate internally
-        original_mitigation_state = self.hallucination_mitigation_strategy
-        self.hallucination_mitigation_strategy = None 
-        
+        """Applies configured hallucination mitigation strategy.
+
+        Thread-safe: uses a lock to prevent concurrent mutations of
+        hallucination_mitigation_strategy during recursive generate() calls.
+        """
+        with self._mitigation_lock:
+            strategy = self.hallucination_mitigation_strategy
+
+            # Temporarily disable mitigation to prevent infinite recursion when calling self.generate internally
+            original_mitigation_state = self.hallucination_mitigation_strategy
+            self.hallucination_mitigation_strategy = None
+
         try:
             if strategy == "grounding":
                 verification_prompt = f"""Review the following response:
@@ -282,12 +339,22 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
             
             return raw_response # Fallback if strategy not recognized or implemented
         finally:
-            self.hallucination_mitigation_strategy = original_mitigation_state # Restore original state
+            with self._mitigation_lock:
+                self.hallucination_mitigation_strategy = original_mitigation_state
     
     def _generate_claude(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate using Claude API with requests (bypasses httpx/SSL issues on macOS)"""
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not set. Please set the environment variable or configure in config.yaml")
+
+        # Extended thinking mode
+        thinking_enabled = (
+            os.getenv('ENABLE_EXTENDED_THINKING', 'false').lower() == 'true'
+            or self.active_profile.get('extended_thinking', False)
+        )
+        thinking_budget = int(
+            self.active_profile.get('thinking_budget_tokens', 10000)
+        )
 
         url = "https://api.anthropic.com/v1/messages"
         headers = {
@@ -299,9 +366,19 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         data = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
             "messages": [{"role": "user", "content": prompt}]
         }
+
+        if thinking_enabled:
+            # Extended thinking requires temperature=1 and the beta header
+            headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
+            data["temperature"] = 1
+            data["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+            # Ensure max_tokens is large enough to include thinking + response
+            data["max_tokens"] = max(self.max_tokens, thinking_budget + 4096)
+            logger.info(f"Extended thinking enabled (budget: {thinking_budget} tokens)")
+        else:
+            data["temperature"] = self.temperature
 
         if system_prompt:
             data["system"] = system_prompt
@@ -319,6 +396,23 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
 
                 if response.status_code == 200:
                     result = response.json()
+                    # Record token usage for tracing
+                    usage = result.get("usage", {})
+                    if self._tracer_hook and usage:
+                        try:
+                            self._tracer_hook(
+                                usage.get("input_tokens", 0),
+                                usage.get("output_tokens", 0),
+                            )
+                        except Exception:
+                            pass
+                    # When extended thinking is enabled, extract only text blocks
+                    if thinking_enabled:
+                        text_parts = []
+                        for block in result.get("content", []):
+                            if block.get("type") == "text":
+                                text_parts.append(block["text"])
+                        return "\n".join(text_parts) if text_parts else result["content"][0]["text"]
                     return result["content"][0]["text"]
 
                 elif response.status_code == 401:
@@ -464,10 +558,11 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY not set. Please set the environment variable or configure in config.yaml")
 
-        # Use v1beta for generateContent endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        # Use v1beta for generateContent endpoint — key in header, not URL
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
         }
 
         full_prompt = prompt
@@ -734,6 +829,15 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
                 logger.debug(f"Bedrock API request attempt {attempt + 1}/{MAX_RETRIES}")
                 client = boto3.client('bedrock-runtime', region_name=region)
 
+                # Extended thinking for Bedrock Claude models
+                bedrock_thinking = (
+                    os.getenv('ENABLE_EXTENDED_THINKING', 'false').lower() == 'true'
+                    or self.active_profile.get('extended_thinking', False)
+                )
+                bedrock_thinking_budget = int(
+                    self.active_profile.get('thinking_budget_tokens', 10000)
+                )
+
                 converse_params = {
                     "modelId": self.model,
                     "messages": [{"role": "user", "content": [{"text": prompt}]}],
@@ -743,10 +847,31 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
                     }
                 }
 
+                if bedrock_thinking and "claude" in self.model.lower():
+                    converse_params["inferenceConfig"]["temperature"] = 1
+                    converse_params["inferenceConfig"]["maxTokens"] = max(
+                        self.max_tokens, bedrock_thinking_budget + 4096
+                    )
+                    converse_params["additionalModelRequestFields"] = {
+                        "thinking": {
+                            "type": "enabled",
+                            "budget_tokens": bedrock_thinking_budget
+                        }
+                    }
+                    logger.info(f"Bedrock extended thinking enabled (budget: {bedrock_thinking_budget})")
+
                 if system_prompt:
                     converse_params["system"] = [{"text": system_prompt}]
 
                 response = client.converse(**converse_params)
+
+                # Extract text blocks only (skip thinking blocks)
+                if bedrock_thinking and "claude" in self.model.lower():
+                    text_parts = []
+                    for block in response["output"]["message"]["content"]:
+                        if block.get("type") == "text" or "text" in block:
+                            text_parts.append(block.get("text", ""))
+                    return "\n".join(text_parts) if text_parts else response["output"]["message"]["content"][0]["text"]
                 return response["output"]["message"]["content"][0]["text"]
 
             except NoCredentialsError:
@@ -817,13 +942,13 @@ Analyze vulnerabilities and provide detailed, actionable exploitation strategies
 Consider OWASP, CWE, and MITRE ATT&CK frameworks.
 Always include ethical considerations and legal boundaries.""")
         
-        response = self.generate(prompt, system_prompt)
-        
+        response = self.generate(prompt, system_prompt, task_type="analysis")
+
         try:
             return json.loads(response)
-        except:
+        except Exception:
             return {"raw_response": response}
-    
+
     def generate_payload(self, target_info: Dict, vulnerability_type: str) -> str:
         """Generate exploit payload"""
         # This prompt will be fetched from library.json later
@@ -847,8 +972,8 @@ Provide the payload code with detailed comments.
         system_prompt = self.get_prompt("json_prompts", "exploitation", "generate_payload_system", default="""You are an expert exploit developer.
 Generate sophisticated, tested payloads that are effective yet responsible.
 Always include safety mechanisms and ethical guidelines.""")
-        
-        return self.generate(prompt, system_prompt)
+
+        return self.generate(prompt, system_prompt, task_type="generation")
     
     def suggest_privilege_escalation(self, system_info: Dict) -> List[str]:
         """Suggest privilege escalation techniques"""
@@ -872,13 +997,13 @@ Response in JSON format with prioritized list.
         system_prompt = self.get_prompt("json_prompts", "privesc", "suggest_privilege_escalation_system", default="""You are a privilege escalation specialist.
 Analyze system configurations and suggest effective escalation paths.
 Consider Windows, Linux, and Active Directory environments.""")
-        
-        response = self.generate(prompt, system_prompt)
+
+        response = self.generate(prompt, system_prompt, task_type="reasoning")
         
         try:
             result = json.loads(response)
             return result.get('techniques', [])
-        except:
+        except Exception:
             return []
     
     def analyze_network_topology(self, scan_results: Dict) -> Dict:
@@ -904,12 +1029,12 @@ Response in JSON format.
         system_prompt = self.get_prompt("json_prompts", "network_recon", "analyze_network_topology_system", default="""You are a network penetration testing expert.
 Analyze network structures and identify optimal attack vectors.
 Consider defense-in-depth and detection mechanisms.""")
-        
-        response = self.generate(prompt, system_prompt)
+
+        response = self.generate(prompt, system_prompt, task_type="analysis")
         
         try:
             return json.loads(response)
-        except:
+        except Exception:
             return {"raw_response": response}
 
     def analyze_web_vulnerability(self, vulnerability_type: str, vulnerability_data: Dict) -> Dict:
@@ -946,7 +1071,7 @@ Consider defense-in-depth and detection mechanisms.""")
             # Use a generic system prompt if a specific one isn't found
             system_prompt = "You are an expert web security tester. Analyze the provided data for vulnerabilities and offer exploitation steps and remediation."
 
-        response = self.generate(prompt, system_prompt)
+        response = self.generate(prompt, system_prompt, task_type="analysis")
 
         try:
             return json.loads(response)

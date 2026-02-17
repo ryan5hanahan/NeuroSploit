@@ -1,9 +1,9 @@
 # NeuroSploit v3 - Security Tools Runner Container
 # Ephemeral container for running security tools in isolation
 
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 
-RUN apk add --no-cache git build-base
+RUN apk add --no-cache git build-base libpcap-dev
 
 WORKDIR /build
 
@@ -20,12 +20,12 @@ RUN go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/tomnomnom/waybackurls@latest
 
 # Rust tools builder
-FROM rust:1.75-alpine AS rust-builder
+FROM rust:1.85-alpine AS rust-builder
 
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconf
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconf perl make
 
-# Install feroxbuster
-RUN cargo install feroxbuster --locked
+# Install feroxbuster (pin to 2.11 — later versions require Rust nightly features)
+RUN cargo install feroxbuster@2.11.0 --locked
 
 # Final runtime image
 FROM alpine:3.19
@@ -48,14 +48,12 @@ RUN apk add --no-cache \
     nikto \
     && rm -rf /var/cache/apk/*
 
-# Install Python security tools
-RUN pip3 install --no-cache-dir --break-system-packages \
-    sqlmap \
-    wfuzz \
-    dirsearch \
-    arjun \
-    wafw00f \
-    whatweb 2>/dev/null || pip3 install --no-cache-dir --break-system-packages sqlmap wfuzz
+# Install Python security tools (each independent so one failure doesn't block others)
+RUN pip3 install --no-cache-dir --break-system-packages sqlmap && \
+    pip3 install --no-cache-dir --break-system-packages wfuzz && \
+    pip3 install --no-cache-dir --break-system-packages dirsearch || true && \
+    pip3 install --no-cache-dir --break-system-packages arjun || true && \
+    pip3 install --no-cache-dir --break-system-packages wafw00f || true
 
 # Copy Go binaries
 COPY --from=go-builder /go/bin/* /usr/local/bin/
@@ -72,15 +70,15 @@ RUN apk add --no-cache dirb 2>/dev/null || \
 # Create wordlists directory
 RUN mkdir -p /opt/wordlists /opt/output
 
-# Download common wordlists
-RUN wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt \
-    -O /opt/wordlists/common.txt && \
-    wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt \
-    -O /opt/wordlists/directory-list-medium.txt && \
-    wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-files.txt \
-    -O /opt/wordlists/raft-files.txt && \
-    wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt \
-    -O /opt/wordlists/subdomains-5000.txt
+# Download common wordlists (non-fatal — network may be unavailable during build)
+RUN wget -q --timeout=30 https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt \
+    -O /opt/wordlists/common.txt || true && \
+    wget -q --timeout=30 https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt \
+    -O /opt/wordlists/directory-list-medium.txt || true && \
+    wget -q --timeout=30 https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-large-files.txt \
+    -O /opt/wordlists/raft-files.txt || true && \
+    wget -q --timeout=30 https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt \
+    -O /opt/wordlists/subdomains-5000.txt || true
 
 # Update nuclei templates
 RUN nuclei -update-templates -silent 2>/dev/null || true

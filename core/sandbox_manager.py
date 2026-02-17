@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import shlex
 from abc import ABC, abstractmethod
@@ -34,6 +35,53 @@ try:
 except ImportError:
     HAS_DOCKER = False
     logger.warning("Docker SDK not installed. Install with: pip install docker")
+
+# Opsec profile manager (lazy-loaded singleton)
+_opsec: Optional[Any] = None
+
+
+def _get_opsec():
+    """Get or create the global OpsecManager singleton."""
+    global _opsec
+    if _opsec is None:
+        try:
+            from core.opsec_manager import OpsecManager
+            _opsec = OpsecManager()
+        except Exception as e:
+            logger.warning(f"OpsecManager unavailable: {e}")
+    return _opsec
+
+
+async def _get_proxy_env(opsec_profile: Optional[str] = None) -> str:
+    """Get HTTP_PROXY/HTTPS_PROXY env prefix if proxy routing is active.
+
+    Returns env var prefix string or empty string.
+    The proxy env is set unconditionally when the profile requires it —
+    the sandbox container is on neurosploit-network and can resolve the hostname.
+    Tools that don't honor HTTP_PROXY will simply ignore it.
+    """
+    opsec = _get_opsec()
+    if not opsec or not opsec_profile:
+        return ""
+    if not opsec.should_use_proxy(opsec_profile):
+        return ""
+
+    # Check if mitmproxy container exists on the Docker network.
+    # We probe from the host side as a best-effort check; even if this
+    # fails, the sandbox container on neurosploit-network can reach it.
+    try:
+        import docker as _docker
+        client = _docker.from_env()
+        container = client.containers.get("neurosploit-mitmproxy")
+        if container.status == "running":
+            return (
+                "HTTP_PROXY=http://neurosploit-mitmproxy:8081 "
+                "HTTPS_PROXY=http://neurosploit-mitmproxy:8081 "
+            )
+    except Exception:
+        pass
+
+    return ""
 
 
 @dataclass
@@ -154,23 +202,29 @@ class BaseSandbox(ABC):
 
     @abstractmethod
     async def run_nuclei(self, target, templates=None, severity=None,
-                         tags=None, rate_limit=150, timeout=600) -> "SandboxResult": ...
+                         tags=None, rate_limit=150, timeout=600,
+                         opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
     async def run_naabu(self, target, ports=None, top_ports=None,
-                        scan_type="s", rate=1000, timeout=300) -> "SandboxResult": ...
+                        scan_type="s", rate=1000, timeout=300,
+                        opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
-    async def run_httpx(self, targets, timeout=120) -> "SandboxResult": ...
+    async def run_httpx(self, targets, timeout=120,
+                        opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
-    async def run_subfinder(self, domain, timeout=120) -> "SandboxResult": ...
+    async def run_subfinder(self, domain, timeout=120,
+                            opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
-    async def run_nmap(self, target, ports=None, scripts=True, timeout=300) -> "SandboxResult": ...
+    async def run_nmap(self, target, ports=None, scripts=True, timeout=300,
+                       opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
-    async def run_tool(self, tool, args, timeout=300) -> "SandboxResult": ...
+    async def run_tool(self, tool, args, timeout=300,
+                       opsec_profile=None) -> "SandboxResult": ...
 
     @abstractmethod
     async def execute_raw(self, command, timeout=300) -> "SandboxResult": ...
@@ -253,7 +307,7 @@ class SandboxManager(BaseSandbox):
                 name=self.SANDBOX_CONTAINER,
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
-                network_mode="bridge",
+                network_mode="neurosploit-network",
                 mem_limit="2g",
                 cpu_period=100000,
                 cpu_quota=200000,  # 2 CPUs
@@ -371,6 +425,7 @@ class SandboxManager(BaseSandbox):
         tags: Optional[str] = None,
         rate_limit: int = 150,
         timeout: int = 600,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run Nuclei vulnerability scanner against a target.
@@ -382,6 +437,7 @@ class SandboxManager(BaseSandbox):
             tags: Filter by tags (e.g., "xss,sqli,lfi")
             rate_limit: Requests per second (default 150)
             timeout: Max execution time in seconds
+            opsec_profile: Opsec profile name (stealth/balanced/aggressive)
         """
         cmd_parts = [
             "nuclei",
@@ -398,6 +454,11 @@ class SandboxManager(BaseSandbox):
             cmd_parts.extend(["-severity", shlex.quote(severity)])
         if tags:
             cmd_parts.extend(["-tags", shlex.quote(tags)])
+
+        # Apply opsec profile flags (explicit user args above take precedence via order)
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            cmd_parts.extend(opsec.build_flag_args("nuclei", opsec_profile))
 
         command = " ".join(cmd_parts) + " 2>/dev/null"
         result = await self._exec(command, timeout=timeout)
@@ -417,6 +478,7 @@ class SandboxManager(BaseSandbox):
         scan_type: str = "s",
         rate: int = 1000,
         timeout: int = 300,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run Naabu port scanner against a target.
@@ -428,6 +490,7 @@ class SandboxManager(BaseSandbox):
             scan_type: SYN (s), CONNECT (c)
             rate: Packets per second
             timeout: Max execution time in seconds
+            opsec_profile: Opsec profile name (stealth/balanced/aggressive)
         """
         cmd_parts = [
             "naabu",
@@ -448,6 +511,11 @@ class SandboxManager(BaseSandbox):
         if scan_type:
             cmd_parts.extend(["-scan-type", scan_type])
 
+        # Apply opsec profile flags
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            cmd_parts.extend(opsec.build_flag_args("naabu", opsec_profile))
+
         command = " ".join(cmd_parts) + " 2>/dev/null"
         result = await self._exec(command, timeout=timeout)
         result.tool = "naabu"
@@ -462,6 +530,7 @@ class SandboxManager(BaseSandbox):
         self,
         targets: List[str],
         timeout: int = 120,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run HTTPX for HTTP probing and tech detection.
@@ -504,6 +573,7 @@ class SandboxManager(BaseSandbox):
         self,
         domain: str,
         timeout: int = 120,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run Subfinder for subdomain enumeration.
@@ -528,6 +598,7 @@ class SandboxManager(BaseSandbox):
         ports: Optional[str] = None,
         scripts: bool = True,
         timeout: int = 300,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run Nmap network scanner.
@@ -575,6 +646,7 @@ class SandboxManager(BaseSandbox):
         tool: str,
         args: str,
         timeout: int = DEFAULT_TIMEOUT,
+        opsec_profile: Optional[str] = None,
     ) -> SandboxResult:
         """
         Run any tool available in the sandbox.
@@ -583,6 +655,7 @@ class SandboxManager(BaseSandbox):
             tool: Tool name (nuclei, naabu, nmap, httpx, etc.)
             args: Command-line arguments as string
             timeout: Max execution time
+            opsec_profile: Opsec profile name (stealth/balanced/aggressive)
         """
         # Validate tool is available
         allowed_tools = {
@@ -590,6 +663,8 @@ class SandboxManager(BaseSandbox):
             "dnsx", "ffuf", "gobuster", "dalfox", "nikto", "sqlmap",
             "whatweb", "curl", "dig", "whois", "masscan", "dirsearch",
             "wfuzz", "arjun", "wafw00f", "waybackurls",
+            "interactsh-client", "cvemap", "alterx", "shuffledns",
+            "mapcidr", "asnmap", "tlsx", "cloudlist", "notify", "massdns",
         }
 
         if tool not in allowed_tools:
@@ -599,7 +674,20 @@ class SandboxManager(BaseSandbox):
                 error=f"Tool '{tool}' not in allowed list: {sorted(allowed_tools)}",
             )
 
-        command = f"{tool} {args} 2>&1"
+        # Apply opsec jitter before execution
+        opsec = _get_opsec()
+        if opsec and opsec_profile:
+            jitter_min, jitter_max = opsec.get_jitter_range(opsec_profile)
+            if jitter_max > 0:
+                await asyncio.sleep(random.uniform(jitter_min, jitter_max))
+            # Append opsec flags to args
+            extra_flags = opsec.build_flag_args(tool, opsec_profile)
+            if extra_flags:
+                args = args + " " + " ".join(extra_flags)
+
+        # Prepend proxy env vars if proxy routing is active
+        proxy_env = await _get_proxy_env(opsec_profile)
+        command = f"{proxy_env}{tool} {args} 2>&1"
         result = await self._exec(command, timeout=timeout)
         result.tool = tool
 

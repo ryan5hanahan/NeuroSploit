@@ -56,6 +56,10 @@ class HTMLReportGenerator:
         # Calculate statistics
         stats = self._calculate_stats(sorted_findings)
 
+        # Separate access control differential findings
+        ac_findings = [f for f in sorted_findings if f.get('auth_context')]
+        regular_findings = [f for f in sorted_findings if not f.get('auth_context')]
+
         # Generate report sections
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -71,8 +75,10 @@ class HTMLReportGenerator:
         {self._generate_executive_summary(session_data, stats, sorted_findings)}
         {self._generate_scope_section(session_data)}
         {self._generate_findings_summary(stats)}
+        {self._generate_access_control_section(ac_findings, session_data) if ac_findings else ''}
         {self._generate_findings_detail(sorted_findings)}
         {self._generate_scan_results(scan_results) if scan_results else ''}
+        {self._generate_ctf_section(session_data.get('ctf_data')) if session_data.get('ctf_data') else ''}
         {self._generate_recommendations(sorted_findings)}
         {self._generate_methodology()}
         {self._generate_footer(session_data)}
@@ -594,7 +600,7 @@ class HTMLReportGenerator:
         try:
             created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
             created_str = created_dt.strftime('%B %d, %Y')
-        except:
+        except Exception:
             created_str = created
 
         return f"""
@@ -767,6 +773,118 @@ class HTMLReportGenerator:
                     <div class="label">Total</div>
                 </div>
             </div>
+        </section>"""
+
+    def _generate_access_control_section(self, ac_findings: List[Dict], session_data: Dict) -> str:
+        """Generate Access Control Differential Testing section"""
+        if not ac_findings:
+            return ""
+
+        # Collect credential set labels from session data
+        cred_sets = session_data.get('credential_sets', [])
+        cred_html = ""
+        if cred_sets:
+            cred_rows = ""
+            for cs in cred_sets:
+                label = html.escape(cs.get('label', ''))
+                role = html.escape(cs.get('role', 'user'))
+                auth_type = html.escape(cs.get('auth_type', 'none'))
+                cred_rows += f"<tr><td>{label}</td><td>{role}</td><td>{auth_type}</td></tr>"
+            cred_html = f"""
+            <div style="margin-bottom: 20px;">
+                <h4 style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 8px;">Credential Sets Used</h4>
+                <table>
+                    <thead><tr><th>Label</th><th>Role</th><th>Auth Type</th></tr></thead>
+                    <tbody>{cred_rows}</tbody>
+                </table>
+            </div>"""
+
+        # Group by delta_type
+        by_type: Dict[str, List[Dict]] = {}
+        for f in ac_findings:
+            dt = f.get('auth_context', {}).get('delta_type', 'unknown')
+            by_type.setdefault(dt, []).append(f)
+
+        type_labels = {
+            'bola': ('BOLA', '#dc2626', 'Broken Object Level Authorization — different users see/modify each other\'s resources'),
+            'bfla': ('BFLA', '#ea580c', 'Broken Function Level Authorization — lower-privilege users access admin functions'),
+            'status_diff': ('Status Differential', '#ca8a04', 'Unexpected HTTP status code differences between privilege levels'),
+            'body_diff': ('Body Differential', '#2563eb', 'Response body contains different data fields across privilege levels'),
+            'write_diff': ('Write Differential', '#7c3aed', 'Non-admin users can perform write operations'),
+        }
+
+        findings_html = ""
+        for dt, items in by_type.items():
+            label, color, desc = type_labels.get(dt, (dt.upper(), '#6b7280', ''))
+            rows_html = ""
+            for f in items:
+                ctx = f.get('auth_context', {})
+                attacker = html.escape(ctx.get('attacker_label', '-'))
+                victim = html.escape(ctx.get('victim_label', '-'))
+                endpoint = html.escape(f.get('affected_endpoint', '-'))
+                severity = f.get('severity', 'info')
+                sev_colors = self.SEVERITY_COLORS.get(severity, self.SEVERITY_COLORS['info'])
+                confidence = ctx.get('confidence', 0)
+                evidence = html.escape(ctx.get('evidence', '')[:120])
+
+                rows_html += f"""
+                    <tr>
+                        <td><span class="severity-badge" style="background: {sev_colors['bg']}; color: {sev_colors['text']}; font-size: 0.7rem; padding: 2px 8px;">{severity.upper()}</span></td>
+                        <td style="font-size: 0.875rem;">{html.escape(f.get('title', '-'))}</td>
+                        <td style="font-family: monospace; font-size: 0.8rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{endpoint}</td>
+                        <td style="color: #ef4444;">{attacker}</td>
+                        <td style="color: #3b82f6;">{victim}</td>
+                        <td>{confidence:.0%}</td>
+                        <td style="font-size: 0.8rem; color: #94a3b8;">{evidence}</td>
+                    </tr>"""
+
+            findings_html += f"""
+                <div style="margin-bottom: 24px;">
+                    <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <span style="width: 10px; height: 10px; background: {color}; border-radius: 50%;"></span>
+                        <span style="color: {color}; font-weight: 600;">{label}</span>
+                        <span style="font-size: 0.75rem; color: #94a3b8; font-weight: 400;">({len(items)} finding{'s' if len(items) != 1 else ''})</span>
+                    </h4>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">{desc}</p>
+                    <table>
+                        <thead>
+                            <tr><th>Sev</th><th>Finding</th><th>Endpoint</th><th>Attacker</th><th>Victim</th><th>Conf</th><th>Evidence</th></tr>
+                        </thead>
+                        <tbody>{rows_html}</tbody>
+                    </table>
+                </div>"""
+
+        # Summary stats
+        total = len(ac_findings)
+        bola_count = len(by_type.get('bola', []))
+        bfla_count = len(by_type.get('bfla', []))
+
+        return f"""
+        <section class="card">
+            <div class="card-header">
+                <div class="icon" style="background: #7c3aed;">&#128274;</div>
+                <h2>Access Control Differential Testing</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #7c3aed, #5b21b6); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{total}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Total AC Findings</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #dc2626, #991b1b); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{bola_count}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">BOLA</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #ea580c, #c2410c); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{bfla_count}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">BFLA</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{len(cred_sets)}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Credential Sets</div>
+                </div>
+            </div>
+            {cred_html}
+            {findings_html}
         </section>"""
 
     def _generate_findings_detail(self, findings: List[Dict]) -> str:
@@ -985,6 +1103,133 @@ class HTMLReportGenerator:
                 <h4>Screenshots</h4>
                 <div class="screenshot-grid">{cards}</div>
             </div>'''
+
+    def _generate_ctf_section(self, ctf_data: Optional[Dict]) -> str:
+        """Generate CTF flags / exploits / timing section for CTF mode reports."""
+        if not ctf_data:
+            return ""
+
+        flags = ctf_data.get("flags", [])
+        metrics = ctf_data.get("metrics", {})
+        submit_url = ctf_data.get("submit_url")
+
+        if not flags and not metrics:
+            return ""
+
+        total_flags = metrics.get("flags_captured", len(flags))
+        platforms = metrics.get("unique_platforms", [])
+        ttff = metrics.get("time_to_first_flag")
+        elapsed = metrics.get("elapsed_seconds", 0)
+        timeline = metrics.get("flag_timeline", [])
+
+        # Submission stats
+        submitted_count = sum(1 for f in flags if f.get("submitted"))
+        submission_rate = round(submitted_count / total_flags * 100, 1) if total_flags else 0
+
+        # Summary stats row
+        stats_html = f"""
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;">
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #7c3aed, #5b21b6); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{total_flags}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Flags Captured</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #059669, #047857); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{len(platforms)}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Platforms</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{f'{ttff:.0f}s' if ttff is not None else 'N/A'}</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Time to First Flag</div>
+                </div>
+                <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #ea580c, #c2410c); border-radius: 10px; color: white;">
+                    <div style="font-size: 2rem; font-weight: 700;">{elapsed:.0f}s</div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Total Elapsed</div>
+                </div>
+            </div>"""
+
+        # Flags table
+        rows_html = ""
+        for f in flags:
+            flag_val = html.escape(f.get("flag_value", "")[:80])
+            platform = html.escape(f.get("platform", ""))
+            source_url = html.escape(f.get("found_in_url", "")[:60])
+            method = html.escape(f.get("request_method", ""))
+            payload = html.escape((f.get("request_payload", "") or "")[:60])
+            ts = html.escape(f.get("timestamp", ""))
+            submitted = f.get("submitted", False)
+            submit_msg = html.escape((f.get("submit_message", "") or "")[:60])
+            status_badge = (
+                '<span style="color: #22c55e; font-weight: 600;">Accepted</span>'
+                if submitted else
+                f'<span style="color: #94a3b8;">{submit_msg or "Not submitted"}</span>'
+            )
+            exploit_html = f"{method} {payload}" if method or payload else "-"
+
+            rows_html += f"""
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.8rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{flag_val}</td>
+                    <td>{platform}</td>
+                    <td style="font-size: 0.8rem; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{source_url}</td>
+                    <td style="font-size: 0.8rem;">{exploit_html}</td>
+                    <td style="font-size: 0.8rem;">{ts[11:19] if len(ts) > 19 else ts}</td>
+                    <td>{status_badge}</td>
+                </tr>"""
+
+        table_html = f"""
+            <table>
+                <thead>
+                    <tr>
+                        <th>Flag</th>
+                        <th>Platform</th>
+                        <th>Source URL</th>
+                        <th>Exploit</th>
+                        <th>Time</th>
+                        <th>Submission</th>
+                    </tr>
+                </thead>
+                <tbody>{rows_html}</tbody>
+            </table>""" if flags else ""
+
+        # Timeline bar chart (CSS-based)
+        timeline_html = ""
+        if timeline and elapsed > 0:
+            max_elapsed = max(t.get("elapsed_seconds", 0) for t in timeline) or 1
+            bars = ""
+            for t in timeline:
+                pct = min(100, t.get("elapsed_seconds", 0) / max_elapsed * 100)
+                label = html.escape(t.get("flag", "")[:30])
+                secs = t.get("elapsed_seconds", 0)
+                bars += f"""
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <div style="width: {pct}%; min-width: 4px; height: 20px; background: linear-gradient(90deg, #7c3aed, #3b82f6); border-radius: 4px;"></div>
+                        <span style="font-size: 0.75rem; color: #94a3b8; white-space: nowrap;">{secs:.0f}s — {label}</span>
+                    </div>"""
+            timeline_html = f"""
+                <div style="margin-top: 24px;">
+                    <h4 style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 12px;">Flag Timeline</h4>
+                    {bars}
+                </div>"""
+
+        # Submission summary
+        submission_html = ""
+        if submit_url:
+            submission_html = f"""
+                <div style="margin-top: 16px; padding: 12px 16px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px;">
+                    <span style="color: #22c55e; font-weight: 600;">Submission Rate: {submission_rate}%</span>
+                    <span style="color: #94a3b8; margin-left: 12px;">({submitted_count}/{total_flags} flags accepted)</span>
+                </div>"""
+
+        return f"""
+        <section class="card">
+            <div class="card-header">
+                <div class="icon" style="background: #7c3aed;">&#127937;</div>
+                <h2>CTF Flags Captured</h2>
+            </div>
+            {stats_html}
+            {table_html}
+            {timeline_html}
+            {submission_html}
+        </section>"""
 
     def _generate_scan_results(self, scan_results: List[Dict]) -> str:
         """Generate tool scan results section"""

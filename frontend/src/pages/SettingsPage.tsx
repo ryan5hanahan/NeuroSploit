@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye, Zap } from 'lucide-react'
+import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye, Zap, Lightbulb, Database, Activity, Bug } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
@@ -17,6 +17,15 @@ interface Settings {
   enable_model_routing: boolean
   enable_knowledge_augmentation: boolean
   enable_browser_validation: boolean
+  enable_extended_thinking: boolean
+  enable_tracing: boolean
+  enable_persistent_memory: boolean
+  enable_bugbounty_integration: boolean
+  has_shodan_key: boolean
+  has_censys_key: boolean
+  has_virustotal_key: boolean
+  has_builtwith_key: boolean
+  has_hackerone_config: boolean
   max_output_tokens: number | null
   aws_bedrock_region: string
   aws_bedrock_model: string
@@ -96,9 +105,15 @@ export default function SettingsPage() {
   const [maxConcurrentScans, setMaxConcurrentScans] = useState('3')
   const [maxOutputTokens, setMaxOutputTokens] = useState('')
   const [aggressiveMode, setAggressiveMode] = useState(false)
+  const [defaultScanType, setDefaultScanType] = useState('full')
+  const [reconEnabledByDefault, setReconEnabledByDefault] = useState(true)
   const [enableModelRouting, setEnableModelRouting] = useState(false)
   const [enableKnowledgeAugmentation, setEnableKnowledgeAugmentation] = useState(false)
   const [enableBrowserValidation, setEnableBrowserValidation] = useState(false)
+  const [enableExtendedThinking, setEnableExtendedThinking] = useState(false)
+  const [enableTracing, setEnableTracing] = useState(false)
+  const [enablePersistentMemory, setEnablePersistentMemory] = useState(true)
+  const [enableBugbountyIntegration, setEnableBugbountyIntegration] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -121,9 +136,15 @@ export default function SettingsPage() {
         setLlmProvider(data.llm_provider)
         setMaxConcurrentScans(String(data.max_concurrent_scans))
         setAggressiveMode(data.aggressive_mode)
+        setDefaultScanType(data.default_scan_type || 'full')
+        setReconEnabledByDefault(data.recon_enabled_by_default ?? true)
         setEnableModelRouting(data.enable_model_routing ?? false)
         setEnableKnowledgeAugmentation(data.enable_knowledge_augmentation ?? false)
         setEnableBrowserValidation(data.enable_browser_validation ?? false)
+        setEnableExtendedThinking(data.enable_extended_thinking ?? false)
+        setEnableTracing(data.enable_tracing ?? false)
+        setEnablePersistentMemory(data.enable_persistent_memory ?? true)
+        setEnableBugbountyIntegration(data.enable_bugbounty_integration ?? false)
         setMaxOutputTokens(data.max_output_tokens ? String(data.max_output_tokens) : '')
         setAwsBedrockRegion(data.aws_bedrock_region || 'us-east-1')
         setAwsBedrockModel(data.aws_bedrock_model || '')
@@ -171,9 +192,15 @@ export default function SettingsPage() {
           llm_model: llmModel,
           max_concurrent_scans: parseInt(maxConcurrentScans),
           aggressive_mode: aggressiveMode,
+          default_scan_type: defaultScanType,
+          recon_enabled_by_default: reconEnabledByDefault,
           enable_model_routing: enableModelRouting,
           enable_knowledge_augmentation: enableKnowledgeAugmentation,
           enable_browser_validation: enableBrowserValidation,
+          enable_extended_thinking: enableExtendedThinking,
+          enable_tracing: enableTracing,
+          enable_persistent_memory: enablePersistentMemory,
+          enable_bugbounty_integration: enableBugbountyIntegration,
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null
         })
       })
@@ -526,6 +553,58 @@ export default function SettingsPage() {
             </div>
             <ToggleSwitch enabled={enableBrowserValidation} onToggle={() => setEnableBrowserValidation(!enableBrowserValidation)} />
           </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Lightbulb className="w-5 h-5 text-yellow-400" />
+              <div>
+                <p className="font-medium text-white">Extended Thinking</p>
+                <p className="text-sm text-dark-400">
+                  Enable Claude's thinking mode for deeper exploit reasoning and analysis
+                </p>
+              </div>
+            </div>
+            <ToggleSwitch enabled={enableExtendedThinking} onToggle={() => setEnableExtendedThinking(!enableExtendedThinking)} />
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Database className="w-5 h-5 text-cyan-400" />
+              <div>
+                <p className="font-medium text-white">Persistent Memory</p>
+                <p className="text-sm text-dark-400">
+                  Cross-session learning: remember successful payloads and target fingerprints
+                </p>
+              </div>
+            </div>
+            <ToggleSwitch enabled={enablePersistentMemory} onToggle={() => setEnablePersistentMemory(!enablePersistentMemory)} />
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Activity className="w-5 h-5 text-orange-400" />
+              <div>
+                <p className="font-medium text-white">Observability Tracing</p>
+                <p className="text-sm text-dark-400">
+                  Structured tracing for agent decisions, tool calls, and token usage
+                </p>
+              </div>
+            </div>
+            <ToggleSwitch enabled={enableTracing} onToggle={() => setEnableTracing(!enableTracing)} />
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <Bug className="w-5 h-5 text-red-400" />
+              <div>
+                <p className="font-medium text-white">Bug Bounty Integration</p>
+                <p className="text-sm text-dark-400">
+                  HackerOne scope parsing, duplicate detection (read-only, no auto-submit)
+                </p>
+              </div>
+            </div>
+            <ToggleSwitch enabled={enableBugbountyIntegration} onToggle={() => setEnableBugbountyIntegration(!enableBugbountyIntegration)} />
+          </div>
         </div>
       </Card>
 
@@ -541,6 +620,32 @@ export default function SettingsPage() {
             onChange={(e) => setMaxConcurrentScans(e.target.value)}
             helperText="Maximum number of scans that can run simultaneously"
           />
+
+          <div>
+            <label className="block text-sm font-medium text-dark-200 mb-2">
+              Default Scan Type
+            </label>
+            <select
+              value={defaultScanType}
+              onChange={(e) => setDefaultScanType(e.target.value)}
+              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
+            >
+              <option value="full">Full (comprehensive)</option>
+              <option value="quick">Quick (fast surface scan)</option>
+              <option value="custom">Custom</option>
+            </select>
+            <p className="text-xs text-dark-400 mt-1">Default scan type when creating new scans</p>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div>
+              <p className="font-medium text-white">Recon Enabled by Default</p>
+              <p className="text-sm text-dark-400">
+                Enable reconnaissance phase for new scans by default
+              </p>
+            </div>
+            <ToggleSwitch enabled={reconEnabledByDefault} onToggle={() => setReconEnabledByDefault(!reconEnabledByDefault)} />
+          </div>
 
           <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
             <div>

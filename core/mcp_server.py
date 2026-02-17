@@ -2,19 +2,18 @@
 """
 NeuroSploit MCP Server — Exposes pentest tools via Model Context Protocol.
 
-Tools:
-  - screenshot_capture: Playwright browser screenshots
-  - payload_delivery: HTTP payload sending with full response capture
-  - dns_lookup: DNS record enumeration
-  - port_scan: TCP port scanning
-  - technology_detect: HTTP header-based tech fingerprinting
-  - subdomain_enumerate: Subdomain discovery via DNS brute-force
-  - save_finding: Persist a finding to agent memory
-  - get_vuln_prompt: Retrieve AI decision prompt for a vuln type
-  - execute_nuclei: Run Nuclei scanner in Docker sandbox (8000+ templates)
-  - execute_naabu: Run Naabu port scanner in Docker sandbox
-  - sandbox_health: Check sandbox container status
-  - sandbox_exec: Execute any allowed tool in the sandbox
+Tools (Core):
+  - screenshot_capture, payload_delivery, dns_lookup, port_scan,
+    technology_detect, subdomain_enumerate, save_finding, get_vuln_prompt
+Tools (Sandbox):
+  - execute_nuclei, execute_naabu, sandbox_health, sandbox_exec
+Tools (ProjectDiscovery Extended):
+  - execute_cvemap, execute_tlsx, execute_asnmap, execute_mapcidr,
+    execute_alterx, execute_shuffledns, execute_cloudlist,
+    execute_interactsh, execute_notify
+Tools (Proxy):
+  - proxy_status, proxy_flows, proxy_capture, proxy_replay,
+    proxy_intercept, proxy_clear, proxy_export
 
 Usage:
   python3 -m core.mcp_server          # stdio transport (default)
@@ -61,6 +60,27 @@ try:
 except ImportError:
     HAS_SANDBOX = False
 
+# ProjectDiscovery extended tool handlers
+try:
+    from core.mcp_tools_pd import (
+        _execute_cvemap, _execute_tlsx, _execute_asnmap,
+        _execute_mapcidr, _execute_alterx, _execute_shuffledns,
+        _execute_cloudlist, _execute_interactsh, _execute_notify,
+    )
+    HAS_PD_TOOLS = True
+except ImportError:
+    HAS_PD_TOOLS = False
+
+# Proxy tool handlers
+try:
+    from core.mcp_tools_proxy import (
+        _proxy_status, _proxy_flows, _proxy_capture,
+        _proxy_replay, _proxy_intercept, _proxy_clear, _proxy_export,
+    )
+    HAS_PROXY_TOOLS = True
+except ImportError:
+    HAS_PROXY_TOOLS = False
+
 
 # ---------------------------------------------------------------------------
 # Tool implementations
@@ -74,7 +94,15 @@ async def _screenshot_capture(url: str, selector: Optional[str] = None) -> Dict:
     try:
         bv = BrowserValidator()
         result = await bv.capture_screenshot(url, selector=selector)
-        return {"url": url, "screenshot_base64": result.get("screenshot", ""), "status": "ok"}
+        if result.get("error"):
+            return {"error": result["error"], "screenshot": None}
+        return {
+            "url": url,
+            "screenshot_base64": result.get("screenshot", ""),
+            "title": result.get("title", ""),
+            "status_code": result.get("status_code"),
+            "status": "ok",
+        }
     except Exception as e:
         return {"error": str(e), "screenshot": None}
 
@@ -289,6 +317,7 @@ async def _execute_nuclei(
     severity: Optional[str] = None,
     tags: Optional[str] = None,
     rate_limit: int = 150,
+    opsec_profile: Optional[str] = None,
 ) -> Dict:
     """Run Nuclei vulnerability scanner in the Docker sandbox."""
     if not HAS_SANDBOX:
@@ -305,6 +334,7 @@ async def _execute_nuclei(
             severity=severity,
             tags=tags,
             rate_limit=rate_limit,
+            opsec_profile=opsec_profile,
         )
 
         return {
@@ -316,6 +346,7 @@ async def _execute_nuclei(
             "duration_seconds": result.duration_seconds,
             "raw_output": result.stdout[:3000] if result.stdout else "",
             "error": result.error,
+            "opsec_profile": opsec_profile,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -326,6 +357,7 @@ async def _execute_naabu(
     ports: Optional[str] = None,
     top_ports: Optional[int] = None,
     rate: int = 1000,
+    opsec_profile: Optional[str] = None,
 ) -> Dict:
     """Run Naabu port scanner in the Docker sandbox."""
     if not HAS_SANDBOX:
@@ -341,6 +373,7 @@ async def _execute_naabu(
             ports=ports,
             top_ports=top_ports,
             rate=rate,
+            opsec_profile=opsec_profile,
         )
 
         open_ports = [f["port"] for f in result.findings]
@@ -353,6 +386,7 @@ async def _execute_naabu(
             "findings": result.findings,
             "duration_seconds": result.duration_seconds,
             "error": result.error,
+            "opsec_profile": opsec_profile,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -370,7 +404,10 @@ async def _sandbox_health() -> Dict:
         return {"status": "error", "reason": str(e)}
 
 
-async def _sandbox_exec(tool: str, args: str, timeout: int = 300) -> Dict:
+async def _sandbox_exec(
+    tool: str, args: str, timeout: int = 300,
+    opsec_profile: Optional[str] = None,
+) -> Dict:
     """Execute any allowed tool in the Docker sandbox."""
     if not HAS_SANDBOX:
         return {"error": "Sandbox module not available"}
@@ -380,7 +417,10 @@ async def _sandbox_exec(tool: str, args: str, timeout: int = 300) -> Dict:
         if not sandbox.is_available:
             return {"error": "Sandbox container not running"}
 
-        result = await sandbox.run_tool(tool=tool, args=args, timeout=timeout)
+        result = await sandbox.run_tool(
+            tool=tool, args=args, timeout=timeout,
+            opsec_profile=opsec_profile,
+        )
 
         return {
             "tool": tool,
@@ -389,6 +429,7 @@ async def _sandbox_exec(tool: str, args: str, timeout: int = 300) -> Dict:
             "stderr": result.stderr[:2000] if result.stderr else "",
             "duration_seconds": result.duration_seconds,
             "error": result.error,
+            "opsec_profile": opsec_profile,
         }
     except Exception as e:
         return {"error": str(e)}
@@ -510,6 +551,7 @@ TOOLS = [
                 "severity": {"type": "string", "description": "Filter: critical,high,medium,low,info"},
                 "tags": {"type": "string", "description": "Filter by tags: xss,sqli,lfi,ssrf,rce"},
                 "rate_limit": {"type": "integer", "description": "Requests per second (default 150)", "default": 150},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
             },
             "required": ["target"],
         },
@@ -524,6 +566,7 @@ TOOLS = [
                 "ports": {"type": "string", "description": "Ports to scan (e.g. '80,443,8080' or '1-65535')"},
                 "top_ports": {"type": "integer", "description": "Scan top N ports (e.g. 100, 1000)"},
                 "rate": {"type": "integer", "description": "Packets per second (default 1000)", "default": 1000},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
             },
             "required": ["target"],
         },
@@ -545,8 +588,203 @@ TOOLS = [
                 "tool": {"type": "string", "description": "Tool name (e.g. nuclei, naabu, nmap, httpx, subfinder, katana, ffuf, gobuster, dalfox, nikto, sqlmap, curl)"},
                 "args": {"type": "string", "description": "Command-line arguments for the tool"},
                 "timeout": {"type": "integer", "description": "Max execution time in seconds (default 300)", "default": 300},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
             },
             "required": ["tool", "args"],
+        },
+    },
+    # --- ProjectDiscovery Extended Suite ---
+    {
+        "name": "execute_cvemap",
+        "description": "Query CVE database via cvemap. Lookup CVEs by ID, severity, product, or vendor. Returns CVSS, CWE, affected products.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cve_id": {"type": "string", "description": "Specific CVE ID (e.g. CVE-2024-1234)"},
+                "severity": {"type": "string", "description": "Filter by severity: critical, high, medium, low"},
+                "product": {"type": "string", "description": "Filter by product name"},
+                "vendor": {"type": "string", "description": "Filter by vendor name"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+        },
+    },
+    {
+        "name": "execute_tlsx",
+        "description": "Analyze TLS/SSL certificates, cipher suites, and protocol versions for a target. Detects expired certs, weak ciphers, and misconfigurations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Target hostname or IP"},
+                "port": {"type": "string", "description": "Port to connect to (default 443)"},
+                "scan_mode": {"type": "string", "description": "Scan mode: auto, ctls, ztls"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["target"],
+        },
+    },
+    {
+        "name": "execute_asnmap",
+        "description": "Map IPs, ASNs, or organizations to CIDR ranges. Useful for identifying an organization's full IP space.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "IP address, ASN number (e.g. AS13335), or organization name"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["target"],
+        },
+    },
+    {
+        "name": "execute_mapcidr",
+        "description": "Manipulate CIDR ranges: aggregate overlapping ranges, split into subnets, or count IPs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cidr": {"type": "string", "description": "CIDR range (e.g. 192.168.0.0/16)"},
+                "operation": {"type": "string", "description": "Operation: count, aggregate, or split-N (e.g. split-24)", "default": "count"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["cidr"],
+        },
+    },
+    {
+        "name": "execute_alterx",
+        "description": "Generate subdomain permutations from a domain using pattern-based wordlist generation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Base domain (e.g. example.com)"},
+                "pattern": {"type": "string", "description": "Custom permutation pattern"},
+                "enrich": {"type": "boolean", "description": "Enrich with additional patterns", "default": False},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "execute_shuffledns",
+        "description": "Brute-force and resolve subdomains using massdns as backend. Fast DNS resolution at scale.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Target domain"},
+                "wordlist": {"type": "string", "description": "Path to wordlist (default: /opt/wordlists/subdomains-5000.txt)"},
+                "resolvers": {"type": "string", "description": "Path to resolvers file"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "execute_cloudlist",
+        "description": "Enumerate cloud assets (IPs, hostnames, buckets) from configured cloud providers (AWS, GCP, Azure, etc.).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "description": "Cloud provider filter (aws, gcp, azure, do, etc.)"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+        },
+    },
+    {
+        "name": "execute_interactsh",
+        "description": "Out-of-band interaction testing via interactsh. Register an OOB URL for DNS/HTTP/SMTP callback detection, or poll for captured interactions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "Action: 'register' to get an OOB URL, 'poll' to wait for interactions", "default": "register"},
+                "token": {"type": "string", "description": "Session token for authenticated polling"},
+                "poll_interval": {"type": "integer", "description": "Poll interval in seconds"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth uses self-hosted server"},
+            },
+        },
+    },
+    {
+        "name": "execute_notify",
+        "description": "Send notification messages via configured providers (Slack, Discord, Telegram, email, etc.).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "Notification message text"},
+                "provider": {"type": "string", "description": "Specific provider to use"},
+                "severity": {"type": "string", "description": "Severity tag for filtering"},
+                "opsec_profile": {"type": "string", "description": "Opsec profile: stealth, balanced, or aggressive"},
+            },
+            "required": ["message"],
+        },
+    },
+    # --- Proxy Tools (mitmproxy) ---
+    {
+        "name": "proxy_status",
+        "description": "Check mitmproxy status, flow count, and connection info. Start with: docker compose --profile proxy up -d",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "proxy_flows",
+        "description": "Retrieve captured HTTP flows from mitmproxy. Filter by URL, method, or status code.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_expr": {"type": "string", "description": "Text filter (matches URL, method, status)"},
+                "limit": {"type": "integer", "description": "Max flows to return (default 50)", "default": 50},
+            },
+        },
+    },
+    {
+        "name": "proxy_capture",
+        "description": "Set mitmproxy capture/view filter. Use mitmproxy filter expressions (e.g. '~d example.com', '~m POST').",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_expr": {"type": "string", "description": "mitmproxy filter expression (empty to capture all)"},
+            },
+        },
+    },
+    {
+        "name": "proxy_replay",
+        "description": "Replay a captured flow with optional header/body modifications.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "flow_id": {"type": "string", "description": "Flow ID to replay"},
+                "modify_headers": {"type": "object", "description": "Headers to add/modify"},
+                "modify_body": {"type": "string", "description": "New request body"},
+            },
+            "required": ["flow_id"],
+        },
+    },
+    {
+        "name": "proxy_intercept",
+        "description": "Set mitmproxy intercept breakpoint. Matching flows will be paused for inspection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "mitmproxy filter pattern for interception"},
+                "enabled": {"type": "boolean", "description": "Enable or disable interception", "default": True},
+            },
+        },
+    },
+    {
+        "name": "proxy_clear",
+        "description": "Clear all captured flows from mitmproxy.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "proxy_export",
+        "description": "Export a captured flow as curl command or raw request/response.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "flow_id": {"type": "string", "description": "Flow ID to export"},
+                "format": {"type": "string", "description": "Export format: curl or raw", "default": "curl"},
+            },
+            "required": ["flow_id"],
         },
     },
 ]
@@ -571,15 +809,68 @@ TOOL_HANDLERS = {
     # Sandbox tools
     "execute_nuclei": lambda args: _execute_nuclei(
         args["target"], args.get("templates"), args.get("severity"),
-        args.get("tags"), args.get("rate_limit", 150)
+        args.get("tags"), args.get("rate_limit", 150),
+        args.get("opsec_profile")
     ),
     "execute_naabu": lambda args: _execute_naabu(
         args["target"], args.get("ports"), args.get("top_ports"),
-        args.get("rate", 1000)
+        args.get("rate", 1000), args.get("opsec_profile")
     ),
     "sandbox_health": lambda args: _sandbox_health(),
     "sandbox_exec": lambda args: _sandbox_exec(
-        args["tool"], args["args"], args.get("timeout", 300)
+        args["tool"], args["args"], args.get("timeout", 300),
+        args.get("opsec_profile")
+    ),
+    # ProjectDiscovery extended suite
+    "execute_cvemap": lambda args: _execute_cvemap(
+        args.get("cve_id"), args.get("severity"), args.get("product"),
+        args.get("vendor"), args.get("opsec_profile")
+    ),
+    "execute_tlsx": lambda args: _execute_tlsx(
+        args["target"], args.get("port"), args.get("scan_mode"),
+        args.get("opsec_profile")
+    ),
+    "execute_asnmap": lambda args: _execute_asnmap(
+        args["target"], args.get("opsec_profile")
+    ),
+    "execute_mapcidr": lambda args: _execute_mapcidr(
+        args["cidr"], args.get("operation", "count"),
+        args.get("opsec_profile")
+    ),
+    "execute_alterx": lambda args: _execute_alterx(
+        args["domain"], args.get("pattern"), args.get("enrich", False),
+        args.get("opsec_profile")
+    ),
+    "execute_shuffledns": lambda args: _execute_shuffledns(
+        args["domain"], args.get("wordlist", "/opt/wordlists/subdomains-5000.txt"),
+        args.get("resolvers"), args.get("opsec_profile")
+    ),
+    "execute_cloudlist": lambda args: _execute_cloudlist(
+        args.get("provider"), args.get("opsec_profile")
+    ),
+    "execute_interactsh": lambda args: _execute_interactsh(
+        args.get("action", "register"), args.get("token"),
+        args.get("poll_interval"), args.get("opsec_profile")
+    ),
+    "execute_notify": lambda args: _execute_notify(
+        args["message"], args.get("provider"), args.get("severity"),
+        args.get("opsec_profile")
+    ),
+    # Proxy tools
+    "proxy_status": lambda args: _proxy_status(),
+    "proxy_flows": lambda args: _proxy_flows(
+        args.get("filter_expr"), args.get("limit", 50)
+    ),
+    "proxy_capture": lambda args: _proxy_capture(args.get("filter_expr", "")),
+    "proxy_replay": lambda args: _proxy_replay(
+        args["flow_id"], args.get("modify_headers"), args.get("modify_body")
+    ),
+    "proxy_intercept": lambda args: _proxy_intercept(
+        args.get("pattern", ""), args.get("enabled", True)
+    ),
+    "proxy_clear": lambda args: _proxy_clear(),
+    "proxy_export": lambda args: _proxy_export(
+        args["flow_id"], args.get("format", "curl")
     ),
 }
 

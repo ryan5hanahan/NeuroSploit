@@ -83,6 +83,13 @@ try:
 except ImportError:
     HAS_SANDBOX = False
 
+# MCP tool client (in-process direct transport)
+try:
+    from core.mcp_client import MCPToolClient
+    HAS_MCP_CLIENT = True
+except ImportError:
+    HAS_MCP_CLIENT = False
+
 
 class OperationMode(Enum):
     """Agent operation modes"""
@@ -140,6 +147,8 @@ class Finding:
     negative_controls: str = ""   # Control test results
     ai_status: str = "confirmed"  # "confirmed" | "rejected" | "pending"
     rejection_reason: str = ""
+    credential_label: str = ""
+    auth_context: Dict = field(default_factory=dict)
 
 
 @dataclass
@@ -190,11 +199,24 @@ class LLMClient:
         self.anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
         self.google_key = os.getenv("GOOGLE_API_KEY", "")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
         self.client = None
         self.provider = None
         self.error_message = None
         self.connection_tested = False
+
+        # Preferred provider from settings UI (DEFAULT_LLM_PROVIDER)
+        self.preferred_provider = os.getenv("DEFAULT_LLM_PROVIDER", "").strip().lower()
+        # Global model override from settings UI (DEFAULT_LLM_MODEL)
+        global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
+
+        # Per-provider model: global override takes precedence, then provider-specific env, then hardcoded default
+        self.claude_model = global_model or os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+        self.openai_model = global_model or os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+        # MAX_OUTPUT_TOKENS from settings UI
+        _max_tok = os.getenv("MAX_OUTPUT_TOKENS", "").strip()
+        self.default_max_tokens = int(_max_tok) if _max_tok.isdigit() else 4096
 
         # Validate keys are not placeholder values
         if self.anthropic_key in ["", "your-anthropic-api-key"]:
@@ -204,73 +226,90 @@ class LLMClient:
         if self.google_key in ["", "your-google-api-key"]:
             self.google_key = None
 
-        # Try providers in order of preference
+        # Initialize provider — preferred first, then fallback order
         self._initialize_provider()
 
     def _initialize_provider(self):
-        """Initialize the first available LLM provider"""
-        # 1. Try Claude (Anthropic)
-        if ANTHROPIC_AVAILABLE and self.anthropic_key:
-            try:
-                self.client = anthropic.Anthropic(api_key=self.anthropic_key)
-                self.provider = "claude"
-                print("[LLM] Claude API initialized successfully")
+        """Initialize LLM provider, respecting DEFAULT_LLM_PROVIDER setting."""
+
+        # Build ordered list of providers to try.
+        # If user chose a preferred provider in settings, try it first.
+        default_order = ["claude", "openai", "gemini", "bedrock", "ollama", "lmstudio"]
+        if self.preferred_provider and self.preferred_provider in default_order:
+            order = [self.preferred_provider] + [p for p in default_order if p != self.preferred_provider]
+        else:
+            order = default_order
+
+        for provider in order:
+            if self._try_init_provider(provider):
                 return
-            except Exception as e:
-                self.error_message = f"Claude init error: {e}"
-                print(f"[LLM] Claude initialization failed: {e}")
-
-        # 2. Try OpenAI
-        if OPENAI_AVAILABLE and self.openai_key:
-            try:
-                self.client = openai.OpenAI(api_key=self.openai_key)
-                self.provider = "openai"
-                print("[LLM] OpenAI API initialized successfully")
-                return
-            except Exception as e:
-                self.error_message = f"OpenAI init error: {e}"
-                print(f"[LLM] OpenAI initialization failed: {e}")
-
-        # 3. Try Google Gemini
-        if self.google_key:
-            self.client = "gemini"  # Placeholder - uses HTTP requests
-            self.provider = "gemini"
-            print("[LLM] Gemini API initialized")
-            return
-
-        # 3.5. Try AWS Bedrock
-        if BOTO3_AVAILABLE:
-            try:
-                bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
-                bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
-                # Verify credentials are available by calling get_caller_identity
-                sts = boto3.client('sts', region_name=bedrock_region)
-                sts.get_caller_identity()
-                self.client = bedrock_client
-                self.provider = "bedrock"
-                self.bedrock_model = os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-                self.bedrock_region = bedrock_region
-                print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
-                return
-            except Exception as e:
-                print(f"[LLM] AWS Bedrock initialization failed: {e}")
-
-        # 4. Try Ollama (local)
-        if self._check_ollama():
-            self.client = "ollama"  # Placeholder - uses HTTP requests
-            self.provider = "ollama"
-            print(f"[LLM] Ollama initialized with model: {self.ollama_model}")
-            return
-
-        # 5. Try LM Studio (local)
-        if self._check_lmstudio():
-            self.client = "lmstudio"  # Placeholder - uses HTTP requests
-            self.provider = "lmstudio"
-            print("[LLM] LM Studio initialized")
-            return
 
         # No provider available
         self._set_no_provider_error()
+
+    def _try_init_provider(self, name: str) -> bool:
+        """Try to initialize a single provider. Returns True on success."""
+        if name == "claude":
+            if ANTHROPIC_AVAILABLE and self.anthropic_key:
+                try:
+                    self.client = anthropic.Anthropic(api_key=self.anthropic_key)
+                    self.provider = "claude"
+                    print(f"[LLM] Claude API initialized (model={self.claude_model})")
+                    return True
+                except Exception as e:
+                    self.error_message = f"Claude init error: {e}"
+                    print(f"[LLM] Claude initialization failed: {e}")
+
+        elif name == "openai":
+            if OPENAI_AVAILABLE and self.openai_key:
+                try:
+                    self.client = openai.OpenAI(api_key=self.openai_key)
+                    self.provider = "openai"
+                    print(f"[LLM] OpenAI API initialized (model={self.openai_model})")
+                    return True
+                except Exception as e:
+                    self.error_message = f"OpenAI init error: {e}"
+                    print(f"[LLM] OpenAI initialization failed: {e}")
+
+        elif name == "gemini":
+            if self.google_key:
+                self.client = "gemini"
+                self.provider = "gemini"
+                print("[LLM] Gemini API initialized")
+                return True
+
+        elif name == "bedrock":
+            if BOTO3_AVAILABLE:
+                try:
+                    bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+                    bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
+                    sts = boto3.client('sts', region_name=bedrock_region)
+                    sts.get_caller_identity()
+                    self.client = bedrock_client
+                    self.provider = "bedrock"
+                    global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
+                    self.bedrock_model = global_model or os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+                    self.bedrock_region = bedrock_region
+                    print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
+                    return True
+                except Exception as e:
+                    print(f"[LLM] AWS Bedrock initialization failed: {e}")
+
+        elif name == "ollama":
+            if self._check_ollama():
+                self.client = "ollama"
+                self.provider = "ollama"
+                print(f"[LLM] Ollama initialized with model: {self.ollama_model}")
+                return True
+
+        elif name == "lmstudio":
+            if self._check_lmstudio():
+                self.client = "lmstudio"
+                self.provider = "lmstudio"
+                print("[LLM] LM Studio initialized")
+                return True
+
+        return False
 
     def _check_ollama(self) -> bool:
         """Check if Ollama is running locally"""
@@ -337,8 +376,10 @@ class LLMClient:
         except Exception as e:
             return False, f"Connection test failed for {self.provider}: {str(e)}"
 
-    async def generate(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-        """Generate response from LLM"""
+    async def generate(self, prompt: str, system: str = "", max_tokens: int = 0) -> str:
+        """Generate response from LLM. max_tokens=0 means use self.default_max_tokens."""
+        if max_tokens <= 0:
+            max_tokens = self.default_max_tokens
         if not self.client:
             raise LLMConnectionError(self.error_message or "No LLM provider available")
 
@@ -346,24 +387,10 @@ class LLMClient:
 
         try:
             if self.provider == "claude":
-                message = self.client.messages.create(
-                    model="claude-sonnet-4-5-20250929",
-                    max_tokens=max_tokens,
-                    system=system or default_system,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                return message.content[0].text
+                return await self._generate_claude(prompt, system or default_system, max_tokens)
 
             elif self.provider == "openai":
-                response = self.client.chat.completions.create(
-                    model="gpt-4-turbo-preview",
-                    max_tokens=max_tokens,
-                    messages=[
-                        {"role": "system", "content": system or default_system},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                return response.choices[0].message.content
+                return await self._generate_openai(prompt, system or default_system, max_tokens)
 
             elif self.provider == "gemini":
                 return await self._generate_gemini(prompt, system or default_system, max_tokens)
@@ -385,6 +412,32 @@ class LLMClient:
             raise LLMConnectionError(f"API call failed ({self.provider}): {error_msg}")
 
         return ""
+
+    async def _generate_claude(self, prompt: str, system: str, max_tokens: int) -> str:
+        """Generate using Anthropic Claude API (runs sync SDK call in thread)"""
+        def _call():
+            message = self.client.messages.create(
+                model=self.claude_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text
+        return await asyncio.to_thread(_call)
+
+    async def _generate_openai(self, prompt: str, system: str, max_tokens: int) -> str:
+        """Generate using OpenAI API (runs sync SDK call in thread)"""
+        def _call():
+            response = self.client.chat.completions.create(
+                model=self.openai_model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return response.choices[0].message.content
+        return await asyncio.to_thread(_call)
 
     async def _generate_gemini(self, prompt: str, system: str, max_tokens: int) -> str:
         """Generate using Google Gemini API"""
@@ -643,6 +696,11 @@ class AutonomousAgent:
         lab_context: Optional[Dict] = None,
         scan_id: Optional[str] = None,
         recon_depth: Optional[str] = None,
+        governance: Optional[Any] = None,
+        preset_recon: Optional['ReconData'] = None,
+        focus_vuln_types: Optional[List[str]] = None,
+        agent_label: Optional[str] = None,
+        credential_sets: Optional[List[Dict]] = None,
     ):
         self.target = self._normalize_target(target)
         self.mode = mode
@@ -656,7 +714,10 @@ class AutonomousAgent:
         self.recon_context = recon_context
         self.lab_context = lab_context or {}
         self.scan_id = scan_id
+        self.governance = governance
         self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
+        self.knowledge_augmentation_enabled = os.getenv('ENABLE_KNOWLEDGE_AUGMENTATION', 'false').lower() == 'true'
+        self.persistent_memory_enabled = os.getenv('ENABLE_PERSISTENT_MEMORY', 'true').lower() == 'true'
         self._cancelled = False
         self._paused = False
         self._skip_to_phase: Optional[str] = None  # Phase skip target
@@ -707,11 +768,47 @@ class AutonomousAgent:
 
         # Data storage
         self.recon = ReconData()
+        self.preset_recon = preset_recon
+        self.focus_vuln_types = focus_vuln_types
+        self.agent_label = agent_label or ""
+        self.credential_sets = credential_sets
+        self._diff_engine = None  # Lazy-init in __aenter__ when credential_sets present
+        if preset_recon:
+            self.recon = preset_recon
         self.memory = AgentMemory()
         self.custom_prompts: List[str] = []
         self.tool_executions: List[Dict] = []
         self.rejected_findings: List[Finding] = []
         self._sandbox = None  # Lazy-init sandbox reference for tool runner
+
+        # Persistent cross-session memory
+        self.persistent_mem = None
+        if self.persistent_memory_enabled:
+            try:
+                from backend.core.persistent_memory import PersistentMemory
+                from backend.db.database import async_session_maker
+                self.persistent_mem = PersistentMemory(async_session_maker)
+            except Exception:
+                pass
+
+        # Observability tracer
+        self.tracer = None
+        if os.getenv('ENABLE_TRACING', 'false').lower() == 'true' and scan_id:
+            try:
+                from backend.core.tracer import ScanTracer
+                from backend.db.database import async_session_maker as _tracer_asm
+                self.tracer = ScanTracer(scan_id, _tracer_asm)
+            except Exception:
+                pass
+
+        # MCP tool client (direct in-process transport)
+        self.mcp_client = None
+        if HAS_MCP_CLIENT:
+            try:
+                config = self._load_config()
+                self.mcp_client = MCPToolClient(config)
+            except Exception:
+                pass
 
     @property
     def findings(self) -> List[Finding]:
@@ -789,6 +886,16 @@ class AutonomousAgent:
         kb_path = Path(__file__).parent.parent.parent / "data" / "vuln_knowledge_base.json"
         try:
             with open(kb_path, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _load_config() -> Dict:
+        """Load config/config.json for MCP and sandbox settings."""
+        config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+        try:
+            with open(config_path) as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -1297,7 +1404,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] CORS misconfiguration at {url[:50]}")
                             break
-                except:
+                except Exception:
                     pass
 
     async def _test_information_disclosure(self):
@@ -1368,7 +1475,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 ai_verified=False  # Detected by inspection
                             )
                             await self._add_finding(finding)
-            except:
+            except Exception:
                 pass
 
     async def _test_misconfigurations(self):
@@ -1449,7 +1556,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 await self._add_finding(finding)
                                 await self.log("warning", f"  [FOUND] {vuln_type} at {path}")
                                 break  # One finding per vuln type is enough
-                except:
+                except Exception:
                     pass
 
     async def _test_data_exposure(self):
@@ -1512,7 +1619,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                     await self._add_finding(finding)
                                     await self.log("warning", f"  [FOUND] {vuln_type} at {path}")
                                     break
-                except:
+                except Exception:
                     pass
 
     async def _test_ssl_crypto(self):
@@ -1530,7 +1637,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                 try:
                     async with self.session.get(https_url, timeout=5) as resp:
                         has_https = resp.status < 400
-                except:
+                except Exception:
                     pass
                 if not has_https:
                     info = self.vuln_registry.VULNERABILITY_INFO.get(vt, {})
@@ -1574,7 +1681,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                             ai_verified=False
                         )
                         await self._add_finding(finding)
-        except:
+        except Exception:
             pass
 
     async def _test_graphql_introspection(self):
@@ -1619,7 +1726,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
                                 await self._add_finding(finding)
                                 await self.log("warning", f"  [FOUND] GraphQL introspection at {path}")
                                 return
-            except:
+            except Exception:
                 pass
 
     async def _test_csrf_inspection(self):
@@ -1930,7 +2037,7 @@ Respond in JSON:
                 if content_type == "application/json" and isinstance(body, str):
                     try:
                         body = json.loads(body)
-                    except:
+                    except Exception:
                         pass
                 async with self.session.post(url, headers=headers, data=body if isinstance(body, str) else None, json=body if isinstance(body, dict) else None, allow_redirects=False) as resp:
                     response_body = await resp.text()
@@ -2034,7 +2141,7 @@ Respond in JSON:
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] XXE at {endpoint[:50]}")
                             return
-                except:
+                except Exception:
                     pass
 
     async def _test_race_condition_fallback(self):
@@ -2066,7 +2173,7 @@ Respond in JSON:
                 if len(set(statuses)) > 1:
                     await self.log("info", f"  Inconsistent responses detected at {endpoint[:50]} - potential race condition")
 
-            except:
+            except Exception:
                 pass
 
     async def _test_rate_limit_fallback(self):
@@ -2093,7 +2200,7 @@ Respond in JSON:
                                 break
                             if i == 19:
                                 await self.log("warning", f"  [POTENTIAL] No rate limiting detected with header bypass")
-                except:
+                except Exception:
                     pass
 
     async def _test_idor_fallback(self):
@@ -2117,7 +2224,7 @@ Respond in JSON:
                                 body = await resp.text()
                                 if len(body) > 100:
                                     await self.log("debug", f"  Got response for {param}={test_id}")
-                    except:
+                    except Exception:
                         pass
 
     async def _test_bfla_fallback(self):
@@ -2134,7 +2241,7 @@ Respond in JSON:
                         await self.log("warning", f"  [POTENTIAL] Admin endpoint accessible: {url}")
                     elif resp.status in [401, 403]:
                         await self.log("debug", f"  Protected: {url}")
-            except:
+            except Exception:
                 pass
 
     async def _test_jwt_fallback(self):
@@ -2156,7 +2263,7 @@ Respond in JSON:
                     async with self.session.get(endpoint, headers=headers) as resp:
                         if resp.status == 200:
                             await self.log("debug", f"  JWT accepted at {endpoint[:50]}")
-                except:
+                except Exception:
                     pass
 
     async def _test_graphql_fallback(self):
@@ -2189,7 +2296,7 @@ Respond in JSON:
                             )
                             await self._add_finding(finding)
                             await self.log("warning", f"  [FOUND] GraphQL introspection at {url}")
-            except:
+            except Exception:
                 pass
 
     async def _test_nosql_fallback(self):
@@ -2216,7 +2323,7 @@ Respond in JSON:
                             body = await resp.text()
                             if resp.status == 200 and len(body) > 100:
                                 await self.log("debug", f"  NoSQL payload accepted: {param}={payload[:30]}")
-                    except:
+                    except Exception:
                         pass
 
     async def _test_waf_bypass_fallback(self):
@@ -2242,7 +2349,7 @@ Respond in JSON:
                             body = await resp.text()
                             if payload in body or "alert(1)" in body:
                                 await self.log("warning", f"  [POTENTIAL] WAF bypass: {payload[:30]}")
-                except:
+                except Exception:
                     pass
 
     async def _test_csp_bypass_fallback(self):
@@ -2284,7 +2391,7 @@ Respond in JSON:
                     )
                     await self._add_finding(finding)
                     await self.log("warning", f"  [FOUND] Weak CSP: {', '.join(weaknesses)}")
-        except:
+        except Exception:
             pass
 
     async def _ai_test_vulnerability(self, vuln_type: str):
@@ -2452,6 +2559,24 @@ NOT_VULNERABLE: <reason>"""
             except Exception:
                 pass
 
+        # Record in persistent cross-session memory
+        if self.persistent_mem:
+            try:
+                domain = urlparse(self.target).netloc
+                await self.persistent_mem.record_attack(
+                    domain=domain,
+                    vuln_type=finding.vulnerability_type,
+                    success=True,
+                    payload=finding.payload,
+                    parameter=finding.parameter,
+                    endpoint=finding.affected_endpoint,
+                    tech_stack=list(self.recon.technologies) if self.recon.technologies else None,
+                    confidence=float(finding.confidence_score) if finding.confidence_score else 0.0,
+                    severity=finding.severity,
+                )
+            except Exception:
+                pass
+
         # Capture screenshot for the confirmed finding
         await self._capture_finding_screenshot(finding)
 
@@ -2502,6 +2627,105 @@ NOT_VULNERABLE: <reason>"""
                 await self.finding_callback(asdict(finding))
             except Exception as e:
                 print(f"Finding callback error: {e}")
+
+    async def _run_differential_probes(self):
+        """Run differential access control probes using multiple credential contexts.
+
+        For each discovered endpoint, make requests with each authenticated context
+        and use the diff engine to detect BOLA/BFLA/privilege escalation.
+        """
+        if not self._diff_engine or not self.auth_manager or not self.session:
+            return
+
+        from backend.core.access_control_diff import ContextResponse
+
+        # Collect endpoints to probe
+        endpoints = []
+        for ep in self.recon.endpoints[:30]:
+            url = _get_endpoint_url(ep)
+            method = _get_endpoint_method(ep)
+            if url:
+                endpoints.append((url, method))
+        for url in self.recon.api_endpoints[:20]:
+            if url and (url, "GET") not in endpoints:
+                endpoints.append((url, "GET"))
+
+        if not endpoints:
+            await self.log("info", "[DIFF] No endpoints to probe for differential testing")
+            return
+
+        authenticated_contexts = [
+            (label, ctx) for label, ctx in self.auth_manager.contexts.items()
+            if ctx.state == "authenticated"
+        ]
+        if len(authenticated_contexts) < 2:
+            await self.log("info", f"[DIFF] Need 2+ authenticated contexts, have {len(authenticated_contexts)} — skipping")
+            return
+
+        await self.log("info", f"[DIFF] Probing {len(endpoints)} endpoints with {len(authenticated_contexts)} contexts")
+        total_findings = 0
+
+        for ep_url, ep_method in endpoints:
+            if self.is_cancelled():
+                break
+
+            responses = []
+            for label, ctx in authenticated_contexts:
+                try:
+                    req_kwargs = self.auth_manager.get_request_kwargs(label)
+                    headers = {**self.auth_headers, **req_kwargs.get("headers", {})}
+                    cookies = req_kwargs.get("cookies", {})
+                    if cookies:
+                        cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+                        headers["Cookie"] = cookie_str
+
+                    import time as _time
+                    t0 = _time.time()
+                    async with self.session.request(
+                        ep_method, ep_url, headers=headers,
+                        allow_redirects=False, ssl=False, timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        body = await resp.text()
+                        latency = (_time.time() - t0) * 1000
+                        responses.append(ContextResponse(
+                            label=label,
+                            role=ctx.role,
+                            status=resp.status,
+                            body=body[:10000],
+                            headers=dict(resp.headers),
+                            latency_ms=latency,
+                        ))
+                except Exception as e:
+                    responses.append(ContextResponse(
+                        label=label, role=ctx.role, status=0, error=str(e),
+                    ))
+
+            # Run diff analysis
+            diffs = self._diff_engine.compare(ep_url, ep_method, responses)
+            for diff in diffs:
+                if diff.confidence < 0.55:
+                    continue
+                finding_dict = self._diff_engine.finding_to_dict(diff)
+                finding = Finding(
+                    id=f"diff_{hashlib.md5(f'{ep_url}_{diff.finding_type}_{diff.attacker_label}'.encode()).hexdigest()[:12]}",
+                    title=finding_dict["title"],
+                    severity=finding_dict["severity"],
+                    vulnerability_type=finding_dict["vulnerability_type"],
+                    affected_endpoint=finding_dict["affected_endpoint"],
+                    evidence=finding_dict["evidence"],
+                    description=finding_dict["description"],
+                    remediation=finding_dict.get("remediation", ""),
+                    cwe_id=finding_dict.get("cwe_id", ""),
+                    references=finding_dict.get("references", []),
+                    credential_label=finding_dict.get("credential_label", ""),
+                    auth_context=finding_dict.get("auth_context", {}),
+                    confidence=str(int(diff.confidence * 100)),
+                    confidence_score=int(diff.confidence * 100),
+                )
+                await self._add_finding(finding)
+                total_findings += 1
+
+        await self.log("info", f"[DIFF] Differential testing complete: {total_findings} findings")
 
     async def _capture_finding_screenshot(self, finding: Finding):
         """Capture a browser screenshot for a confirmed vulnerability finding.
@@ -2573,18 +2797,71 @@ NOT_VULNERABLE: <reason>"""
             cookie_jar=aiohttp.CookieJar(unsafe=True)
         )
 
+        # Resolve opsec jitter range from profile
+        jitter_range = None
+        try:
+            from core.opsec_manager import OpsecManager
+            opsec = OpsecManager()
+            jitter_range = opsec.get_jitter_range()
+            if jitter_range and jitter_range[1] > 0:
+                await self.log("info", f"Opsec jitter enabled: {jitter_range[0]*1000:.0f}-{jitter_range[1]*1000:.0f}ms")
+        except Exception:
+            pass
+
         # Initialize autonomy modules that depend on session
         self.request_engine = RequestEngine(
             self.session, default_delay=0.1, max_retries=3,
-            is_cancelled_fn=self.is_cancelled
+            is_cancelled_fn=self.is_cancelled,
+            jitter_range=jitter_range,
         )
         self.waf_detector = WAFDetector(self.request_engine)
         self.strategy = StrategyAdapter(self.memory)
         self.auth_manager = AuthManager(self.request_engine, self.recon)
 
+        # Multi-credential differential access control testing
+        if self.credential_sets and len(self.credential_sets) >= 2:
+            try:
+                from backend.core.access_control_diff import AccessControlDiffEngine
+                self.auth_manager.seed_from_credential_sets(self.credential_sets)
+                context_labels = [
+                    (cs.get("label", f"ctx_{i}"), cs.get("role", "user"))
+                    for i, cs in enumerate(self.credential_sets)
+                ]
+                self._diff_engine = AccessControlDiffEngine(context_labels)
+                await self.log("info", f"[DIFF] Access control diff engine initialized with {len(self.credential_sets)} contexts")
+                # Authenticate any login-flow contexts
+                for label, ctx in self.auth_manager.contexts.items():
+                    if ctx.state == "unauthenticated" and ctx.credential:
+                        success = await self.auth_manager.authenticate(label)
+                        if success:
+                            await self.log("info", f"[DIFF] Authenticated context '{label}' via login flow")
+                        else:
+                            await self.log("warning", f"[DIFF] Failed to authenticate context '{label}'")
+            except Exception as e:
+                await self.log("warning", f"[DIFF] Failed to init diff engine: {e}")
+                self._diff_engine = None
+
+        # Connect MCP tools
+        if self.mcp_client and self.mcp_client.enabled:
+            try:
+                for server_name in self.mcp_client.servers_config:
+                    await self.mcp_client.connect(server_name)
+                mcp_tools = await self.mcp_client.list_tools()
+                tool_count = sum(len(t) for t in mcp_tools.values())
+                await self.log("info", f"MCP tools connected ({tool_count} tools available)")
+            except Exception:
+                pass
+
         return self
 
     async def __aexit__(self, *args):
+        # Disconnect MCP tools
+        if self.mcp_client:
+            try:
+                await self.mcp_client.disconnect_all()
+            except Exception:
+                pass
+
         # Cleanup per-scan sandbox container
         if self.scan_id and self._sandbox:
             try:
@@ -2596,6 +2873,35 @@ NOT_VULNERABLE: <reason>"""
         if self.session:
             await self.session.close()
 
+    async def _init_bugbounty_scope(self):
+        """Initialize bug bounty scope checking if enabled."""
+        self._scope_parser = None
+        if os.getenv('ENABLE_BUGBOUNTY_INTEGRATION', 'false').lower() != 'true':
+            return
+        try:
+            from backend.core.bugbounty.hackerone_client import HackerOneClient
+            from backend.core.bugbounty.scope_parser import ScopeParser
+            client = HackerOneClient()
+            if not client.enabled:
+                return
+            # Derive program handle from lab_context or scan metadata
+            handle = (self.lab_context or {}).get("bugbounty_handle", "")
+            if not handle:
+                return
+            async with aiohttp.ClientSession() as sess:
+                scope_data = await client.get_scope(handle, sess)
+            if scope_data.get("in_scope"):
+                self._scope_parser = ScopeParser(scope_data)
+                await self.log("info", f"Bug bounty scope loaded: {len(scope_data['in_scope'])} in-scope assets")
+        except Exception as e:
+            await self.log("warning", f"Bug bounty scope init failed: {e}")
+
+    def _is_url_in_scope(self, url: str) -> bool:
+        """Check if URL is within bug bounty scope. Returns True if no scope set."""
+        if not hasattr(self, '_scope_parser') or not self._scope_parser:
+            return True
+        return self._scope_parser.is_in_scope(url)
+
     async def run(self) -> Dict[str, Any]:
         """Main execution method"""
         await self.log("info", "=" * 60)
@@ -2603,6 +2909,9 @@ NOT_VULNERABLE: <reason>"""
         await self.log("info", "=" * 60)
         await self.log("info", f"Target: {self.target}")
         await self.log("info", f"Mode: {self.mode.value}")
+
+        # Initialize bug bounty scope checking
+        await self._init_bugbounty_scope()
 
         if self.llm.is_available():
             await self.log("success", f"LLM Provider: {self.llm.provider.upper()} (Connected)")
@@ -2642,9 +2951,42 @@ NOT_VULNERABLE: <reason>"""
 
     # ==================== RECONNAISSANCE ====================
 
+    async def _connectivity_precheck(self) -> bool:
+        """TCP + HTTP pre-check — fail fast if target is unreachable."""
+        import socket
+        parsed = urlparse(self.target)
+        host = parsed.hostname or parsed.netloc
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+
+        # TCP connect test
+        try:
+            loop = asyncio.get_event_loop()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            await loop.run_in_executor(None, sock.connect, (host, port))
+            sock.close()
+            await self.log("info", f"  [PRE-CHECK] TCP connect to {host}:{port} OK")
+        except Exception as e:
+            await self.log("error", f"  [PRE-CHECK] TCP connect to {host}:{port} FAILED: {e}")
+            return False
+
+        # HTTP probe
+        try:
+            async with self.session.get(self.target, ssl=False, allow_redirects=True) as resp:
+                await self.log("info", f"  [PRE-CHECK] HTTP probe: {resp.status} ({resp.headers.get('Server', 'unknown')})")
+                return True
+        except Exception as e:
+            await self.log("error", f"  [PRE-CHECK] HTTP probe failed: {e}")
+            return False
+
     async def _run_recon_only(self) -> Dict:
         """Comprehensive reconnaissance"""
         await self._update_progress(0, "Starting reconnaissance")
+
+        # Pre-check: verify target is reachable
+        reachable = await self._connectivity_precheck()
+        if not reachable:
+            await self.log("warning", "[RECON] Target unreachable — attempting recon anyway")
 
         # Enhanced recon only for RECON_ONLY mode (not when called by FULL_AUTO)
         enhanced = False
@@ -2652,21 +2994,30 @@ NOT_VULNERABLE: <reason>"""
             enhanced = await self._run_enhanced_recon()
 
         if not enhanced:
-            # Original 4-phase basic recon
-            await self.log("info", "[PHASE 1/4] Initial Probe")
+            # Phase 1: Initial probe
+            await self.log("info", "[PHASE 1/5] Initial Probe")
             await self._initial_probe()
-            await self._update_progress(25, "Initial probe complete")
+            await self._update_progress(15, "Initial probe complete")
 
-            await self.log("info", "[PHASE 2/4] Endpoint Discovery")
-            await self._discover_endpoints()
-            await self._update_progress(50, "Endpoint discovery complete")
-
-            await self.log("info", "[PHASE 3/4] Parameter Discovery")
-            await self._discover_parameters()
-            await self._update_progress(75, "Parameter discovery complete")
-
-            await self.log("info", "[PHASE 4/4] Technology Detection")
+            # Phase 2: Tech detection (moved earlier so endpoints can adapt)
+            await self.log("info", "[PHASE 2/5] Technology Detection")
             await self._detect_technologies()
+            await self._update_progress(30, "Tech detection complete")
+
+            # Phase 3: Endpoint discovery (now uses tech stack for dynamic paths)
+            await self.log("info", "[PHASE 3/5] Endpoint Discovery")
+            await self._discover_endpoints()
+            await self._update_progress(55, "Endpoint discovery complete")
+
+            # Phase 4: Deep JS analysis (fetch + parse JS bundles for API routes)
+            await self.log("info", "[PHASE 4/5] JS Route Extraction")
+            await self._deep_js_analysis()
+            await self._update_progress(75, "JS analysis complete")
+
+            # Phase 5: Parameter discovery
+            await self.log("info", "[PHASE 5/5] Parameter Discovery")
+            await self._discover_parameters()
+            await self._update_progress(90, "Parameter discovery complete")
 
         # WAF detection (new for RECON_ONLY; FULL_AUTO already does this in Phase 1b)
         if self.mode == OperationMode.RECON_ONLY and self.waf_detector and not self._waf_result:
@@ -3060,8 +3411,8 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("error", f"  Target probe failed: {e}")
 
     async def _discover_endpoints(self):
-        """Discover endpoints through crawling and common paths"""
-        # Common paths to check
+        """Discover endpoints through crawling, common paths, and tech-specific paths"""
+        # Common paths to check (universal)
         common_paths = [
             "/", "/admin", "/login", "/api", "/api/v1", "/api/v2",
             "/user", "/users", "/account", "/profile", "/dashboard",
@@ -3069,33 +3420,164 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             "/config", "/settings", "/admin/login", "/wp-admin",
             "/robots.txt", "/sitemap.xml", "/.git/config",
             "/api/users", "/api/login", "/graphql", "/api/graphql",
-            "/swagger", "/api-docs", "/docs", "/health", "/status"
+            "/swagger", "/api-docs", "/docs", "/health", "/status",
+            "/.env", "/package.json", "/composer.json", "/web.config",
+            "/server-status", "/server-info", "/.well-known/security.txt",
+            "/actuator", "/actuator/health", "/metrics", "/debug",
+            "/console", "/trace", "/env",
         ]
 
         base = self.target.rstrip('/')
         parsed_target = urlparse(self.target)
 
-        # Add known vulnerable endpoints for common test sites
+        # --- Tech-specific dynamic paths (Item 6 + 8: data-driven) ---
+        techs_lower = [t.lower() for t in self.recon.technologies]
+        techs_str = " ".join(techs_lower)
+
+        # Juice Shop / OWASP detection (hostname OR tech detection)
+        is_juice_shop = (
+            "juice" in parsed_target.netloc.lower() or
+            "juice shop" in techs_str or "juiceshop" in techs_str
+        )
+        if is_juice_shop:
+            await self.log("info", "  Detected OWASP Juice Shop — adding comprehensive API paths")
+            common_paths.extend([
+                # REST API
+                "/rest/products/search?q=",
+                "/rest/products/reviews",
+                "/rest/user/login",
+                "/rest/user/change-password",
+                "/rest/user/reset-password",
+                "/rest/user/security-question",
+                "/rest/user/whoami",
+                "/rest/user/authentication-details",
+                "/rest/basket/0",
+                "/rest/saveLoginIp",
+                "/rest/deluxe-membership",
+                "/rest/continue-code",
+                "/rest/continue-code/apply/",
+                "/rest/chatbot/status",
+                "/rest/chatbot/respond",
+                "/rest/memories",
+                "/rest/order-history",
+                "/rest/wallet/balance",
+                "/rest/repeat-notification",
+                "/rest/track-order/0",
+                # API endpoints
+                "/api/Users", "/api/Users/1",
+                "/api/Products", "/api/Products/1",
+                "/api/Products/1/reviews",
+                "/api/Feedbacks", "/api/Feedbacks/1",
+                "/api/Complaints", "/api/Complaints/1",
+                "/api/Recycles", "/api/Recycles/1",
+                "/api/BasketItems", "/api/BasketItems/1",
+                "/api/Challenges", "/api/Challenges/?name=",
+                "/api/Quantitys", "/api/Quantitys/1",
+                "/api/Deliverys", "/api/Deliverys/1",
+                "/api/Addresss", "/api/Addresss/1",
+                "/api/Cards", "/api/Cards/1",
+                "/api/SecurityQuestions",
+                "/api/SecurityAnswers",
+                # Admin / scoring
+                "/api/Challenges",
+                "/rest/admin/application-configuration",
+                "/rest/admin/application-version",
+                # Common Juice Shop challenge paths
+                "/ftp", "/ftp/acquisitions.md",
+                "/ftp/coupons_2013.md.bak",
+                "/ftp/easter.egg",
+                "/ftp/encrypt.pyc",
+                "/ftp/legal.md",
+                "/ftp/package.json.bak",
+                "/ftp/quarantine",
+                "/ftp/suspicious_errors.yml",
+                "/encryptionkeys", "/encryptionkeys/jwt.pub",
+                "/snippets", "/snippets/1",
+                "/dataerasure",
+                "/profile",
+                "/privacy-security/privacy-policy",
+                "/privacy-security/change-password",
+                "/b2b/v2/orders",
+                "/promotion",
+                "/redirect?to=https://owasp.org",
+                "/metrics",
+                "/video",
+                "/assets/public/images/uploads/",
+                "/#/score-board",
+                "/#/track-result",
+                "/#/administration",
+                "/#/recycle",
+                "/#/complain",
+                "/#/chatbot",
+                "/#/deluxe-membership",
+                "/#/privacy-security/data-export",
+                "/#/wallet",
+                "/#/order-history",
+                "/#/address/saved",
+                "/#/saved-payment-methods",
+            ])
+
+        # WordPress
+        if any("wordpress" in t for t in techs_lower) or any("wp-" in t for t in techs_lower):
+            common_paths.extend([
+                "/wp-login.php", "/wp-admin/", "/wp-json/wp/v2/users",
+                "/wp-json/wp/v2/posts", "/wp-json/wp/v2/pages",
+                "/wp-content/uploads/", "/xmlrpc.php", "/wp-cron.php",
+            ])
+
+        # Node.js / Express
+        if any("express" in t or "node" in t for t in techs_lower):
+            common_paths.extend([
+                "/graphql", "/graphiql", "/playground",
+                "/.env", "/package.json", "/node_modules/",
+                "/socket.io/", "/api/health", "/api/config",
+            ])
+
+        # PHP
+        if any("php" in t for t in techs_lower):
+            common_paths.extend([
+                "/phpmyadmin/", "/phpinfo.php", "/info.php",
+                "/wp-login.php", "/administrator/",
+            ])
+
+        # Java / Spring
+        if any("spring" in t or "java" in t or "jsessionid" in t for t in techs_lower):
+            common_paths.extend([
+                "/actuator", "/actuator/env", "/actuator/health",
+                "/actuator/mappings", "/actuator/beans",
+                "/swagger-ui.html", "/v2/api-docs", "/v3/api-docs",
+                "/h2-console/", "/trace",
+            ])
+
+        # Django
+        if any("django" in t for t in techs_lower):
+            common_paths.extend([
+                "/admin/", "/admin/login/", "/__debug__/",
+                "/api/", "/static/admin/",
+            ])
+
+        # GraphQL (detected)
+        if any("graphql" in t for t in techs_lower):
+            common_paths.extend([
+                "/graphql", "/graphiql", "/altair", "/playground",
+                "/graphql/schema.json",
+            ])
+
+        # Swagger/OpenAPI
+        if any("swagger" in t or "openapi" in t for t in techs_lower):
+            common_paths.extend([
+                "/swagger-ui/", "/swagger-ui.html", "/swagger.json",
+                "/api-docs/", "/v2/api-docs", "/v3/api-docs",
+                "/openapi.json", "/openapi.yaml",
+            ])
+
+        # Known test sites (hostname-based)
         if "vulnweb" in parsed_target.netloc or "testphp" in parsed_target.netloc:
             await self.log("info", "  Detected test site - adding known vulnerable endpoints")
             common_paths.extend([
-                "/listproducts.php?cat=1",
-                "/artists.php?artist=1",
-                "/search.php?test=1",
-                "/guestbook.php",
-                "/comment.php?aid=1",
-                "/showimage.php?file=1",
-                "/product.php?pic=1",
-                "/hpp/?pp=12",
-                "/AJAX/index.php",
-                "/secured/newuser.php",
-            ])
-        elif "juice-shop" in parsed_target.netloc or "juiceshop" in parsed_target.netloc:
-            common_paths.extend([
-                "/rest/products/search?q=test",
-                "/api/Users",
-                "/api/Products",
-                "/rest/user/login",
+                "/listproducts.php?cat=1", "/artists.php?artist=1",
+                "/search.php?test=1", "/guestbook.php",
+                "/comment.php?aid=1", "/showimage.php?file=1",
             ])
         elif "dvwa" in parsed_target.netloc:
             common_paths.extend([
@@ -3104,14 +3586,29 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 "/vulnerabilities/fi/?page=include.php",
             ])
 
+        # Also probe discovered open ports from Naabu (Item 3)
+        if self.recon.ports:
+            for port_str in self.recon.ports[:10]:
+                port = port_str.split("/")[0] if "/" in port_str else port_str
+                port_url = f"{parsed_target.scheme}://{parsed_target.hostname}:{port}"
+                if port_url != base:
+                    common_paths.append(f"__PORT_PROBE__{port_url}")
+
+        # Deduplicate paths
+        common_paths = list(dict.fromkeys(common_paths))
+
         tasks = []
         for path in common_paths:
-            tasks.append(self._check_endpoint(f"{base}{path}"))
+            if path.startswith("__PORT_PROBE__"):
+                # Probe a different port — use full URL
+                tasks.append(self._check_endpoint(path.replace("__PORT_PROBE__", "") + "/"))
+            else:
+                tasks.append(self._check_endpoint(f"{base}{path}"))
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Crawl discovered pages for more endpoints
-        for endpoint in list(self.recon.endpoints)[:10]:
+        # Crawl discovered pages for more endpoints (increased depth)
+        for endpoint in list(self.recon.endpoints)[:20]:
             await self._crawl_page(_get_endpoint_url(endpoint))
 
         await self.log("info", f"  Found {len(self.recon.endpoints)} endpoints")
@@ -3130,7 +3627,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     }
                     if endpoint_data not in self.recon.endpoints:
                         self.recon.endpoints.append(endpoint_data)
-        except:
+        except Exception:
             pass
 
     async def _crawl_page(self, url: str):
@@ -3142,7 +3639,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 body = await resp.text()
                 await self._extract_links(body, url)
                 await self._extract_forms(body, url)
-        except:
+        except Exception:
             pass
 
     async def _extract_links(self, body: str, base_url: str):
@@ -3253,29 +3750,82 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
     async def _extract_api_from_js(self, js_url: str):
         """Extract API endpoints from JavaScript files"""
         try:
-            async with self.session.get(js_url) as resp:
+            async with self.session.get(js_url, ssl=False) as resp:
                 content = await resp.text()
 
-                # Find API patterns
+                # Find API patterns (expanded)
                 api_patterns = [
-                    r'["\']/(api/[^"\']+)["\']',
-                    r'["\']/(v[0-9]/[^"\']+)["\']',
+                    r'["\']/(api/[^"\'?\s]+)["\']',
+                    r'["\']/(rest/[^"\'?\s]+)["\']',
+                    r'["\']/(v[0-9]+/[^"\'?\s]+)["\']',
                     r'fetch\s*\(\s*["\']([^"\']+)["\']',
                     r'axios\.[a-z]+\s*\(\s*["\']([^"\']+)["\']',
+                    r'\.(?:get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
+                    r'url\s*[:=]\s*["\']([^"\']*(?:api|rest|v\d)[^"\']*)["\']',
+                    r'endpoint\s*[:=]\s*["\']([^"\']+)["\']',
+                    r'(?:path|route)\s*[:=]\s*["\'](/[^"\']+)["\']',
+                    r'(?:XMLHttpRequest|\.open)\s*\(\s*["\'](?:GET|POST|PUT|DELETE)["\']\s*,\s*["\']([^"\']+)["\']',
                 ]
 
+                base = urlparse(self.target)
                 for pattern in api_patterns:
                     matches = re.findall(pattern, content)
-                    for match in matches[:5]:
+                    for match in matches[:15]:
                         if match.startswith('/'):
-                            base = urlparse(self.target)
                             full_url = f"{base.scheme}://{base.netloc}{match}"
-                        else:
+                        elif match.startswith('http'):
                             full_url = match
-                        if full_url not in self.recon.api_endpoints:
+                        elif match.startswith('api/') or match.startswith('rest/') or match.startswith('v'):
+                            full_url = f"{base.scheme}://{base.netloc}/{match}"
+                        else:
+                            continue
+                        if full_url not in self.recon.api_endpoints and len(self.recon.api_endpoints) < 200:
                             self.recon.api_endpoints.append(full_url)
-        except:
+        except Exception:
             pass
+
+    async def _deep_js_analysis(self):
+        """Deep analysis of JS bundles: re-fetch known JS files + discover inline scripts + sourcemaps"""
+        base = urlparse(self.target)
+        base_url = f"{base.scheme}://{base.netloc}"
+
+        # Re-process all JS files with expanded extraction
+        for js_url in list(self.recon.js_files):
+            await self._extract_api_from_js(js_url)
+
+        # Try to find webpack/vite chunk manifests
+        manifest_paths = [
+            "/asset-manifest.json", "/manifest.json",
+            "/_next/static/chunks/webpack.js",
+            "/static/js/main.chunk.js",
+        ]
+        for path in manifest_paths:
+            try:
+                async with self.session.get(f"{base_url}{path}", ssl=False) as resp:
+                    if resp.status == 200:
+                        content = await resp.text()
+                        # Extract more JS file paths from manifests
+                        js_refs = re.findall(r'["\'](/[^"\']*\.js)["\']', content)
+                        for ref in js_refs[:20]:
+                            full = f"{base_url}{ref}"
+                            if full not in self.recon.js_files:
+                                self.recon.js_files.append(full)
+                                await self._extract_api_from_js(full)
+            except Exception:
+                pass
+
+        # Add all discovered API endpoints as recon endpoints
+        for api_url in self.recon.api_endpoints:
+            endpoint_data = {
+                "url": api_url,
+                "method": "GET",
+                "path": urlparse(api_url).path,
+                "source": "js_analysis",
+            }
+            if endpoint_data not in self.recon.endpoints and len(self.recon.endpoints) < 200:
+                self.recon.endpoints.append(endpoint_data)
+
+        await self.log("info", f"  JS analysis: {len(self.recon.js_files)} JS files, {len(self.recon.api_endpoints)} API routes extracted")
 
     async def _discover_parameters(self):
         """Discover parameters in endpoints"""
@@ -3296,11 +3846,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         await self.log("info", f"  Found {total_params} parameters in {len(self.recon.parameters)} endpoints")
 
     async def _detect_technologies(self):
-        """Detect technologies used"""
+        """Detect technologies via headers, body signatures, cookies, and error pages"""
         try:
-            async with self.session.get(self.target) as resp:
+            async with self.session.get(self.target, ssl=False) as resp:
                 headers = dict(resp.headers)
                 body = await resp.text()
+                cookies = {c.key: c.value for c in self.session.cookie_jar}
 
                 # Server header
                 if "Server" in headers:
@@ -3310,33 +3861,83 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 if "X-Powered-By" in headers:
                     self.recon.technologies.append(headers["X-Powered-By"])
 
-                # Technology signatures
+                # Technology signatures (expanded)
                 signatures = {
-                    "WordPress": ["wp-content", "wp-includes", "wordpress"],
+                    "WordPress": ["wp-content", "wp-includes", "wordpress", "wp-json"],
                     "Laravel": ["laravel", "XSRF-TOKEN", "laravel_session"],
                     "Django": ["csrfmiddlewaretoken", "__admin__", "django"],
                     "Express.js": ["express", "X-Powered-By: Express"],
-                    "ASP.NET": ["__VIEWSTATE", "asp.net", ".aspx"],
+                    "ASP.NET": ["__VIEWSTATE", "asp.net", ".aspx", "__RequestVerificationToken"],
                     "PHP": [".php", "PHPSESSID"],
-                    "React": ["react", "_reactRoot", "__REACT"],
-                    "Angular": ["ng-app", "ng-", "angular"],
-                    "Vue.js": ["vue", "__VUE", "v-if", "v-for"],
-                    "jQuery": ["jquery", "$.ajax"],
+                    "React": ["react", "_reactRoot", "__REACT", "react-root", "data-reactroot"],
+                    "Angular": ["ng-app", "ng-version", "angular", "ng-controller"],
+                    "Vue.js": ["vue", "__VUE", "v-cloak", "data-v-"],
+                    "jQuery": ["jquery", "$.ajax", "jQuery"],
                     "Bootstrap": ["bootstrap", "btn-primary"],
+                    "Node.js": ["node", "x-powered-by: express"],
+                    "Spring": ["jsessionid", "spring", "X-Application-Context"],
+                    "Ruby on Rails": ["_session_id", "rails", "action_dispatch"],
+                    "Flask": ["flask", "werkzeug"],
+                    "Nginx": ["nginx"],
+                    "Apache": ["apache"],
+                    "Cloudflare": ["cloudflare", "cf-ray", "__cfduid"],
+                    "Juice Shop": ["juice-shop", "juice shop", "juiceshop", "OWASP Juice Shop"],
+                    "Swagger/OpenAPI": ["swagger", "openapi", "api-docs"],
+                    "GraphQL": ["graphql", "graphiql", "__schema"],
+                    "Next.js": ["__next", "_next/", "next-router"],
+                    "Nuxt.js": ["__nuxt", "_nuxt/"],
                 }
 
                 body_lower = body.lower()
                 headers_str = str(headers).lower()
+                cookies_str = str(cookies).lower()
 
                 for tech, patterns in signatures.items():
-                    if any(p.lower() in body_lower or p.lower() in headers_str for p in patterns):
+                    if any(p.lower() in body_lower or p.lower() in headers_str or p.lower() in cookies_str for p in patterns):
                         if tech not in self.recon.technologies:
                             self.recon.technologies.append(tech)
+
+                # Cookie-based detection
+                cookie_techs = {
+                    "connect.sid": "Express.js", "JSESSIONID": "Java/Spring",
+                    "PHPSESSID": "PHP", "ASP.NET_SessionId": "ASP.NET",
+                    "_csrf": "Node.js/Express", "laravel_session": "Laravel",
+                    "rack.session": "Ruby", "language": "Juice Shop",
+                }
+                for cookie_name, tech in cookie_techs.items():
+                    if cookie_name.lower() in cookies_str:
+                        if tech not in self.recon.technologies:
+                            self.recon.technologies.append(tech)
+
+                # Error page fingerprinting — probe a 404 path
+                try:
+                    async with self.session.get(
+                        self.target.rstrip('/') + '/neurosploit_404_probe_' + str(hash(self.target))[-6:],
+                        ssl=False
+                    ) as err_resp:
+                        err_body = await err_resp.text()
+                        err_lower = err_body.lower()
+                        error_sigs = {
+                            "Express.js": ["cannot get /", "express"],
+                            "Django": ["django", "you're seeing this error because"],
+                            "Laravel": ["laravel", "whoops!"],
+                            "Spring": ["whitelabel error page", "spring boot"],
+                            "ASP.NET": ["runtime error", "asp.net"],
+                            "Nginx": ["nginx"],
+                            "Apache": ["apache", "not found"],
+                            "Juice Shop": ["owasp juice shop", "juice-shop"],
+                        }
+                        for tech, patterns in error_sigs.items():
+                            if any(p in err_lower for p in patterns):
+                                if tech not in self.recon.technologies:
+                                    self.recon.technologies.append(tech)
+                except Exception:
+                    pass
 
         except Exception as e:
             await self.log("debug", f"Tech detection error: {e}")
 
-        await self.log("info", f"  Detected: {', '.join(self.recon.technologies[:5]) or 'Unknown'}")
+        await self.log("info", f"  Detected: {', '.join(self.recon.technologies[:10]) or 'Unknown'}")
 
     # ==================== VULNERABILITY TESTING ====================
 
@@ -3357,14 +3958,29 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 await self.log("warning", f"[HEALTH] Target may be unhealthy: {reason}")
                 await self.log("warning", "[HEALTH] Proceeding with caution - results may be unreliable")
 
-        # Phase 1: Reconnaissance
-        skip_target = self._check_skip("recon")
-        if skip_target:
-            await self.log("warning", f">> SKIPPING Reconnaissance -> jumping to {skip_target}")
-            await self._update_progress(20, f"recon_skipped")
+        # Log governance scope
+        if self.governance:
+            s = self.governance.scope
+            types_info = f"{len(s.allowed_vuln_types)} types" if s.allowed_vuln_types else "all types"
+            await self.log("info", f"[GOVERNANCE] Scope: {s.profile.value} | {types_info}")
+
+        # Phase 1: Reconnaissance + Sandbox tools (concurrent)
+        if self.preset_recon:
+            await self.log("info", "[PHASE 1/5] Recon SKIPPED (pre-populated by pipeline)")
+            await self._update_progress(20, "Recon pre-populated")
         else:
-            await self.log("info", "[PHASE 1/5] Reconnaissance")
-            await self._run_recon_only()
+            skip_target = self._check_skip("recon")
+            if skip_target:
+                await self.log("warning", f">> SKIPPING Reconnaissance -> jumping to {skip_target}")
+                await self._update_progress(20, f"recon_skipped")
+                # Still run sandbox tools even if recon is skipped
+                await self._run_sandbox_scan()
+            else:
+                await self.log("info", "[PHASE 1/5] Reconnaissance + Sandbox tools")
+                await asyncio.gather(
+                    self._run_recon_only(),
+                    self._run_sandbox_scan(),
+                )
             await self._update_progress(20, "Reconnaissance complete")
 
         # Phase 1b: WAF Detection
@@ -3385,15 +4001,26 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             except Exception as e:
                 await self.log("debug", f"[WAF] Detection failed: {e}")
 
+        # Governance: constrain recon depth if specified
+        if self.governance and self.governance.scope.max_recon_depth:
+            depth_order = {"quick": 0, "medium": 1, "full": 2}
+            gov_depth = self.governance.scope.max_recon_depth
+            if depth_order.get(gov_depth, 1) < depth_order.get(self.recon_depth, 1):
+                self.recon_depth = gov_depth
+
         # Phase 2: AI Attack Surface Analysis
         skip_target = self._check_skip("analysis")
         if skip_target:
             await self.log("warning", f">> SKIPPING Analysis -> jumping to {skip_target}")
             attack_plan = self._default_attack_plan()
+            if self.governance:
+                attack_plan = self.governance.scope_attack_plan(attack_plan)
             await self._update_progress(30, f"analysis_skipped")
         else:
             await self.log("info", "[PHASE 2/5] AI Attack Surface Analysis")
             attack_plan = await self._ai_analyze_attack_surface()
+            if self.governance:
+                attack_plan = self.governance.scope_attack_plan(attack_plan)
             await self._update_progress(30, "Attack surface analyzed")
 
         # Phase 3: Vulnerability Testing
@@ -3405,6 +4032,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("info", "[PHASE 3/5] Vulnerability Testing")
             await self._test_all_vulnerabilities(attack_plan)
             await self._update_progress(70, "Vulnerability testing complete")
+
+        # Phase 3.5: Differential Access Control Probes
+        if self._diff_engine and not self.is_cancelled():
+            await self.log("info", "[PHASE 3.5/5] Differential Access Control Testing")
+            await self._run_differential_probes()
+            await self._update_progress(75, "Differential testing complete")
 
         # Phase 4: AI Finding Enhancement
         skip_target = self._check_skip("enhancement")
@@ -3431,6 +4064,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
 
         try:
             sandbox = await get_sandbox(scan_id=self.scan_id)
+            self._sandbox = sandbox  # Store ref so __aexit__ can clean up
             if not sandbox.is_available:
                 await self.log("info", "  Sandbox container not running, skipping sandbox tools")
                 return
@@ -3438,18 +4072,24 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             await self.log("info", "  [Sandbox] Running Nuclei vulnerability scanner...")
             import time as _time
             _nuclei_start = _time.time()
-            nuclei_result = await sandbox.run_nuclei(
-                target=self.target_url,
+            _nuclei_kwargs = dict(
+                target=self.target,
                 severity="critical,high,medium",
                 rate_limit=150,
                 timeout=600,
             )
+            # Governance: scope Nuclei to relevant template tags
+            if self.governance:
+                _gov_tags = self.governance.get_nuclei_template_tags()
+                if _gov_tags:
+                    _nuclei_kwargs["tags"] = _gov_tags
+            nuclei_result = await sandbox.run_nuclei(**_nuclei_kwargs)
             _nuclei_duration = round(_time.time() - _nuclei_start, 2)
 
             # Track tool execution
             self.tool_executions.append({
                 "tool": "nuclei",
-                "command": f"nuclei -u {self.target_url} -severity critical,high,medium -rl 150",
+                "command": f"nuclei -u {self.target} -severity critical,high,medium -rl 150",
                 "duration": _nuclei_duration,
                 "findings_count": len(nuclei_result.findings) if nuclei_result.findings else 0,
                 "stdout_preview": nuclei_result.stdout[:2000] if hasattr(nuclei_result, 'stdout') and nuclei_result.stdout else "",
@@ -3463,23 +4103,25 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     # Import Nuclei findings as agent findings
                     vuln_type = nf.get("vulnerability_type", "vulnerability")
                     if vuln_type not in self.memory.tested_combinations:
-                        await self._add_finding(
+                        finding = Finding(
+                            id=f"nuclei_{nf.get('template_id', 'unknown')}_{len(self.memory.findings)}",
                             title=nf.get("title", "Nuclei Finding"),
                             severity=nf.get("severity", "info"),
-                            vuln_type=vuln_type,
-                            endpoint=nf.get("affected_endpoint", self.target_url),
+                            vulnerability_type=vuln_type,
+                            affected_endpoint=nf.get("affected_endpoint", self.target),
                             evidence=f"Nuclei template: {nf.get('template_id', 'unknown')}. {nf.get('evidence', '')}",
                             ai_verified=False,
                             description=nf.get("description", ""),
                             remediation=nf.get("remediation", ""),
                         )
+                        await self._add_finding(finding)
             else:
                 await self.log("info", f"  [Sandbox] Nuclei: no findings ({_nuclei_duration}s)")
 
-            # Naabu port scan
-            parsed = urlparse(self.target_url)
+            # Naabu port scan (governance may skip)
+            parsed = urlparse(self.target)
             host = parsed.hostname or parsed.netloc
-            if host:
+            if host and (not self.governance or self.governance.should_port_scan()):
                 await self.log("info", "  [Sandbox] Running Naabu port scanner...")
                 _naabu_start = _time.time()
                 naabu_result = await sandbox.run_naabu(
@@ -3506,8 +4148,60 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     await self.log("info", f"  [Sandbox] Naabu found {len(open_ports)} open ports: {', '.join(open_ports[:20])} ({_naabu_duration}s)")
                     # Store port info in recon data
                     self.recon.technologies.append(f"Open ports: {', '.join(open_ports[:30])}")
+                    self.recon.ports = open_ports
+
+                    # Feed discovered ports into endpoint discovery (Item 3)
+                    target_port = str(parsed.port or (443 if parsed.scheme == 'https' else 80))
+                    for port in open_ports[:10]:
+                        if port != target_port:
+                            port_url = f"http://{host}:{port}"
+                            try:
+                                async with self.session.get(port_url + "/", ssl=False, allow_redirects=True) as port_resp:
+                                    if port_resp.status < 500:
+                                        self.recon.endpoints.append({
+                                            "url": port_url, "method": "GET",
+                                            "status": port_resp.status, "path": "/",
+                                            "source": "naabu_port_probe",
+                                        })
+                                        await self.log("info", f"  [Sandbox] Port {port} responds HTTP {port_resp.status}")
+                            except Exception:
+                                pass
                 else:
                     await self.log("info", "  [Sandbox] Naabu: no open ports found")
+
+                # Item 7: Run nmap -sV -sC on discovered open ports for service detection
+                nmap_ports = ",".join(open_ports[:30]) if naabu_result.findings else None
+                if nmap_ports and hasattr(sandbox, 'run_nmap'):
+                    try:
+                        await self.log("info", f"  [Sandbox] Running nmap service detection on {len(open_ports)} ports...")
+                        _nmap_start = _time.time()
+                        nmap_result = await sandbox.run_nmap(
+                            target=host,
+                            ports=nmap_ports,
+                            scripts=True,
+                            timeout=180,
+                        )
+                        _nmap_duration = round(_time.time() - _nmap_start, 2)
+
+                        self.tool_executions.append({
+                            "tool": "nmap",
+                            "command": f"nmap -sV -sC -p {nmap_ports} {host}",
+                            "duration": _nmap_duration,
+                            "stdout_preview": nmap_result.stdout[:3000] if hasattr(nmap_result, 'stdout') and nmap_result.stdout else "",
+                            "stderr_preview": nmap_result.stderr[:500] if hasattr(nmap_result, 'stderr') and nmap_result.stderr else "",
+                            "exit_code": getattr(nmap_result, 'exit_code', 0),
+                        })
+
+                        if nmap_result.stdout:
+                            await self.log("info", f"  [Sandbox] nmap completed ({_nmap_duration}s)")
+                            # Extract service info from nmap output
+                            for line in nmap_result.stdout.split('\n'):
+                                if '/tcp' in line and 'open' in line:
+                                    service_info = line.strip()
+                                    if service_info not in self.recon.technologies:
+                                        self.recon.technologies.append(f"nmap: {service_info}")
+                    except Exception as nmap_err:
+                        await self.log("debug", f"  [Sandbox] nmap error: {nmap_err}")
 
         except Exception as e:
             await self.log("warning", f"  Sandbox scan error: {e}")
@@ -3574,7 +4268,13 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         await self._test_all_vulnerabilities(attack_plan)
         await self._update_progress(75, "Deep testing complete")
 
-        # ── FINALIZATION PHASE (75-100%) ──
+        # ── DIFFERENTIAL ACCESS CONTROL (75-80%) ──
+        if self._diff_engine and not self.is_cancelled():
+            await self.log("info", "[DIFF] Differential Access Control Testing")
+            await self._run_differential_probes()
+            await self._update_progress(80, "Differential testing complete")
+
+        # ── FINALIZATION PHASE (80-100%) ──
         await self.log("info", "[FINAL] Screenshot Capture")
         for finding in self.findings:
             if self.is_cancelled():
@@ -3882,7 +4582,7 @@ Technologies detected: {tech_str}
 Endpoints discovered:
 {endpoints_preview}
 
-Available tools in our sandbox (choose from these ONLY):
+Available sandbox tools (CLI flags as args string):
 - nmap (network scanner with scripts)
 - httpx (HTTP probing + tech detection)
 - subfinder (subdomain enumeration)
@@ -3897,11 +4597,20 @@ Available tools in our sandbox (choose from these ONLY):
 - wafw00f (WAF detection)
 - arjun (parameter discovery)
 
+Available MCP tools (provide structured JSON dict as args):
+- screenshot_capture: Browser screenshot (args: {{"url": "https://..."}})
+- technology_detect: Tech fingerprinting (args: {{"url": "https://..."}})
+- dns_lookup: DNS records (args: {{"domain": "example.com", "record_type": "A"}})
+- execute_cvemap: CVE database lookup (args: {{"severity": "critical", "product": "apache"}})
+- execute_tlsx: TLS/SSL analysis (args: {{"target": "example.com"}})
+- execute_interactsh: OOB callback detection (args: {{"action": "register"}})
+
 NOTE: nuclei and naabu already ran. Pick 1-3 MOST USEFUL additional tools.
-For each tool, provide the exact command-line arguments for {self.target}.
+For sandbox tools: {{"tool": "httpx", "args": "-u {self.target} -tech-detect", "reason": "..."}}
+For MCP tools: {{"tool": "execute_cvemap", "args": {{"severity": "critical"}}, "reason": "..."}}
 
 Respond ONLY with a JSON array:
-[{{"tool": "tool_name", "args": "-flags {self.target}", "reason": "brief reason"}}]"""
+[{{"tool": "tool_name", "args": "...", "reason": "brief reason"}}]"""
 
         try:
             resp = await self.llm.generate(
@@ -3913,7 +4622,9 @@ Respond ONLY with a JSON array:
             decisions = json.loads(resp[start:end])
             # Validate tool names against allowed set
             allowed = {"nmap", "httpx", "subfinder", "katana", "dalfox", "nikto",
-                       "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun"}
+                       "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun",
+                       "screenshot_capture", "technology_detect", "dns_lookup",
+                       "execute_cvemap", "execute_tlsx", "execute_interactsh"}
             validated = [d for d in decisions
                          if isinstance(d, dict) and d.get("tool") in allowed]
             return validated[:5]
@@ -3921,13 +4632,51 @@ Respond ONLY with a JSON array:
             await self.log("info", f"  [STREAM 3] AI tool selection skipped: {e}")
             return []
 
+    # MCP tool names that should be routed through MCP client
+    MCP_TOOLS = {
+        "screenshot_capture", "payload_delivery", "dns_lookup", "port_scan",
+        "technology_detect", "subdomain_enumerate", "execute_cvemap",
+        "execute_tlsx", "execute_asnmap", "execute_interactsh",
+    }
+
+    async def run_mcp_tool(self, tool_name: str, arguments: Optional[Dict] = None) -> Optional[Dict]:
+        """Execute a tool via MCP. Returns parsed dict or None."""
+        if not self.mcp_client or not self.mcp_client.enabled:
+            return None
+        try:
+            result = await self.mcp_client.try_tool(tool_name, arguments or {})
+            if result:
+                return json.loads(result)
+        except (json.JSONDecodeError, Exception):
+            pass
+        return None
+
     async def _execute_dynamic_tool(self, decision: Dict):
-        """Execute an AI-selected tool in the sandbox."""
+        """Execute an AI-selected tool via MCP or sandbox."""
         tool_name = decision.get("tool", "")
         args = decision.get("args", "")
         reason = decision.get("reason", "")
 
         await self.log("info", f"  [TOOL] Running {tool_name}: {reason}")
+
+        # Route MCP tools through MCP client
+        if tool_name in self.MCP_TOOLS:
+            mcp_args = args if isinstance(args, dict) else {"target": self.target}
+            mcp_result = await self.run_mcp_tool(tool_name, mcp_args)
+            if mcp_result:
+                self.tool_executions.append({
+                    "tool": tool_name,
+                    "command": f"MCP:{tool_name}",
+                    "reason": reason,
+                    "via": "mcp",
+                    "findings_count": len(mcp_result.get("findings", [])) if isinstance(mcp_result, dict) else 0,
+                })
+                if isinstance(mcp_result, dict):
+                    for finding in mcp_result.get("findings", []):
+                        await self._process_tool_finding(finding, tool_name)
+                await self.log("info", f"  [MCP] {tool_name}: completed")
+                return
+            # Fall through to sandbox if MCP failed
 
         try:
             if not HAS_SANDBOX:
@@ -4156,19 +4905,20 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             except Exception:
                 pass
 
-        # Knowledge augmentation from bug bounty patterns
+        # Knowledge augmentation from bug bounty patterns (opt-in via env)
         knowledge_context = ""
-        try:
-            from core.knowledge_augmentor import KnowledgeAugmentor
-            augmentor = KnowledgeAugmentor()
-            for tech in self.recon.technologies[:3]:
-                patterns = augmentor.get_relevant_patterns(
-                    vuln_type=None, technologies=[tech]
-                )
-                if patterns:
-                    knowledge_context += patterns[:500] + "\n"
-        except Exception:
-            pass
+        if self.knowledge_augmentation_enabled:
+            try:
+                from core.knowledge_augmentor import KnowledgeAugmentor
+                augmentor = KnowledgeAugmentor()
+                for tech in self.recon.technologies[:3]:
+                    patterns = augmentor.get_relevant_patterns(
+                        vulnerability_type=tech, technologies=[tech]
+                    )
+                    if patterns:
+                        knowledge_context += patterns[:500] + "\n"
+            except Exception as e:
+                logger.debug(f"Knowledge augmentation skipped: {e}")
 
         prompt = f"""Analyze this attack surface and create a prioritized, focused testing plan.
 
@@ -4240,11 +4990,19 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
 }}"""
 
         try:
+            # Governance: constrain the AI prompt to allowed vuln types
+            if self.governance:
+                prompt = self.governance.constrain_analysis_prompt(prompt)
+
             response = await self.llm.generate(prompt,
                 get_system_prompt("strategy"))
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
-                return json.loads(match.group())
+                plan = json.loads(match.group())
+                # Governance: filter AI output at the data level
+                if self.governance:
+                    plan = self.governance.scope_attack_plan(plan)
+                return plan
         except Exception as e:
             await self.log("debug", f"AI analysis error: {e}")
 
@@ -4300,6 +5058,48 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             "focus_parameters": [],
             "attack_vectors": []
         }
+
+    @staticmethod
+    def _static_default_attack_plan() -> list:
+        """Static version of _default_attack_plan for use by CTFCoordinator without an instance."""
+        return [
+            "sqli_error", "sqli_union", "command_injection", "ssti",
+            "auth_bypass", "insecure_deserialization", "rfi", "file_upload",
+            "xss_reflected", "xss_stored", "lfi", "ssrf", "ssrf_cloud",
+            "xxe", "path_traversal", "idor", "bola",
+            "sqli_blind", "sqli_time", "jwt_manipulation",
+            "privilege_escalation", "arbitrary_file_read",
+            "nosql_injection", "ldap_injection", "xpath_injection",
+            "blind_xss", "xss_dom", "cors_misconfig", "csrf",
+            "open_redirect", "session_fixation", "bfla",
+            "mass_assignment", "race_condition", "host_header_injection",
+            "http_smuggling", "subdomain_takeover",
+            "security_headers", "clickjacking", "http_methods", "ssl_issues",
+            "directory_listing", "debug_mode", "exposed_admin_panel",
+            "exposed_api_docs", "insecure_cookie_flags",
+            "sensitive_data_exposure", "information_disclosure",
+            "api_key_exposure", "version_disclosure",
+            "crlf_injection", "header_injection", "prototype_pollution",
+            "graphql_introspection", "graphql_dos", "graphql_injection",
+            "cache_poisoning", "parameter_pollution", "type_juggling",
+            "business_logic", "rate_limit_bypass", "timing_attack",
+            "weak_encryption", "weak_hashing", "cleartext_transmission",
+            "vulnerable_dependency", "s3_bucket_misconfiguration",
+            "cloud_metadata_exposure", "soap_injection",
+            "source_code_disclosure", "backup_file_exposure",
+            "csv_injection", "html_injection", "log_injection",
+            "email_injection", "expression_language_injection",
+            "mutation_xss", "dom_clobbering", "postmessage_vulnerability",
+            "websocket_hijacking", "css_injection", "tabnabbing",
+            "default_credentials", "weak_password", "brute_force",
+            "two_factor_bypass", "oauth_misconfiguration",
+            "forced_browsing", "arbitrary_file_delete", "zip_slip",
+            "orm_injection", "improper_error_handling",
+            "weak_random", "insecure_cdn", "outdated_component",
+            "container_escape", "serverless_misconfiguration",
+            "rest_api_versioning", "api_rate_limiting",
+            "excessive_data_exposure",
+        ]
 
     # Types that need parameter injection testing (payload → param → endpoint)
     INJECTION_TYPES = {
@@ -4377,16 +5177,32 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
     async def _test_all_vulnerabilities(self, plan: Dict):
         """Test for all vulnerability types (100-type coverage)"""
         vuln_types = plan.get("priority_vulns", list(self._default_attack_plan()["priority_vulns"]))
+
+        # Governance: defense-in-depth final filter — even if AI/plan slipped through
+        if self.governance:
+            vuln_types = self.governance.filter_vuln_types(vuln_types)
+
+        # Pipeline focus: restrict to assigned vuln types if set by coordinator
+        if self.focus_vuln_types:
+            vuln_types = [v for v in vuln_types if v in self.focus_vuln_types]
+            if not vuln_types:
+                vuln_types = self.focus_vuln_types
+
         await self.log("info", f"  Testing {len(vuln_types)} vulnerability types")
 
         # Get testable endpoints
         test_targets = []
+        seen_urls = set()
 
         # Add endpoints with parameters (extract params from URL if present)
-        for endpoint in self.recon.endpoints[:20]:
+        for endpoint in self.recon.endpoints[:50]:
             url = _get_endpoint_url(endpoint)
             parsed = urlparse(url)
             base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+            if base_url in seen_urls:
+                continue
+            seen_urls.add(base_url)
 
             if parsed.query:
                 params = list(parse_qs(parsed.query).keys())
@@ -4399,24 +5215,71 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                 await self.log("debug", f"  Found endpoint with params: {url[:60]}... params={params}")
             elif url in self.recon.parameters:
                 test_targets.append({"url": url, "method": "GET", "params": self.recon.parameters[url]})
+            elif base_url in self.recon.parameters:
+                test_targets.append({"url": base_url, "method": "GET", "params": self.recon.parameters[base_url]})
+
+        # Add REST API endpoints (JSON body params) — crucial for modern apps
+        rest_common_params = ["id", "email", "username", "password", "query", "q", "search", "name", "role", "admin"]
+        api_patterns = ("/api/", "/rest/", "/v1/", "/v2/", "/graphql")
+        for endpoint in self.recon.endpoints[:80]:
+            url = _get_endpoint_url(endpoint)
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if base_url in seen_urls:
+                continue
+            path_lower = parsed.path.lower()
+            if any(p in path_lower for p in api_patterns):
+                seen_urls.add(base_url)
+                test_targets.append({
+                    "url": base_url,
+                    "method": "POST",
+                    "params": rest_common_params,
+                    "is_rest_api": True
+                })
+                # Also test GET with query params
+                test_targets.append({
+                    "url": base_url,
+                    "method": "GET",
+                    "params": ["q", "id", "search", "type"],
+                })
+
+        # Add API endpoints discovered from JS analysis
+        for api_ep in getattr(self.recon, 'api_endpoints', [])[:30]:
+            api_url = api_ep if api_ep.startswith("http") else f"{self.target.rstrip('/')}/{api_ep.lstrip('/')}"
+            parsed = urlparse(api_url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if base_url in seen_urls:
+                continue
+            seen_urls.add(base_url)
+            test_targets.append({
+                "url": base_url,
+                "method": "GET",
+                "params": ["q", "id", "search", "type"],
+            })
 
         # Add forms
         for form in self.recon.forms[:10]:
-            test_targets.append({
-                "url": form['action'],
-                "method": form['method'],
-                "params": form.get('inputs', [])
-            })
-
-        # If no parameterized endpoints, test base endpoints with common params
-        if not test_targets:
-            await self.log("warning", "  No parameterized endpoints found, testing with common params")
-            for endpoint in self.recon.endpoints[:5]:
+            form_url = form['action']
+            if form_url not in seen_urls:
+                seen_urls.add(form_url)
                 test_targets.append({
-                    "url": _get_endpoint_url(endpoint),
-                    "method": "GET",
-                    "params": ["id", "q", "search", "page", "file", "url", "cat", "artist", "item"]
+                    "url": form_url,
+                    "method": form['method'],
+                    "params": form.get('inputs', [])
                 })
+
+        # If still few parameterized endpoints, add base endpoints with common params
+        if len(test_targets) < 5:
+            await self.log("warning", "  Few parameterized endpoints found, adding common params")
+            for endpoint in self.recon.endpoints[:10]:
+                url = _get_endpoint_url(endpoint)
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    test_targets.append({
+                        "url": url,
+                        "method": "GET",
+                        "params": ["id", "q", "search", "page", "file", "url", "cat", "artist", "item"]
+                    })
 
         # Also test the main target with common params
         test_targets.append({
@@ -5890,18 +6753,25 @@ Respond with ONLY a JSON array of payload strings:
             return aiohttp.ClientTimeout(total=0.1)
         return aiohttp.ClientTimeout(total=10)
 
-    async def _make_request(self, url: str, method: str, params: Dict) -> Optional[Dict]:
+    async def _make_request(self, url: str, method: str, params: Dict, use_json: bool = False) -> Optional[Dict]:
         """Make HTTP request with resilient request engine (retry, rate limiting, circuit breaker)"""
         if self.is_cancelled():
             return None
+        # Auto-detect JSON for REST API endpoints
+        parsed_path = urlparse(url).path.lower()
+        is_rest = use_json or any(p in parsed_path for p in ("/api/", "/rest/", "/v1/", "/v2/", "/graphql"))
         try:
             if self.request_engine:
-                result = await self.request_engine.request(
-                    url, method=method.upper(),
-                    params=params if method.upper() == "GET" else None,
-                    data=params if method.upper() != "GET" else None,
-                    allow_redirects=False,
-                )
+                if method.upper() == "GET":
+                    result = await self.request_engine.request(
+                        url, method="GET", params=params, allow_redirects=False)
+                elif is_rest:
+                    result = await self.request_engine.request(
+                        url, method=method.upper(), json_data=params,
+                        headers={"Content-Type": "application/json"}, allow_redirects=False)
+                else:
+                    result = await self.request_engine.request(
+                        url, method=method.upper(), data=params, allow_redirects=False)
                 if result:
                     return {
                         "status": result.status,
@@ -5913,7 +6783,17 @@ Respond with ONLY a JSON array of payload strings:
             # Fallback: direct session (no request_engine)
             timeout = self._get_request_timeout()
             if method.upper() == "GET":
-                async with self.session.get(url, params=params, allow_redirects=False, timeout=timeout) as resp:
+                async with self.session.get(url, params=params, allow_redirects=False, timeout=timeout, ssl=False) as resp:
+                    body = await resp.text()
+                    return {
+                        "status": resp.status,
+                        "body": body,
+                        "headers": dict(resp.headers),
+                        "url": str(resp.url)
+                    }
+            elif is_rest:
+                async with self.session.post(url, json=params, allow_redirects=False, timeout=timeout, ssl=False,
+                                             headers={"Content-Type": "application/json"}) as resp:
                     body = await resp.text()
                     return {
                         "status": resp.status,
@@ -5922,7 +6802,7 @@ Respond with ONLY a JSON array of payload strings:
                         "url": str(resp.url)
                     }
             else:
-                async with self.session.post(url, data=params, allow_redirects=False, timeout=timeout) as resp:
+                async with self.session.post(url, data=params, allow_redirects=False, timeout=timeout, ssl=False) as resp:
                     body = await resp.text()
                     return {
                         "status": resp.status,
@@ -6272,7 +7152,7 @@ Respond with exactly one of:
                 return False
 
             return True
-        except:
+        except Exception:
             # If AI fails, do NOT blindly trust - apply strict technical check
             await self.log("debug", f"  AI confirmation failed, using strict technical verification")
             return self._strict_technical_verify(vuln_type, payload, response if isinstance(response, str) else "", evidence)
@@ -7081,7 +7961,7 @@ Respond with your execution plan in JSON format:
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
                 return json.loads(match.group())
-        except:
+        except Exception:
             pass
 
         # Fallback: parse prompt keywords to determine steps
@@ -7257,7 +8137,7 @@ Provide your analysis:"""
         try:
             return await self.llm.generate(prompt,
                 get_system_prompt("reporting"))
-        except:
+        except Exception:
             return "Analysis failed"
 
     # ==================== REPORT GENERATION ====================
@@ -7470,6 +8350,10 @@ Provide your analysis:"""
             "tool_executions": self.tool_executions,
         }
 
+        # Add governance audit trail
+        if self.governance:
+            report["governance"] = self.governance.get_summary()
+
         # Add autonomy module stats
         if self.request_engine:
             report["request_stats"] = self.request_engine.get_stats()
@@ -7545,7 +8429,7 @@ Write in a professional, non-technical tone suitable for C-level executives and 
         try:
             return await self.llm.generate(prompt,
                 get_system_prompt("reporting"))
-        except:
+        except Exception:
             return "Assessment completed. Review findings for details."
 
     def _calculate_risk_level(self, counts: Dict) -> str:

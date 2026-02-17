@@ -26,8 +26,10 @@ RUN python -m playwright install chromium
 # Copy application code
 COPY backend/ ./backend/
 COPY core/ ./core/
+COPY config/ ./config/
 COPY prompts/ ./prompts/
 COPY tools/ ./tools/
+COPY models/ ./models/
 
 # Create data directories
 RUN mkdir -p data/reports data/scans data/recon

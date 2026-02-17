@@ -16,6 +16,7 @@ services:
       - ENABLE_BROWSER_VALIDATION=${ENABLE_BROWSER_VALIDATION:-false}
     volumes:
       - neurosploit-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -37,8 +38,60 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mitmproxy:
+    image: mitmproxy/mitmproxy:latest
+    container_name: neurosploit-mitmproxy
+    profiles:
+      - proxy
+    entrypoint: >
+      mitmweb
+      --web-host 0.0.0.0
+      --web-port 8082
+      --listen-port 8081
+      --set web_open_browser=false
+      --set flow_detail=2
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      - mitmproxy-data:/home/mitmproxy/.mitmproxy
+      - mitmproxy-captures:/captures
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  interactsh:
+    image: projectdiscovery/interactsh-server:latest
+    container_name: neurosploit-interactsh
+    profiles:
+      - oob
+    command: ["-domain", "${INTERACTSH_DOMAIN:-interact.local}", "-ip", "0.0.0.0"]
+    ports:
+      - "8083:80"
+      - "8084:443"
+    networks:
+      - default
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
 volumes:
   neurosploit-data:
+  mitmproxy-data:
+  mitmproxy-captures:
 
 networks:
   default:

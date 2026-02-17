@@ -97,6 +97,7 @@ class ContainerPool:
                 image=self.image,
                 memory_limit=self.memory_limit,
                 cpu_limit=self.cpu_limit,
+                network_mode="neurosploit-network",
             )
             ok, msg = await sb.initialize()
             if not ok:

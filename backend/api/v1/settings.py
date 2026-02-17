@@ -22,12 +22,28 @@ router = APIRouter()
 ENV_FILE_PATH = Path(__file__).parent.parent.parent.parent / ".env"
 
 
+def _sanitize_env_value(value: str) -> str:
+    """Sanitize a value for safe .env file inclusion.
+
+    Prevents newline injection (which could create extra KEY=VALUE lines)
+    and strips control characters that could corrupt the file.
+    """
+    # Remove newlines, carriage returns, and null bytes
+    sanitized = value.replace("\n", "").replace("\r", "").replace("\0", "")
+    # If value contains spaces, quotes, or special chars, wrap in quotes
+    if any(c in sanitized for c in (" ", "'", '"', "#", "=", "$", "`")):
+        # Escape existing double quotes and wrap
+        sanitized = '"' + sanitized.replace('"', '\\"') + '"'
+    return sanitized
+
+
 def _update_env_file(updates: Dict[str, str]) -> bool:
     """
     Update key=value pairs in the .env file without breaking formatting.
     - If the key exists (even commented out), update its value
     - If the key doesn't exist, append it
     - Preserves comments and blank lines
+    - Sanitizes values to prevent newline injection
     """
     if not ENV_FILE_PATH.exists():
         return False
@@ -45,8 +61,8 @@ def _update_env_file(updates: Dict[str, str]) -> bool:
                 # Match: KEY=..., # KEY=..., #KEY=...
                 pattern = rf'^#?\s*{re.escape(key)}\s*='
                 if re.match(pattern, stripped):
-                    # Replace with uncommented key=value
-                    new_lines.append(f"{key}={value}")
+                    # Replace with uncommented key=sanitized_value
+                    new_lines.append(f"{key}={_sanitize_env_value(value)}")
                     updated_keys.add(key)
                     matched = True
                     break
@@ -57,7 +73,7 @@ def _update_env_file(updates: Dict[str, str]) -> bool:
         # Append any keys that weren't found in existing file
         for key, value in updates.items():
             if key not in updated_keys:
-                new_lines.append(f"{key}={value}")
+                new_lines.append(f"{key}={_sanitize_env_value(value)}")
 
         # Write back with trailing newline
         ENV_FILE_PATH.write_text("\n".join(new_lines) + "\n")
@@ -86,7 +102,21 @@ class SettingsUpdate(BaseModel):
     enable_model_routing: Optional[bool] = None
     enable_knowledge_augmentation: Optional[bool] = None
     enable_browser_validation: Optional[bool] = None
+    enable_extended_thinking: Optional[bool] = None
     max_output_tokens: Optional[int] = None
+    # OSINT API keys
+    shodan_api_key: Optional[str] = None
+    censys_api_id: Optional[str] = None
+    censys_api_secret: Optional[str] = None
+    virustotal_api_key: Optional[str] = None
+    builtwith_api_key: Optional[str] = None
+    # Tracing & memory
+    enable_tracing: Optional[bool] = None
+    enable_persistent_memory: Optional[bool] = None
+    # Bug bounty
+    enable_bugbounty_integration: Optional[bool] = None
+    hackerone_api_token: Optional[str] = None
+    hackerone_username: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -103,10 +133,22 @@ class SettingsResponse(BaseModel):
     enable_model_routing: bool = False
     enable_knowledge_augmentation: bool = False
     enable_browser_validation: bool = False
+    enable_extended_thinking: bool = False
     max_output_tokens: Optional[int] = None
     aws_bedrock_region: str = "us-east-1"
     aws_bedrock_model: str = ""
     llm_model: str = ""
+    # OSINT API key presence (masked)
+    has_shodan_key: bool = False
+    has_censys_key: bool = False
+    has_virustotal_key: bool = False
+    has_builtwith_key: bool = False
+    # Tracing & memory
+    enable_tracing: bool = False
+    enable_persistent_memory: bool = True
+    # Bug bounty
+    enable_bugbounty_integration: bool = False
+    has_hackerone_config: bool = False
 
 
 def _load_settings_from_env() -> dict:
@@ -168,7 +210,21 @@ def _load_settings_from_env() -> dict:
         "enable_model_routing": _env_bool("ENABLE_MODEL_ROUTING", False),
         "enable_knowledge_augmentation": _env_bool("ENABLE_KNOWLEDGE_AUGMENTATION", False),
         "enable_browser_validation": _env_bool("ENABLE_BROWSER_VALIDATION", False),
+        "enable_extended_thinking": _env_bool("ENABLE_EXTENDED_THINKING", False),
         "max_output_tokens": _env_int("MAX_OUTPUT_TOKENS", None),
+        # OSINT API keys
+        "shodan_api_key": os.getenv("SHODAN_API_KEY", ""),
+        "censys_api_id": os.getenv("CENSYS_API_ID", ""),
+        "censys_api_secret": os.getenv("CENSYS_API_SECRET", ""),
+        "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+        "builtwith_api_key": os.getenv("BUILTWITH_API_KEY", ""),
+        # Tracing & memory
+        "enable_tracing": _env_bool("ENABLE_TRACING", False),
+        "enable_persistent_memory": _env_bool("ENABLE_PERSISTENT_MEMORY", True),
+        # Bug bounty
+        "enable_bugbounty_integration": _env_bool("ENABLE_BUGBOUNTY_INTEGRATION", False),
+        "hackerone_api_token": os.getenv("HACKERONE_API_TOKEN", ""),
+        "hackerone_username": os.getenv("HACKERONE_USERNAME", ""),
     }
 
 
@@ -195,10 +251,25 @@ async def get_settings():
         enable_model_routing=_settings["enable_model_routing"],
         enable_knowledge_augmentation=_settings["enable_knowledge_augmentation"],
         enable_browser_validation=_settings["enable_browser_validation"],
+        enable_extended_thinking=_settings["enable_extended_thinking"],
         max_output_tokens=_settings["max_output_tokens"],
         aws_bedrock_region=_settings.get("aws_bedrock_region", "us-east-1"),
         aws_bedrock_model=_settings.get("aws_bedrock_model", ""),
         llm_model=_settings.get("llm_model", ""),
+        has_shodan_key=bool(_settings.get("shodan_api_key") or os.getenv("SHODAN_API_KEY")),
+        has_censys_key=bool(
+            (_settings.get("censys_api_id") or os.getenv("CENSYS_API_ID"))
+            and (_settings.get("censys_api_secret") or os.getenv("CENSYS_API_SECRET"))
+        ),
+        has_virustotal_key=bool(_settings.get("virustotal_api_key") or os.getenv("VIRUSTOTAL_API_KEY")),
+        has_builtwith_key=bool(_settings.get("builtwith_api_key") or os.getenv("BUILTWITH_API_KEY")),
+        enable_tracing=_settings["enable_tracing"],
+        enable_persistent_memory=_settings["enable_persistent_memory"],
+        enable_bugbounty_integration=_settings["enable_bugbounty_integration"],
+        has_hackerone_config=bool(
+            (_settings.get("hackerone_api_token") or os.getenv("HACKERONE_API_TOKEN"))
+            and (_settings.get("hackerone_username") or os.getenv("HACKERONE_USERNAME"))
+        ),
     )
 
 
@@ -266,15 +337,25 @@ async def update_settings(settings_data: SettingsUpdate):
 
     if settings_data.max_concurrent_scans is not None:
         _settings["max_concurrent_scans"] = settings_data.max_concurrent_scans
+        os.environ["MAX_CONCURRENT_SCANS"] = str(settings_data.max_concurrent_scans)
+        env_updates["MAX_CONCURRENT_SCANS"] = str(settings_data.max_concurrent_scans)
 
     if settings_data.aggressive_mode is not None:
         _settings["aggressive_mode"] = settings_data.aggressive_mode
+        val = str(settings_data.aggressive_mode).lower()
+        os.environ["AGGRESSIVE_MODE"] = val
+        env_updates["AGGRESSIVE_MODE"] = val
 
     if settings_data.default_scan_type is not None:
         _settings["default_scan_type"] = settings_data.default_scan_type
+        os.environ["DEFAULT_SCAN_TYPE"] = settings_data.default_scan_type
+        env_updates["DEFAULT_SCAN_TYPE"] = settings_data.default_scan_type
 
     if settings_data.recon_enabled_by_default is not None:
         _settings["recon_enabled_by_default"] = settings_data.recon_enabled_by_default
+        val = str(settings_data.recon_enabled_by_default).lower()
+        os.environ["RECON_ENABLED_BY_DEFAULT"] = val
+        env_updates["RECON_ENABLED_BY_DEFAULT"] = val
 
     if settings_data.enable_model_routing is not None:
         _settings["enable_model_routing"] = settings_data.enable_model_routing
@@ -294,11 +375,47 @@ async def update_settings(settings_data: SettingsUpdate):
         os.environ["ENABLE_BROWSER_VALIDATION"] = val
         env_updates["ENABLE_BROWSER_VALIDATION"] = val
 
+    if settings_data.enable_extended_thinking is not None:
+        _settings["enable_extended_thinking"] = settings_data.enable_extended_thinking
+        val = str(settings_data.enable_extended_thinking).lower()
+        os.environ["ENABLE_EXTENDED_THINKING"] = val
+        env_updates["ENABLE_EXTENDED_THINKING"] = val
+
     if settings_data.max_output_tokens is not None:
         _settings["max_output_tokens"] = settings_data.max_output_tokens
         if settings_data.max_output_tokens:
             os.environ["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
             env_updates["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
+
+    # Tracing, memory, bug bounty toggles
+    for field_name, env_key in [
+        ("enable_tracing", "ENABLE_TRACING"),
+        ("enable_persistent_memory", "ENABLE_PERSISTENT_MEMORY"),
+        ("enable_bugbounty_integration", "ENABLE_BUGBOUNTY_INTEGRATION"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            str_val = str(val).lower()
+            os.environ[env_key] = str_val
+            env_updates[env_key] = str_val
+
+    # OSINT API keys
+    for field_name, env_key in [
+        ("shodan_api_key", "SHODAN_API_KEY"),
+        ("censys_api_id", "CENSYS_API_ID"),
+        ("censys_api_secret", "CENSYS_API_SECRET"),
+        ("virustotal_api_key", "VIRUSTOTAL_API_KEY"),
+        ("builtwith_api_key", "BUILTWITH_API_KEY"),
+        ("hackerone_api_token", "HACKERONE_API_TOKEN"),
+        ("hackerone_username", "HACKERONE_USERNAME"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            if val:
+                os.environ[env_key] = val
+                env_updates[env_key] = val
 
     # Persist to .env file on disk
     if env_updates:

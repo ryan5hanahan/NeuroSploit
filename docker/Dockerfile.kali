@@ -11,9 +11,11 @@
 #   docker compose -f docker/docker-compose.kali.yml build
 #
 # Design:
-#   - Pre-compile Go tools (nuclei, naabu, httpx, subfinder, katana, dnsx, ffuf,
-#     gobuster, dalfox, waybackurls, uncover) to avoid 60s+ go install per scan
-#   - Pre-install common apt tools (nikto, sqlmap, masscan, whatweb) for instant use
+#   - Pre-compile 20 Go tools to avoid 60s+ go install per scan:
+#     Core PD:  nuclei, naabu, httpx, subfinder, katana, dnsx, uncover
+#     Extended: interactsh-client, cvemap, alterx, shuffledns, mapcidr, asnmap, tlsx, cloudlist, notify
+#     Other:    ffuf, gobuster, dalfox, waybackurls
+#   - Pre-install common apt tools (nikto, sqlmap, masscan, whatweb, massdns) for instant use
 #   - Include Go, Python, pip, git so on-demand tools can be compiled/installed
 #   - Full Kali apt repos available for on-demand apt-get install of any security tool
 
@@ -39,6 +41,17 @@ RUN go install -v github.com/ffuf/ffuf/v2@latest
 RUN go install -v github.com/OJ/gobuster/v3@v3.7.0
 RUN go install -v github.com/hahwul/dalfox/v2@latest
 RUN go install -v github.com/tomnomnom/waybackurls@latest
+
+# Additional ProjectDiscovery tools
+RUN go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+RUN go install -v github.com/projectdiscovery/cvemap/cmd/cvemap@latest
+RUN go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest
+RUN go install -v github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest
+RUN go install -v github.com/projectdiscovery/mapcidr/cmd/mapcidr@latest
+RUN go install -v github.com/projectdiscovery/asnmap/cmd/asnmap@latest
+RUN go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest
+RUN go install -v github.com/projectdiscovery/cloudlist/cmd/cloudlist@latest
+RUN go install -v github.com/projectdiscovery/notify/cmd/notify@latest
 
 # ---- Stage 2: Kali Linux runtime ----
 FROM kalilinux/kali-rolling
@@ -76,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlmap \
     masscan \
     whatweb \
+    massdns \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy ALL pre-compiled Go binaries from builder
@@ -90,6 +104,15 @@ COPY --from=go-builder /go/bin/ffuf /usr/local/bin/
 COPY --from=go-builder /go/bin/gobuster /usr/local/bin/
 COPY --from=go-builder /go/bin/dalfox /usr/local/bin/
 COPY --from=go-builder /go/bin/waybackurls /usr/local/bin/
+COPY --from=go-builder /go/bin/interactsh-client /usr/local/bin/
+COPY --from=go-builder /go/bin/cvemap /usr/local/bin/
+COPY --from=go-builder /go/bin/alterx /usr/local/bin/
+COPY --from=go-builder /go/bin/shuffledns /usr/local/bin/
+COPY --from=go-builder /go/bin/mapcidr /usr/local/bin/
+COPY --from=go-builder /go/bin/asnmap /usr/local/bin/
+COPY --from=go-builder /go/bin/tlsx /usr/local/bin/
+COPY --from=go-builder /go/bin/cloudlist /usr/local/bin/
+COPY --from=go-builder /go/bin/notify /usr/local/bin/
 
 # Go environment for on-demand tool compilation
 ENV GOPATH=/root/go
@@ -107,6 +130,11 @@ RUN wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Dis
     -O /opt/wordlists/subdomains-5000.txt 2>/dev/null || true && \
     wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-1000.txt \
     -O /opt/wordlists/passwords-top1000.txt 2>/dev/null || true
+
+# Download DNS resolvers for shuffledns/massdns
+RUN wget -q https://raw.githubusercontent.com/trickest/resolvers/main/resolvers-trusted.txt \
+    -O /opt/wordlists/resolvers.txt 2>/dev/null || \
+    printf '8.8.8.8\n8.8.4.4\n1.1.1.1\n1.0.0.1\n9.9.9.9\n' > /opt/wordlists/resolvers.txt
 
 # Update Nuclei templates
 RUN nuclei -update-templates -silent 2>/dev/null || true
