@@ -7,6 +7,7 @@ Supports: Claude, GPT, Gemini, Ollama, and custom models
 import os
 import json
 import subprocess
+import threading
 import time
 from typing import Dict, List, Optional, Any
 import logging
@@ -55,6 +56,7 @@ class LLMManager:
         self.pdf_support_enabled = self.active_profile.get('pdf_support_enabled', False)
         self.guardrails_enabled = self.active_profile.get('guardrails_enabled', False)
         self.hallucination_mitigation_strategy = self.active_profile.get('hallucination_mitigation_strategy', None)
+        self._mitigation_lock = threading.Lock()
 
         # MAX_OUTPUT_TOKENS override from environment (up to 64000 for Claude)
         env_max_tokens = os.getenv('MAX_OUTPUT_TOKENS', '').strip()
@@ -279,13 +281,18 @@ class LLMManager:
         return response
 
     def _mitigate_hallucination(self, raw_response: str, original_prompt: str, original_system_prompt: Optional[str]) -> str:
-        """Applies configured hallucination mitigation strategy."""
-        strategy = self.hallucination_mitigation_strategy
-        
-        # Temporarily disable mitigation to prevent infinite recursion when calling self.generate internally
-        original_mitigation_state = self.hallucination_mitigation_strategy
-        self.hallucination_mitigation_strategy = None 
-        
+        """Applies configured hallucination mitigation strategy.
+
+        Thread-safe: uses a lock to prevent concurrent mutations of
+        hallucination_mitigation_strategy during recursive generate() calls.
+        """
+        with self._mitigation_lock:
+            strategy = self.hallucination_mitigation_strategy
+
+            # Temporarily disable mitigation to prevent infinite recursion when calling self.generate internally
+            original_mitigation_state = self.hallucination_mitigation_strategy
+            self.hallucination_mitigation_strategy = None
+
         try:
             if strategy == "grounding":
                 verification_prompt = f"""Review the following response:
@@ -332,7 +339,8 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
             
             return raw_response # Fallback if strategy not recognized or implemented
         finally:
-            self.hallucination_mitigation_strategy = original_mitigation_state # Restore original state
+            with self._mitigation_lock:
+                self.hallucination_mitigation_strategy = original_mitigation_state
     
     def _generate_claude(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate using Claude API with requests (bypasses httpx/SSL issues on macOS)"""
@@ -550,10 +558,11 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY not set. Please set the environment variable or configure in config.yaml")
 
-        # Use v1beta for generateContent endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        # Use v1beta for generateContent endpoint — key in header, not URL
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
         }
 
         full_prompt = prompt

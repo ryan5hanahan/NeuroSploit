@@ -921,84 +921,90 @@ Be thorough and test all discovered endpoints aggressively.
         async def progress_callback(message: str):
             await ws_manager.broadcast_log(scan.id, "debug", f"    {message}")
 
-        for vuln_type in testing_plan.vulnerability_types:
-            if self._stop_requested:
-                break
+        # Shared session for all payload tests against this endpoint — avoids
+        # creating a new TCP connection per payload (was 500-1500 sessions/scan)
+        timeout = aiohttp.ClientTimeout(total=15)
+        connector = aiohttp.TCPConnector(ssl=False, limit=10)
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            for vuln_type in testing_plan.vulnerability_types:
+                if self._stop_requested:
+                    break
 
-            try:
-                # Get payloads for this vulnerability type
-                payload_context = {
-                    "testing_plan": testing_plan.__dict__,
-                    "recon": recon_data,
-                    "depth": "thorough" if self.aggressive_mode else "standard",
-                }
-                payloads = await self.payload_generator.get_payloads(
-                    vuln_type=vuln_type,
-                    endpoint=endpoint,
-                    context=payload_context
-                )
-
-                if not payloads:
-                    continue
-
-                # Test payloads — aggressive mode tests more per type
-                payload_limit = 15 if self.aggressive_mode else 5
-                for payload in payloads[:payload_limit]:
-                    result = await self._execute_payload_test(
-                        endpoint=endpoint,
+                try:
+                    # Get payloads for this vulnerability type
+                    payload_context = {
+                        "testing_plan": testing_plan.__dict__,
+                        "recon": recon_data,
+                        "depth": "thorough" if self.aggressive_mode else "standard",
+                    }
+                    payloads = await self.payload_generator.get_payloads(
                         vuln_type=vuln_type,
-                        payload=payload,
-                        scan=scan  # Pass scan for authentication
+                        endpoint=endpoint,
+                        context=payload_context
                     )
 
-                    if result and result.get("is_vulnerable"):
-                        # Use AI to analyze and confirm
-                        ai_analysis = await self.ai_analyzer.analyze_finding(
+                    if not payloads:
+                        continue
+
+                    # Test payloads — aggressive mode tests more per type
+                    payload_limit = 15 if self.aggressive_mode else 5
+                    for payload in payloads[:payload_limit]:
+                        result = await self._execute_payload_test(
+                            endpoint=endpoint,
                             vuln_type=vuln_type,
-                            request=result.get("request", {}),
-                            response=result.get("response", {}),
-                            payload=payload
+                            payload=payload,
+                            scan=scan,
+                            session=session,
                         )
 
-                        confidence = ai_analysis.get("confidence", result.get("confidence", 0.5))
-
-                        if confidence >= 0.5:  # Lower threshold to catch more
-                            # Create vulnerability record
-                            vuln_severity = ai_analysis.get("severity", self._confidence_to_severity(confidence))
-                            vuln = Vulnerability(
-                                scan_id=scan.id,
-                                title=f"{vuln_type.replace('_', ' ').title()} on {endpoint.path or endpoint.url}",
-                                vulnerability_type=vuln_type,
-                                severity=vuln_severity,
-                                description=ai_analysis.get("evidence", result.get("evidence", "")),
-                                affected_endpoint=endpoint.url,
-                                poc_payload=payload,
-                                poc_request=str(result.get("request", {}))[:5000],
-                                poc_response=str(result.get("response", {}).get("body_preview", ""))[:5000],
-                                remediation=ai_analysis.get("remediation", ""),
-                                ai_analysis=ai_analysis.get("exploitation_path", "")
+                        if result and result.get("is_vulnerable"):
+                            # Use AI to analyze and confirm
+                            ai_analysis = await self.ai_analyzer.analyze_finding(
+                                vuln_type=vuln_type,
+                                request=result.get("request", {}),
+                                response=result.get("response", {}),
+                                payload=payload
                             )
-                            self.db.add(vuln)
-                            await self.db.flush()  # Ensure ID is assigned
 
-                            # Increment vulnerability count
-                            await self._increment_vulnerability_count(scan, vuln_severity)
+                            confidence = ai_analysis.get("confidence", result.get("confidence", 0.5))
 
-                            await ws_manager.broadcast_vulnerability_found(scan.id, {
-                                "id": vuln.id,
-                                "title": vuln.title,
-                                "severity": vuln.severity,
-                                "type": vuln_type,
-                                "endpoint": endpoint.url
-                            })
-                            await ws_manager.broadcast_log(
-                                scan.id, "warning",
-                                f"    FOUND: {vuln.title} [{vuln.severity.upper()}]"
-                            )
-                            break  # Found vulnerability, move to next type
+                            if confidence >= 0.5:  # Lower threshold to catch more
+                                # Create vulnerability record
+                                vuln_severity = ai_analysis.get("severity", self._confidence_to_severity(confidence))
+                                vuln = Vulnerability(
+                                    scan_id=scan.id,
+                                    title=f"{vuln_type.replace('_', ' ').title()} on {endpoint.path or endpoint.url}",
+                                    vulnerability_type=vuln_type,
+                                    severity=vuln_severity,
+                                    description=ai_analysis.get("evidence", result.get("evidence", "")),
+                                    affected_endpoint=endpoint.url,
+                                    poc_payload=payload,
+                                    poc_request=str(result.get("request", {}))[:5000],
+                                    poc_response=str(result.get("response", {}).get("body_preview", ""))[:5000],
+                                    remediation=ai_analysis.get("remediation", ""),
+                                    ai_analysis=ai_analysis.get("exploitation_path", "")
+                                )
+                                self.db.add(vuln)
+                                await self.db.flush()  # Ensure ID is assigned
 
-            except Exception as e:
-                await ws_manager.broadcast_log(scan.id, "debug", f"    Error testing {vuln_type}: {str(e)}")
+                                # Increment vulnerability count
+                                await self._increment_vulnerability_count(scan, vuln_severity)
+
+                                await ws_manager.broadcast_vulnerability_found(scan.id, {
+                                    "id": vuln.id,
+                                    "title": vuln.title,
+                                    "severity": vuln.severity,
+                                    "type": vuln_type,
+                                    "endpoint": endpoint.url
+                                })
+                                await ws_manager.broadcast_log(
+                                    scan.id, "warning",
+                                    f"    FOUND: {vuln.title} [{vuln.severity.upper()}]"
+                                )
+                                break  # Found vulnerability, move to next type
+
+                except Exception as e:
+                    await ws_manager.broadcast_log(scan.id, "debug", f"    Error testing {vuln_type}: {str(e)}")
 
         await self.db.commit()
 
@@ -1036,9 +1042,15 @@ Be thorough and test all discovered endpoints aggressively.
         endpoint: Endpoint,
         vuln_type: str,
         payload: str,
-        scan: Optional[Scan] = None
+        scan: Optional[Scan] = None,
+        session: Optional[Any] = None,
     ) -> Optional[Dict]:
-        """Execute a single payload test with optional authentication"""
+        """Execute a single payload test with optional authentication.
+
+        Args:
+            session: Optional shared aiohttp.ClientSession. If not provided,
+                     a new session is created for this single request.
+        """
         import aiohttp
 
         try:
@@ -1063,11 +1075,15 @@ Be thorough and test all discovered endpoints aggressively.
                 # Add payload as common parameter
                 params = {"q": payload, "search": payload, "id": payload, "page": payload}
 
-            timeout = aiohttp.ClientTimeout(total=15)
-            connector = aiohttp.TCPConnector(ssl=False)
+            # Use provided session or create one for this request
+            owns_session = session is None
+            if owns_session:
+                timeout = aiohttp.ClientTimeout(total=15)
+                connector = aiohttp.TCPConnector(ssl=False)
+                session = aiohttp.ClientSession(connector=connector, timeout=timeout)
 
-            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                async with session.get(url, params=params, headers=headers, allow_redirects=False) as response:
+            try:
+                async with session.get(url, params=params, headers=headers, allow_redirects=False, ssl=False) as response:
                     body = await response.text()
 
                     # Basic vulnerability detection
@@ -1113,7 +1129,8 @@ Be thorough and test all discovered endpoints aggressively.
 
                     elif vuln_type == "ssti":
                         # Check for template injection markers
-                        if "49" in body or "7777777" in body:  # Common test: 7*7 or 7*7*7*7*7*7*7
+                        # Use 13*37=481 canary — "49" (7*7) false-positives on natural page content
+                        if "481" in body or "7777777" in body:
                             is_vulnerable = True
                             confidence = 0.8
                             evidence = "Template execution detected"
@@ -1129,6 +1146,9 @@ Be thorough and test all discovered endpoints aggressively.
                             "body_preview": body[:2000]
                         }
                     }
+            finally:
+                if owns_session:
+                    await session.close()
 
         except asyncio.TimeoutError:
             # Timeout might indicate time-based injection

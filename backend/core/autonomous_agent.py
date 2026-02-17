@@ -3970,16 +3970,18 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                     # Import Nuclei findings as agent findings
                     vuln_type = nf.get("vulnerability_type", "vulnerability")
                     if vuln_type not in self.memory.tested_combinations:
-                        await self._add_finding(
+                        finding = Finding(
+                            id=f"nuclei_{nf.get('template_id', 'unknown')}_{len(self.memory.findings)}",
                             title=nf.get("title", "Nuclei Finding"),
                             severity=nf.get("severity", "info"),
-                            vuln_type=vuln_type,
-                            endpoint=nf.get("affected_endpoint", self.target),
+                            vulnerability_type=vuln_type,
+                            affected_endpoint=nf.get("affected_endpoint", self.target),
                             evidence=f"Nuclei template: {nf.get('template_id', 'unknown')}. {nf.get('evidence', '')}",
                             ai_verified=False,
                             description=nf.get("description", ""),
                             remediation=nf.get("remediation", ""),
                         )
+                        await self._add_finding(finding)
             else:
                 await self.log("info", f"  [Sandbox] Nuclei: no findings ({_nuclei_duration}s)")
 
