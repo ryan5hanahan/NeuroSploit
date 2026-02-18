@@ -139,8 +139,9 @@ class ChainEngine:
     MAX_CHAIN_DEPTH = 3
     MAX_DERIVED_PER_FINDING = 20
 
-    def __init__(self, llm=None):
+    def __init__(self, llm=None, governance=None):
         self.llm = llm
+        self.governance = governance
         self._chain_graph: Dict[str, List[str]] = {}  # finding_id \u2192 [derived_finding_ids]
         self._total_chains = 0
         self._chain_findings: List[str] = []  # finding IDs that came from chaining
@@ -190,6 +191,17 @@ class ChainEngine:
                     derived_targets.append(target)
             except Exception as e:
                 logger.debug(f"Chain extraction failed for {rule.extraction_fn}: {e}")
+
+        # Governance: filter derived targets that escalate beyond allowed phase
+        if self.governance and derived_targets:
+            allowed = []
+            for target in derived_targets:
+                decision = self.governance.check_action(target.vuln_type)
+                if decision.allowed:
+                    allowed.append(target)
+                else:
+                    logger.debug(f"Chain engine: governance blocked {target.vuln_type} ({decision.reason})")
+            derived_targets = allowed
 
         # Track in graph
         if derived_targets:

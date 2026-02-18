@@ -762,7 +762,7 @@ class AutonomousAgent:
         self.request_engine = None
         self.waf_detector = None
         self.strategy = None
-        self.chain_engine = ChainEngine(llm=self.llm)
+        self.chain_engine = ChainEngine(llm=self.llm, governance=self.governance)
         self.auth_manager = None
         self._waf_result = None
 
@@ -3958,11 +3958,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 await self.log("warning", f"[HEALTH] Target may be unhealthy: {reason}")
                 await self.log("warning", "[HEALTH] Proceeding with caution - results may be unreliable")
 
-        # Log governance scope
+        # Log governance scope and phase gate
         if self.governance:
             s = self.governance.scope
             types_info = f"{len(s.allowed_vuln_types)} types" if s.allowed_vuln_types else "all types"
             await self.log("info", f"[GOVERNANCE] Scope: {s.profile.value} | {types_info}")
+            await self.log("info", f"[GOVERNANCE] Phase gate: {self.governance.governance_mode} | phase: {self.governance.current_phase}")
 
         # Phase 1: Reconnaissance + Sandbox tools (concurrent)
         if self.preset_recon:
@@ -4078,8 +4079,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                 rate_limit=150,
                 timeout=600,
             )
-            # Governance: scope Nuclei to relevant template tags
+            # Governance: check if nuclei is allowed in current phase
             if self.governance:
+                _nuclei_decision = self.governance.check_action("nuclei")
+                if not _nuclei_decision.allowed:
+                    await self.log("warning", f"[GOVERNANCE] Nuclei blocked: {_nuclei_decision.reason}")
+                    return
                 _gov_tags = self.governance.get_nuclei_template_tags()
                 if _gov_tags:
                     _nuclei_kwargs["tags"] = _gov_tags
@@ -4121,7 +4126,13 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             # Naabu port scan (governance may skip)
             parsed = urlparse(self.target)
             host = parsed.hostname or parsed.netloc
-            if host and (not self.governance or self.governance.should_port_scan()):
+            _naabu_allowed = not self.governance or self.governance.should_port_scan()
+            if _naabu_allowed and self.governance:
+                _naabu_decision = self.governance.check_action("naabu")
+                _naabu_allowed = _naabu_decision.allowed
+                if not _naabu_allowed:
+                    await self.log("warning", f"[GOVERNANCE] Naabu blocked: {_naabu_decision.reason}")
+            if host and _naabu_allowed:
                 await self.log("info", "  [Sandbox] Running Naabu port scanner...")
                 _naabu_start = _time.time()
                 naabu_result = await sandbox.run_naabu(
@@ -5177,6 +5188,13 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
     async def _test_all_vulnerabilities(self, plan: Dict):
         """Test for all vulnerability types (100-type coverage)"""
         vuln_types = plan.get("priority_vulns", list(self._default_attack_plan()["priority_vulns"]))
+
+        # Governance: check if vulnerability testing is allowed in current phase
+        if self.governance:
+            _testing_decision = self.governance.check_action("_test_all_vulnerabilities")
+            if not _testing_decision.allowed:
+                await self.log("warning", f"[GOVERNANCE] Vulnerability testing blocked: {_testing_decision.reason}")
+                return
 
         # Governance: defense-in-depth final filter — even if AI/plan slipped through
         if self.governance:
