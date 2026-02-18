@@ -66,6 +66,7 @@ try:
         _execute_cvemap, _execute_tlsx, _execute_asnmap,
         _execute_mapcidr, _execute_alterx, _execute_shuffledns,
         _execute_cloudlist, _execute_interactsh, _execute_notify,
+        _oob_verify,
     )
     HAS_PD_TOOLS = True
 except ImportError:
@@ -147,6 +148,83 @@ async def _payload_delivery(
                         "body": body[:5000],
                         "body_length": len(body),
                     }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def _time_oracle(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict] = None,
+    body: Optional[str] = None,
+    iterations: int = 10,
+    delay_ms: int = 100,
+) -> Dict:
+    """Send N timed requests and return statistical timing analysis.
+
+    Used for time-based blind injection detection. Timeout errors are
+    recorded as samples — that IS the signal for time-based blind injection.
+    """
+    import aiohttp
+    import time
+    import statistics
+
+    iterations = max(3, min(iterations, 50))  # Clamp 3-50
+    delay_sec = max(0, delay_ms / 1000.0)
+    samples: List[float] = []
+    timeout_count = 0
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            req_headers = {}
+            if headers:
+                req_headers.update(headers)
+
+            for i in range(iterations):
+                if i > 0 and delay_sec > 0:
+                    await asyncio.sleep(delay_sec)
+
+                start = time.monotonic()
+                try:
+                    async with session.request(
+                        method.upper(), url,
+                        headers=req_headers if req_headers else None,
+                        data=body,
+                        allow_redirects=False,
+                    ) as resp:
+                        await resp.read()  # Consume body to get full timing
+                    elapsed_ms = (time.monotonic() - start) * 1000
+                    samples.append(elapsed_ms)
+                except asyncio.TimeoutError:
+                    elapsed_ms = (time.monotonic() - start) * 1000
+                    samples.append(elapsed_ms)
+                    timeout_count += 1
+                except Exception:
+                    elapsed_ms = (time.monotonic() - start) * 1000
+                    samples.append(elapsed_ms)
+
+        if not samples:
+            return {"error": "No samples collected"}
+
+        sorted_samples = sorted(samples)
+        p95_idx = max(0, int(len(sorted_samples) * 0.95) - 1)
+
+        return {
+            "tool": "time_oracle",
+            "url": url,
+            "method": method.upper(),
+            "iterations": len(samples),
+            "mean_ms": round(statistics.mean(samples), 2),
+            "median_ms": round(statistics.median(samples), 2),
+            "stddev_ms": round(statistics.stdev(samples), 2) if len(samples) > 1 else 0.0,
+            "min_ms": round(min(samples), 2),
+            "max_ms": round(max(samples), 2),
+            "p95_ms": round(sorted_samples[p95_idx], 2),
+            "samples": [round(s, 2) for s in samples],
+            "timeout_count": timeout_count,
+            "total_duration_ms": round(sum(samples) + delay_ms * max(0, len(samples) - 1), 2),
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -468,6 +546,22 @@ TOOLS = [
         },
     },
     {
+        "name": "time_oracle",
+        "description": "Send N timed HTTP requests and return statistical timing analysis (mean, median, stddev, p95). Used for time-based blind injection detection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Target URL to measure"},
+                "method": {"type": "string", "description": "HTTP method", "default": "GET"},
+                "headers": {"type": "object", "description": "Optional request headers"},
+                "body": {"type": "string", "description": "Optional request body"},
+                "iterations": {"type": "integer", "description": "Number of requests (3-50, default 10)", "default": 10},
+                "delay_ms": {"type": "integer", "description": "Delay between requests in ms (default 100)", "default": 100},
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "dns_lookup",
         "description": "Perform DNS lookups for a domain",
         "inputSchema": {
@@ -700,6 +794,19 @@ TOOLS = [
         },
     },
     {
+        "name": "oob_verify",
+        "description": "Simplified OOB verification: register an out-of-band URL with injection templates, or poll for captured interactions filtered by protocol (DNS, HTTP, SMTP).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "Action: 'register' to get OOB URL, 'poll'/'check' to verify interactions", "default": "register"},
+                "oob_url": {"type": "string", "description": "OOB URL from a previous register (for context)"},
+                "wait_seconds": {"type": "integer", "description": "Poll interval in seconds"},
+                "expected_protocol": {"type": "string", "description": "Filter interactions by protocol: dns, http, smtp"},
+            },
+        },
+    },
+    {
         "name": "execute_notify",
         "description": "Send notification messages via configured providers (Slack, Discord, Telegram, email, etc.).",
         "inputSchema": {
@@ -797,6 +904,10 @@ TOOL_HANDLERS = {
         args.get("content_type", "application/x-www-form-urlencoded"),
         args.get("headers"), args.get("param", "q")
     ),
+    "time_oracle": lambda args: _time_oracle(
+        args["url"], args.get("method", "GET"), args.get("headers"),
+        args.get("body"), args.get("iterations", 10), args.get("delay_ms", 100)
+    ),
     "dns_lookup": lambda args: _dns_lookup(args["domain"], args.get("record_type", "A")),
     "port_scan": lambda args: _port_scan(args["host"], args.get("ports", "80,443,8080,8443,3000,5000")),
     "technology_detect": lambda args: _technology_detect(args["url"]),
@@ -851,6 +962,10 @@ TOOL_HANDLERS = {
     "execute_interactsh": lambda args: _execute_interactsh(
         args.get("action", "register"), args.get("token"),
         args.get("poll_interval"), args.get("opsec_profile")
+    ),
+    "oob_verify": lambda args: _oob_verify(
+        args.get("action", "register"), args.get("oob_url"),
+        args.get("wait_seconds"), args.get("expected_protocol")
     ),
     "execute_notify": lambda args: _execute_notify(
         args["message"], args.get("provider"), args.get("severity"),

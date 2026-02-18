@@ -4250,9 +4250,22 @@ Available MCP tools (provide structured JSON dict as args):
 - dns_lookup: DNS records (args: {{"domain": "example.com", "record_type": "A"}})
 - execute_cvemap: CVE database lookup (args: {{"severity": "critical", "product": "apache"}})
 - execute_tlsx: TLS/SSL analysis (args: {{"target": "example.com"}})
+- execute_asnmap: ASN/CIDR mapping (args: {{"target": "1.2.3.4"}})
 - execute_interactsh: OOB callback detection (args: {{"action": "register"}})
+- oob_verify: Simplified OOB verification (args: {{"action": "register"}} or {{"action": "poll", "expected_protocol": "dns"}})
+- time_oracle: Statistical timing analysis (args: {{"url": "https://...", "iterations": 10}})
+- execute_nuclei: Nuclei vuln scanner (args: {{"target": "https://...", "severity": "critical,high"}})
+- execute_naabu: Fast port scanner (args: {{"target": "example.com", "top_ports": 100}})
+- sandbox_exec: Run any sandbox tool (args: {{"tool": "nmap", "args": "-sV target"}})
+- execute_mapcidr: CIDR operations (args: {{"cidr": "192.168.0.0/16", "operation": "count"}})
+- execute_alterx: Subdomain permutations (args: {{"domain": "example.com"}})
+- execute_shuffledns: Mass DNS brute-force (args: {{"domain": "example.com"}})
+- execute_cloudlist: Cloud asset enumeration (args: {{"provider": "aws"}})
+- proxy_capture: Set proxy capture filter (args: {{"filter_expr": "~d example.com"}})
+- proxy_flows: Retrieve captured flows (args: {{"limit": 50}})
+- proxy_replay: Replay a flow with mods (args: {{"flow_id": "abc", "modify_headers": {{}}}})
 
-NOTE: nuclei and naabu already ran. Pick 1-3 MOST USEFUL additional tools.
+NOTE: Pick 1-3 MOST USEFUL additional tools for this target.
 For sandbox tools: {{"tool": "httpx", "args": "-u {self.target} -tech-detect", "reason": "..."}}
 For MCP tools: {{"tool": "execute_cvemap", "args": {{"severity": "critical"}}, "reason": "..."}}
 
@@ -4267,10 +4280,19 @@ Respond ONLY with a JSON array:
                 array=True,
             )
             # Validate tool names against allowed set
-            allowed = {"nmap", "httpx", "subfinder", "katana", "dalfox", "nikto",
-                       "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun",
-                       "screenshot_capture", "technology_detect", "dns_lookup",
-                       "execute_cvemap", "execute_tlsx", "execute_interactsh"}
+            allowed = {
+                # Sandbox CLI tools
+                "nmap", "httpx", "subfinder", "katana", "dalfox", "nikto",
+                "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun",
+                # MCP tools
+                "screenshot_capture", "technology_detect", "dns_lookup",
+                "execute_cvemap", "execute_tlsx", "execute_asnmap", "execute_interactsh",
+                "execute_nuclei", "execute_naabu", "sandbox_exec",
+                "execute_mapcidr", "execute_alterx", "execute_shuffledns",
+                "execute_cloudlist",
+                "time_oracle", "oob_verify",
+                "proxy_capture", "proxy_flows", "proxy_replay",
+            }
             validated = [d for d in (decisions or [])
                          if isinstance(d, dict) and d.get("tool") in allowed]
             return validated[:5]
@@ -4280,9 +4302,21 @@ Respond ONLY with a JSON array:
 
     # MCP tool names that should be routed through MCP client
     MCP_TOOLS = {
+        # Core tools
         "screenshot_capture", "payload_delivery", "dns_lookup", "port_scan",
-        "technology_detect", "subdomain_enumerate", "execute_cvemap",
-        "execute_tlsx", "execute_asnmap", "execute_interactsh",
+        "technology_detect", "subdomain_enumerate", "save_finding",
+        "get_vuln_prompt",
+        # Timing & blind injection
+        "time_oracle", "oob_verify",
+        # Sandbox tools
+        "execute_nuclei", "execute_naabu", "sandbox_health", "sandbox_exec",
+        # ProjectDiscovery extended suite
+        "execute_cvemap", "execute_tlsx", "execute_asnmap", "execute_mapcidr",
+        "execute_alterx", "execute_shuffledns", "execute_cloudlist",
+        "execute_interactsh", "execute_notify",
+        # Proxy tools (mitmproxy)
+        "proxy_status", "proxy_flows", "proxy_capture", "proxy_replay",
+        "proxy_intercept", "proxy_clear", "proxy_export",
     }
 
     async def run_mcp_tool(self, tool_name: str, arguments: Optional[Dict] = None) -> Optional[Dict]:

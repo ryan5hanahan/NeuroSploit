@@ -588,3 +588,69 @@ async def _execute_notify(
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# oob_verify - Simplified OOB verification wrapper
+# ---------------------------------------------------------------------------
+async def _oob_verify(
+    action: str = "register",
+    oob_url: Optional[str] = None,
+    wait_seconds: Optional[int] = None,
+    expected_protocol: Optional[str] = None,
+) -> Dict:
+    """High-level OOB verification wrapper around interactsh.
+
+    Actions:
+      - register: Register a new OOB URL and return injection templates.
+      - poll/check: Poll for interactions, optionally filtering by protocol.
+    """
+    if action == "register":
+        result = await _execute_interactsh(action="register")
+        if result.get("error"):
+            return result
+        oob_domain = result.get("oob_url", "")
+        return {
+            "tool": "oob_verify",
+            "action": "register",
+            "oob_url": oob_domain,
+            "subdomain": oob_domain.split(".")[0] if oob_domain else None,
+            "inject_template": {
+                "dns_canary": f"{{payload}}.{oob_domain}" if oob_domain else None,
+                "http_canary": f"http://{oob_domain}/{{payload}}" if oob_domain else None,
+            },
+        }
+
+    elif action in ("poll", "check"):
+        poll_interval = wait_seconds if wait_seconds else None
+        result = await _execute_interactsh(
+            action="poll", poll_interval=poll_interval,
+        )
+        if result.get("error"):
+            return result
+
+        interactions = result.get("interactions", [])
+        # Filter by expected protocol if specified
+        if expected_protocol and interactions:
+            interactions = [
+                i for i in interactions
+                if i.get("protocol", "").lower() == expected_protocol.lower()
+            ]
+
+        timestamps = [
+            i.get("timestamp") or i.get("time", "")
+            for i in interactions if i.get("timestamp") or i.get("time")
+        ]
+
+        return {
+            "tool": "oob_verify",
+            "action": action,
+            "verified": len(interactions) > 0,
+            "interactions": interactions,
+            "interaction_count": len(interactions),
+            "protocol": expected_protocol,
+            "timestamps": timestamps,
+        }
+
+    else:
+        return {"error": f"Unknown action: {action}. Use 'register', 'poll', or 'check'."}
