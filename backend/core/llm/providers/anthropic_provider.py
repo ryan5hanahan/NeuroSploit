@@ -106,7 +106,12 @@ class AnthropicProvider(LLMProvider):
                             "name": options.tool_choice,
                         }
 
-            response = self._client.messages.create(**params)
+            # Streaming is required when extended thinking is enabled
+            if options.extended_thinking:
+                with self._client.messages.stream(**params) as stream:
+                    response = stream.get_final_message()
+            else:
+                response = self._client.messages.create(**params)
             return response
 
         raw = await asyncio.to_thread(_call)
