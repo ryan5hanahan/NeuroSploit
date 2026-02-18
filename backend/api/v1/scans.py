@@ -204,6 +204,13 @@ async def create_scan(
     if scan_data.credential_sets:
         credential_sets_json = [cs.model_dump() for cs in scan_data.credential_sets]
 
+    # Merge governance config into scan.config if provided
+    scan_config = scan_data.config
+    if scan_data.governance:
+        gov_dict = scan_data.governance.model_dump(exclude_none=True)
+        if gov_dict:
+            scan_config = {**scan_config, "governance": gov_dict}
+
     # Create scan
     scan = Scan(
         name=scan_data.name or f"Scan {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -211,7 +218,7 @@ async def create_scan(
         recon_enabled=recon_enabled,
         custom_prompt=scan_data.custom_prompt,
         prompt_id=scan_data.prompt_id,
-        config=scan_data.config,
+        config=scan_config,
         auth_type=auth_type,
         auth_credentials=auth_credentials,
         custom_headers=scan_data.custom_headers,

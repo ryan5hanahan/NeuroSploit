@@ -433,7 +433,8 @@ class ScanService:
                             scan_id=scan_id,
                             log_callback=scanner_log,
                             timeout=15,
-                            max_depth=3
+                            max_depth=3,
+                            governance=governance
                         ) as scanner:
                             autonomous_results = await scanner.run_autonomous_scan(
                                 target_url=target.url,
@@ -642,7 +643,8 @@ class ScanService:
                             target=target.url,
                             log_callback=agent_log,
                             auth_headers=auth_headers,
-                            max_depth=5
+                            max_depth=5,
+                            governance=governance
                         ) as agent:
                             agent_report = await agent.run()
 

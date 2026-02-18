@@ -30,6 +30,13 @@ class CredentialSet(BaseModel):
     role: str = Field("user", description="user, admin, moderator")
 
 
+class GovernanceConfig(BaseModel):
+    """Governance configuration for scope and phase-action enforcement"""
+    mode: Optional[str] = Field(None, description="Governance mode: strict, warn, or off")
+    policy_overrides: Optional[dict] = Field(None, description="Per-phase override rules")
+    custom_classifications: Optional[dict] = Field(None, description="Custom action->category maps")
+
+
 class ScanCreate(BaseModel):
     """Schema for creating a new scan"""
     name: Optional[str] = Field(None, max_length=255, description="Scan name")
@@ -43,6 +50,7 @@ class ScanCreate(BaseModel):
     custom_headers: Optional[dict] = Field(None, description="Custom HTTP headers to include")
     tradecraft_ids: Optional[List[str]] = Field(None, description="TTP IDs to use for this scan")
     credential_sets: Optional[List[CredentialSet]] = Field(None, description="Multiple credential sets for differential access control testing")
+    governance: Optional[GovernanceConfig] = Field(None, description="Governance scope and phase-action enforcement config")
 
 
 class ScanUpdate(BaseModel):

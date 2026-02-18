@@ -179,12 +179,14 @@ class AutonomousScanner:
         scan_id: str,
         log_callback: Optional[Callable] = None,
         timeout: int = 15,
-        max_depth: int = 3
+        max_depth: int = 3,
+        governance: Optional[Any] = None
     ):
         self.scan_id = scan_id
         self.log_callback = log_callback or self._default_log
         self.timeout = timeout
         self.max_depth = max_depth
+        self.governance = governance
         self.discovered_endpoints: List[DiscoveredEndpoint] = []
         self.tested_urls: set = set()
         self.vulnerabilities: List[TestResult] = []
@@ -230,6 +232,21 @@ class AutonomousScanner:
         """
         await self.log("info", f"Starting autonomous scan on: {target_url}")
         await self.log("info", "This is an authorized penetration test.")
+
+        # Check URL scope via governance
+        if self.governance and not self.governance.is_url_in_scope(target_url):
+            await self.log("warning", f"Target URL out of scope: {target_url}")
+            return {
+                "target": target_url,
+                "started_at": datetime.utcnow().isoformat(),
+                "endpoints": [],
+                "vulnerabilities": [],
+                "parameters_found": [],
+                "directories_found": [],
+                "technologies": [],
+                "summary": {"endpoints_tested": 0, "vulnerabilities_found": 0, "critical": 0, "high": 0, "medium": 0},
+                "completed_at": datetime.utcnow().isoformat(),
+            }
 
         parsed = urlparse(target_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -692,40 +709,35 @@ class AutonomousScanner:
 
         url = endpoint.url
 
-        # Test XSS
-        xss_result = await self._test_xss(url)
-        if xss_result:
-            results.append(xss_result)
+        # Map test methods to their governance action names
+        vuln_tests = [
+            ("xss", self._test_xss),
+            ("sqli", self._test_sqli),
+            ("lfi", self._test_lfi),
+            ("command_injection", self._test_cmdi),
+            ("ssti", self._test_ssti),
+            ("open_redirect", self._test_open_redirect),
+        ]
 
-        # Test SQLi
-        sqli_result = await self._test_sqli(url)
-        if sqli_result:
-            results.append(sqli_result)
+        for action_name, test_fn in vuln_tests:
+            # Check governance before each test type
+            if self.governance:
+                decision = self.governance.check_action(action_name, {"endpoint": url})
+                if not decision.allowed:
+                    continue
 
-        # Test LFI
-        lfi_result = await self._test_lfi(url)
-        if lfi_result:
-            results.append(lfi_result)
-
-        # Test Command Injection
-        cmdi_result = await self._test_cmdi(url)
-        if cmdi_result:
-            results.append(cmdi_result)
-
-        # Test SSTI
-        ssti_result = await self._test_ssti(url)
-        if ssti_result:
-            results.append(ssti_result)
-
-        # Test Open Redirect
-        redirect_result = await self._test_open_redirect(url)
-        if redirect_result:
-            results.append(redirect_result)
+            test_result = await test_fn(url)
+            if test_result:
+                results.append(test_result)
 
         return results
 
     async def _inject_payload(self, url: str, payload: str) -> Optional[Dict]:
         """Inject a payload into URL parameters"""
+        # Check URL scope before injecting
+        if self.governance and not self.governance.is_url_in_scope(url):
+            return None
+
         try:
             if "?" in url:
                 base, query = url.split("?", 1)
