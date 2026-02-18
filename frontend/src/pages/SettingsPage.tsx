@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye, Zap, Lightbulb, Database, Activity, Bug } from 'lucide-react'
+import { Save, Shield, Trash2, RefreshCw, AlertTriangle, Brain, Router, Eye, Zap, Lightbulb, Database, Activity, Bug, DollarSign, ShieldCheck } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
@@ -33,6 +33,18 @@ interface Settings {
   model_fast: string
   model_balanced: string
   model_deep: string
+  // Cost tracking
+  cost_budget_per_scan: number
+  cost_warn_at_pct: number
+  enable_cost_tracking: boolean
+  // Security testing
+  enable_waf_evasion: boolean
+  waf_confidence_threshold: number
+  confidence_pivot_threshold: number
+  confidence_reject_threshold: number
+  // Scan tuning
+  default_timeout: number
+  max_requests_per_second: number
 }
 
 interface DbStats {
@@ -167,6 +179,18 @@ export default function SettingsPage() {
   const [enableTracing, setEnableTracing] = useState(false)
   const [enablePersistentMemory, setEnablePersistentMemory] = useState(true)
   const [enableBugbountyIntegration, setEnableBugbountyIntegration] = useState(false)
+  // Cost tracking
+  const [costBudgetPerScan, setCostBudgetPerScan] = useState('5.00')
+  const [costWarnAtPct, setCostWarnAtPct] = useState('80')
+  const [enableCostTracking, setEnableCostTracking] = useState(true)
+  // Security testing
+  const [enableWafEvasion, setEnableWafEvasion] = useState(true)
+  const [wafConfidenceThreshold, setWafConfidenceThreshold] = useState('0.7')
+  const [confidencePivotThreshold, setConfidencePivotThreshold] = useState('30')
+  const [confidenceRejectThreshold, setConfidenceRejectThreshold] = useState('40')
+  // Scan tuning
+  const [defaultTimeout, setDefaultTimeout] = useState('30')
+  const [maxRequestsPerSecond, setMaxRequestsPerSecond] = useState('10')
   const [isSaving, setIsSaving] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -210,6 +234,18 @@ export default function SettingsPage() {
         setEnablePersistentMemory(data.enable_persistent_memory ?? true)
         setEnableBugbountyIntegration(data.enable_bugbounty_integration ?? false)
         setMaxOutputTokens(data.max_output_tokens ? String(data.max_output_tokens) : '')
+        // Cost tracking
+        setCostBudgetPerScan(String(data.cost_budget_per_scan ?? 5.00))
+        setCostWarnAtPct(String(data.cost_warn_at_pct ?? 80))
+        setEnableCostTracking(data.enable_cost_tracking ?? true)
+        // Security testing
+        setEnableWafEvasion(data.enable_waf_evasion ?? true)
+        setWafConfidenceThreshold(String(data.waf_confidence_threshold ?? 0.7))
+        setConfidencePivotThreshold(String(data.confidence_pivot_threshold ?? 30))
+        setConfidenceRejectThreshold(String(data.confidence_reject_threshold ?? 40))
+        // Scan tuning
+        setDefaultTimeout(String(data.default_timeout ?? 30))
+        setMaxRequestsPerSecond(String(data.max_requests_per_second ?? 10))
         setAwsBedrockRegion(data.aws_bedrock_region || 'us-east-1')
         setAwsBedrockModel(data.aws_bedrock_model || '')
         const savedModel = data.llm_model || ''
@@ -268,7 +304,19 @@ export default function SettingsPage() {
           enable_tracing: enableTracing,
           enable_persistent_memory: enablePersistentMemory,
           enable_bugbounty_integration: enableBugbountyIntegration,
-          max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null
+          max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
+          // Cost tracking
+          cost_budget_per_scan: parseFloat(costBudgetPerScan),
+          cost_warn_at_pct: parseFloat(costWarnAtPct),
+          enable_cost_tracking: enableCostTracking,
+          // Security testing
+          enable_waf_evasion: enableWafEvasion,
+          waf_confidence_threshold: parseFloat(wafConfidenceThreshold),
+          confidence_pivot_threshold: parseInt(confidencePivotThreshold),
+          confidence_reject_threshold: parseInt(confidenceRejectThreshold),
+          // Scan tuning
+          default_timeout: parseInt(defaultTimeout),
+          max_requests_per_second: parseInt(maxRequestsPerSecond)
         })
       })
 
@@ -579,6 +627,54 @@ export default function SettingsPage() {
         </div>
       </Card>
 
+      {/* Cost & Budget */}
+      <Card title="Cost & Budget" subtitle="LLM cost tracking and budget limits">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 mb-2">
+            <DollarSign className="w-5 h-5 text-green-400" />
+            <p className="text-sm text-dark-400">
+              Track per-scan LLM costs and enforce budget limits to prevent runaway spending.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div>
+              <p className="font-medium text-white">Enable Cost Tracking</p>
+              <p className="text-sm text-dark-400">
+                Track token usage and estimated cost per scan
+              </p>
+            </div>
+            <ToggleSwitch enabled={enableCostTracking} onToggle={() => setEnableCostTracking(!enableCostTracking)} />
+          </div>
+
+          {enableCostTracking && (
+            <>
+              <Input
+                label="Budget per Scan ($)"
+                type="number"
+                min="0.50"
+                max="100"
+                step="0.50"
+                placeholder="5.00"
+                value={costBudgetPerScan}
+                onChange={(e) => setCostBudgetPerScan(e.target.value)}
+                helperText="Maximum USD spend per scan. Scan pauses if exceeded."
+              />
+              <Input
+                label="Warning Threshold (%)"
+                type="number"
+                min="10"
+                max="100"
+                placeholder="80"
+                value={costWarnAtPct}
+                onChange={(e) => setCostWarnAtPct(e.target.value)}
+                helperText="Emit a warning when this percentage of the budget is consumed."
+              />
+            </>
+          )}
+        </div>
+      </Card>
+
       {/* Advanced Features */}
       <Card title="Advanced Features" subtitle="Optional AI enhancement modules">
         <div className="space-y-3">
@@ -776,6 +872,84 @@ export default function SettingsPage() {
         </div>
       </Card>
 
+      {/* Security Testing */}
+      <Card title="Security Testing" subtitle="WAF evasion and confidence thresholds">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 mb-2">
+            <ShieldCheck className="w-5 h-5 text-blue-400" />
+            <p className="text-sm text-dark-400">
+              Configure WAF evasion behavior and confidence-based pivoting for smarter test selection.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div>
+              <p className="font-medium text-white">Enable WAF Evasion</p>
+              <p className="text-sm text-dark-400">
+                Auto-apply encoding and bypass techniques when WAF is detected
+              </p>
+            </div>
+            <ToggleSwitch enabled={enableWafEvasion} onToggle={() => setEnableWafEvasion(!enableWafEvasion)} />
+          </div>
+
+          <Input
+            label="WAF Confidence Threshold"
+            type="number"
+            min="0"
+            max="1"
+            step="0.1"
+            placeholder="0.7"
+            value={wafConfidenceThreshold}
+            onChange={(e) => setWafConfidenceThreshold(e.target.value)}
+            helperText="Minimum detection confidence (0.0-1.0) before applying WAF evasion techniques"
+          />
+
+          <Input
+            label="Confidence Pivot Threshold"
+            type="number"
+            min="0"
+            max="100"
+            placeholder="30"
+            value={confidencePivotThreshold}
+            onChange={(e) => setConfidencePivotThreshold(e.target.value)}
+            helperText="Pivot away from a vuln type when avg confidence drops below this (0-100)"
+          />
+
+          <Input
+            label="Confidence Reject Threshold"
+            type="number"
+            min="0"
+            max="100"
+            placeholder="40"
+            value={confidenceRejectThreshold}
+            onChange={(e) => setConfidenceRejectThreshold(e.target.value)}
+            helperText="Reject a vuln type after 3+ failures when avg confidence is below this (0-100)"
+          />
+
+          <Input
+            label="Default Timeout (seconds)"
+            type="number"
+            min="5"
+            max="120"
+            placeholder="30"
+            value={defaultTimeout}
+            onChange={(e) => setDefaultTimeout(e.target.value)}
+            helperText="Default HTTP request timeout in seconds"
+          />
+
+          <Input
+            label="Max Requests per Second"
+            type="number"
+            min="1"
+            max="100"
+            placeholder="10"
+            value={maxRequestsPerSecond}
+            onChange={(e) => setMaxRequestsPerSecond(e.target.value)}
+            helperText="Rate limit: maximum requests per second per target"
+          />
+        </div>
+      </Card>
+
       {/* Database Management */}
       <Card title="Database Management" subtitle="Manage stored data">
         <div className="space-y-4">
@@ -859,9 +1033,10 @@ export default function SettingsPage() {
           </div>
           <div className="text-sm text-dark-400 space-y-1">
             <p>Dynamic vulnerability testing driven by AI prompts</p>
-            <p>50+ vulnerability types across 10 categories</p>
+            <p>100 vulnerability types across 10 categories</p>
+            <p>665 payloads across 114 libraries</p>
             <p>Multi-provider LLM support (Claude, GPT, OpenRouter, Ollama, AWS Bedrock)</p>
-            <p>Task-type model routing and knowledge augmentation</p>
+            <p>3-tier model routing with cost tracking</p>
             <p>Playwright browser validation with screenshot capture</p>
             <p>OHVR-structured PoC reporting</p>
             <p>Scheduled recurring scans with cron/interval triggers</p>
