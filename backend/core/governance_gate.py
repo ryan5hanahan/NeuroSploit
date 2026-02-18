@@ -354,6 +354,8 @@ class GovernanceViolation:
     context: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.utcnow)
     disposition: str = "blocked"  # "blocked" | "warned"
+    layer: str = "phase"  # "scope" | "phase"
+    detail: str = ""  # free-text detail (used by scope layer)
 
     def to_dict(self) -> dict:
         return {
@@ -365,6 +367,8 @@ class GovernanceViolation:
             "context": self.context,
             "timestamp": self.timestamp.isoformat(),
             "disposition": self.disposition,
+            "layer": self.layer,
+            "detail": self.detail,
         }
 
 
