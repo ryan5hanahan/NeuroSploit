@@ -37,6 +37,7 @@ from backend.core.waf_detector import WAFDetector
 from backend.core.strategy_adapter import StrategyAdapter
 from backend.core.chain_engine import ChainEngine
 from backend.core.auth_manager import AuthManager
+from backend.core.llm import UnifiedLLMClient, LLMConnectionError as UnifiedLLMConnectionError
 
 try:
     from core.browser_validator import BrowserValidator, embed_screenshot, HAS_PLAYWRIGHT
@@ -52,29 +53,7 @@ try:
 except ImportError:
     HAS_RECON_INTEGRATION = False
 
-# Try to import anthropic for Claude API
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    anthropic = None
-
-# Try to import openai
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    openai = None
-
-# Try to import boto3 for AWS Bedrock
-try:
-    import boto3
-    BOTO3_AVAILABLE = True
-except ImportError:
-    BOTO3_AVAILABLE = False
-    boto3 = None
+# LLM provider imports are now handled by backend.core.llm.providers
 
 # Security sandbox (Docker-based real tools)
 try:
@@ -187,345 +166,10 @@ def _get_endpoint_method(ep) -> str:
     return "GET"
 
 
-class LLMClient:
-    """Unified LLM client for Claude, OpenAI, Ollama, and Gemini"""
-
-    # Ollama and LM Studio endpoints
-    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    LMSTUDIO_URL = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
-    GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
-
-    def __init__(self):
-        self.anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-        self.openai_key = os.getenv("OPENAI_API_KEY", "")
-        self.google_key = os.getenv("GOOGLE_API_KEY", "")
-        self.client = None
-        self.provider = None
-        self.error_message = None
-        self.connection_tested = False
-
-        # Preferred provider from settings UI (DEFAULT_LLM_PROVIDER)
-        self.preferred_provider = os.getenv("DEFAULT_LLM_PROVIDER", "").strip().lower()
-        # Global model override from settings UI (DEFAULT_LLM_MODEL)
-        global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
-
-        # Per-provider model: global override takes precedence, then provider-specific env, then hardcoded default
-        self.claude_model = global_model or os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-        self.openai_model = global_model or os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
-
-        # MAX_OUTPUT_TOKENS from settings UI
-        _max_tok = os.getenv("MAX_OUTPUT_TOKENS", "").strip()
-        self.default_max_tokens = int(_max_tok) if _max_tok.isdigit() else 4096
-
-        # Validate keys are not placeholder values
-        if self.anthropic_key in ["", "your-anthropic-api-key"]:
-            self.anthropic_key = None
-        if self.openai_key in ["", "your-openai-api-key"]:
-            self.openai_key = None
-        if self.google_key in ["", "your-google-api-key"]:
-            self.google_key = None
-
-        # Initialize provider — preferred first, then fallback order
-        self._initialize_provider()
-
-    def _initialize_provider(self):
-        """Initialize LLM provider, respecting DEFAULT_LLM_PROVIDER setting."""
-
-        # Build ordered list of providers to try.
-        # If user chose a preferred provider in settings, try it first.
-        default_order = ["claude", "openai", "gemini", "bedrock", "ollama", "lmstudio"]
-        if self.preferred_provider and self.preferred_provider in default_order:
-            order = [self.preferred_provider] + [p for p in default_order if p != self.preferred_provider]
-        else:
-            order = default_order
-
-        for provider in order:
-            if self._try_init_provider(provider):
-                return
-
-        # No provider available
-        self._set_no_provider_error()
-
-    def _try_init_provider(self, name: str) -> bool:
-        """Try to initialize a single provider. Returns True on success."""
-        if name == "claude":
-            if ANTHROPIC_AVAILABLE and self.anthropic_key:
-                try:
-                    self.client = anthropic.Anthropic(api_key=self.anthropic_key)
-                    self.provider = "claude"
-                    print(f"[LLM] Claude API initialized (model={self.claude_model})")
-                    return True
-                except Exception as e:
-                    self.error_message = f"Claude init error: {e}"
-                    print(f"[LLM] Claude initialization failed: {e}")
-
-        elif name == "openai":
-            if OPENAI_AVAILABLE and self.openai_key:
-                try:
-                    self.client = openai.OpenAI(api_key=self.openai_key)
-                    self.provider = "openai"
-                    print(f"[LLM] OpenAI API initialized (model={self.openai_model})")
-                    return True
-                except Exception as e:
-                    self.error_message = f"OpenAI init error: {e}"
-                    print(f"[LLM] OpenAI initialization failed: {e}")
-
-        elif name == "gemini":
-            if self.google_key:
-                self.client = "gemini"
-                self.provider = "gemini"
-                print("[LLM] Gemini API initialized")
-                return True
-
-        elif name == "bedrock":
-            if BOTO3_AVAILABLE:
-                try:
-                    bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
-                    bedrock_client = boto3.client('bedrock-runtime', region_name=bedrock_region)
-                    sts = boto3.client('sts', region_name=bedrock_region)
-                    sts.get_caller_identity()
-                    self.client = bedrock_client
-                    self.provider = "bedrock"
-                    global_model = os.getenv("DEFAULT_LLM_MODEL", "").strip()
-                    self.bedrock_model = global_model or os.getenv("AWS_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-                    self.bedrock_region = bedrock_region
-                    print(f"[LLM] AWS Bedrock initialized (region={bedrock_region}, model={self.bedrock_model})")
-                    return True
-                except Exception as e:
-                    print(f"[LLM] AWS Bedrock initialization failed: {e}")
-
-        elif name == "ollama":
-            if self._check_ollama():
-                self.client = "ollama"
-                self.provider = "ollama"
-                print(f"[LLM] Ollama initialized with model: {self.ollama_model}")
-                return True
-
-        elif name == "lmstudio":
-            if self._check_lmstudio():
-                self.client = "lmstudio"
-                self.provider = "lmstudio"
-                print("[LLM] LM Studio initialized")
-                return True
-
-        return False
-
-    def _check_ollama(self) -> bool:
-        """Check if Ollama is running locally"""
-        try:
-            import requests
-            response = requests.get(f"{self.OLLAMA_URL}/api/tags", timeout=2)
-            return response.status_code == 200
-        except Exception:
-            return False
-
-    def _check_lmstudio(self) -> bool:
-        """Check if LM Studio is running locally"""
-        try:
-            import requests
-            response = requests.get(f"{self.LMSTUDIO_URL}/v1/models", timeout=2)
-            return response.status_code == 200
-        except Exception:
-            return False
-
-    def _set_no_provider_error(self):
-        """Set appropriate error message when no provider is available"""
-        errors = []
-        if not ANTHROPIC_AVAILABLE and not OPENAI_AVAILABLE:
-            errors.append("LLM libraries not installed (run: pip install anthropic openai)")
-        if not self.anthropic_key and not self.openai_key and not self.google_key:
-            errors.append("No API keys configured")
-        if not self._check_ollama():
-            errors.append("Ollama not running locally")
-        if not self._check_lmstudio():
-            errors.append("LM Studio not running locally")
-
-        self.error_message = "No LLM provider available. " + "; ".join(errors)
-        print(f"[LLM] WARNING: {self.error_message}")
-
-    def is_available(self) -> bool:
-        return self.client is not None
-
-    def get_status(self) -> dict:
-        """Get LLM status for debugging"""
-        return {
-            "available": self.is_available(),
-            "provider": self.provider,
-            "error": self.error_message,
-            "anthropic_lib": ANTHROPIC_AVAILABLE,
-            "openai_lib": OPENAI_AVAILABLE,
-            "boto3_available": BOTO3_AVAILABLE,
-            "ollama_available": self._check_ollama(),
-            "lmstudio_available": self._check_lmstudio(),
-            "has_google_key": bool(self.google_key)
-        }
-
-    async def test_connection(self) -> Tuple[bool, str]:
-        """Test if the API connection is working"""
-        if not self.client:
-            return False, self.error_message or "No LLM client configured"
-
-        try:
-            # Simple test prompt
-            result = await self.generate("Say 'OK' if you can hear me.", max_tokens=10)
-            if result:
-                self.connection_tested = True
-                return True, f"Connected to {self.provider}"
-            return False, f"Empty response from {self.provider}"
-        except Exception as e:
-            return False, f"Connection test failed for {self.provider}: {str(e)}"
-
-    async def generate(self, prompt: str, system: str = "", max_tokens: int = 0) -> str:
-        """Generate response from LLM. max_tokens=0 means use self.default_max_tokens."""
-        if max_tokens <= 0:
-            max_tokens = self.default_max_tokens
-        if not self.client:
-            raise LLMConnectionError(self.error_message or "No LLM provider available")
-
-        default_system = "You are an expert penetration tester and security researcher. Provide accurate, technical, and actionable security analysis. Be precise and avoid false positives."
-
-        try:
-            if self.provider == "claude":
-                return await self._generate_claude(prompt, system or default_system, max_tokens)
-
-            elif self.provider == "openai":
-                return await self._generate_openai(prompt, system or default_system, max_tokens)
-
-            elif self.provider == "gemini":
-                return await self._generate_gemini(prompt, system or default_system, max_tokens)
-
-            elif self.provider == "bedrock":
-                return await self._generate_bedrock(prompt, system or default_system, max_tokens)
-
-            elif self.provider == "ollama":
-                return await self._generate_ollama(prompt, system or default_system)
-
-            elif self.provider == "lmstudio":
-                return await self._generate_lmstudio(prompt, system or default_system, max_tokens)
-
-        except LLMConnectionError:
-            raise
-        except Exception as e:
-            error_msg = str(e)
-            print(f"[LLM] Error from {self.provider}: {error_msg}")
-            raise LLMConnectionError(f"API call failed ({self.provider}): {error_msg}")
-
-        return ""
-
-    async def _generate_claude(self, prompt: str, system: str, max_tokens: int) -> str:
-        """Generate using Anthropic Claude API (runs sync SDK call in thread)"""
-        def _call():
-            message = self.client.messages.create(
-                model=self.claude_model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return message.content[0].text
-        return await asyncio.to_thread(_call)
-
-    async def _generate_openai(self, prompt: str, system: str, max_tokens: int) -> str:
-        """Generate using OpenAI API (runs sync SDK call in thread)"""
-        def _call():
-            response = self.client.chat.completions.create(
-                model=self.openai_model,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            return response.choices[0].message.content
-        return await asyncio.to_thread(_call)
-
-    async def _generate_gemini(self, prompt: str, system: str, max_tokens: int) -> str:
-        """Generate using Google Gemini API"""
-        import aiohttp
-
-        url = f"{self.GEMINI_URL}/models/gemini-pro:generateContent?key={self.google_key}"
-        payload = {
-            "contents": [{"parts": [{"text": f"{system}\n\n{prompt}"}]}],
-            "generationConfig": {"maxOutputTokens": max_tokens}
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise LLMConnectionError(f"Gemini API error ({response.status}): {error_text}")
-                data = await response.json()
-                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-
-    async def _generate_ollama(self, prompt: str, system: str) -> str:
-        """Generate using local Ollama"""
-        import aiohttp
-
-        url = f"{self.OLLAMA_URL}/api/generate"
-        payload = {
-            "model": self.ollama_model,
-            "prompt": prompt,
-            "system": system,
-            "stream": False
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=120)) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise LLMConnectionError(f"Ollama error ({response.status}): {error_text}")
-                data = await response.json()
-                return data.get("response", "")
-
-    async def _generate_lmstudio(self, prompt: str, system: str, max_tokens: int) -> str:
-        """Generate using LM Studio (OpenAI-compatible)"""
-        import aiohttp
-
-        url = f"{self.LMSTUDIO_URL}/v1/chat/completions"
-        payload = {
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": max_tokens,
-            "stream": False
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=120)) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise LLMConnectionError(f"LM Studio error ({response.status}): {error_text}")
-                data = await response.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-
-    async def _generate_bedrock(self, prompt: str, system: str, max_tokens: int) -> str:
-        """Generate using AWS Bedrock Converse API (runs boto3 sync call in thread)"""
-
-        def _call_bedrock():
-            converse_params = {
-                "modelId": self.bedrock_model,
-                "messages": [{"role": "user", "content": [{"text": prompt}]}],
-                "inferenceConfig": {
-                    "maxTokens": max_tokens,
-                    "temperature": 0.7
-                }
-            }
-            if system:
-                converse_params["system"] = [{"text": system}]
-
-            response = self.client.converse(**converse_params)
-            return response["output"]["message"]["content"][0]["text"]
-
-        try:
-            return await asyncio.to_thread(_call_bedrock)
-        except Exception as e:
-            raise LLMConnectionError(f"Bedrock API error: {e}")
-
-
-class LLMConnectionError(Exception):
-    """Exception raised when LLM connection fails"""
-    pass
+# Legacy aliases — LLMClient is replaced by UnifiedLLMClient from backend.core.llm
+# LLMConnectionError is now defined in backend.core.llm.client
+LLMClient = UnifiedLLMClient  # Backward compat alias
+LLMConnectionError = UnifiedLLMConnectionError  # Backward compat alias
 
 
 DEFAULT_ASSESSMENT_PROMPT = """You are NeuroSploit, an elite autonomous penetration testing AI agent.
@@ -723,7 +367,7 @@ class AutonomousAgent:
         self._skip_to_phase: Optional[str] = None  # Phase skip target
 
         self.session: Optional[aiohttp.ClientSession] = None
-        self.llm = LLMClient()
+        self.llm = self._init_unified_llm()
 
         # VulnEngine integration (100 types, 428 payloads, 100 testers)
         self.vuln_registry = VulnerabilityRegistry()
@@ -900,6 +544,12 @@ class AutonomousAgent:
         except Exception:
             return {}
 
+    @staticmethod
+    def _init_unified_llm() -> 'UnifiedLLMClient':
+        """Initialize the UnifiedLLMClient with config-driven 3-tier routing."""
+        config = AutonomousAgent._load_config()
+        return UnifiedLLMClient(config)
+
     async def add_custom_prompt(self, prompt: str):
         """Add a custom prompt to be processed"""
         self.custom_prompts.append(prompt)
@@ -977,8 +627,8 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
         system_prompt += "\n\n" + get_system_prompt("testing")
 
         try:
-            response = await self.llm.generate(prompt, system=system_prompt)
-            if not response:
+            action_data = await self.llm.generate_json(prompt, system=system_prompt, task_type="custom_prompt")
+            if not action_data:
                 await self.log_llm("warning", "[AI] No response from LLM")
                 return
 
@@ -986,9 +636,7 @@ Always set action to "test_cve" or "test_endpoint" when the user asks to test so
 
             import json
             try:
-                json_match = re.search(r'\{[\s\S]*\}', response)
-                if json_match:
-                    action_data = json.loads(json_match.group())
+                if action_data:
                     action = action_data.get("action", "info")
                     targets = action_data.get("targets", [])
                     vuln_types = action_data.get("vuln_types", [])
@@ -1865,19 +1513,16 @@ Be creative and thorough - think like a real penetration tester."""
         await self.log("info", "  Phase 1: AI generating test strategy...")
 
         try:
-            strategy_response = await self.llm.generate(
+            strategy = await self.llm.generate_json(
                 strategy_prompt,
-                get_system_prompt("strategy")
+                get_system_prompt("strategy"),
+                task_type="test_strategy",
             )
 
-            # Extract JSON from response
-            match = re.search(r'\{[\s\S]*\}', strategy_response)
-            if not match:
+            if not strategy:
                 await self.log("warning", "  AI did not return valid JSON strategy, using fallback")
                 await self._ai_test_fallback(user_prompt)
                 return
-
-            strategy = json.loads(match.group())
 
             vuln_type = strategy.get("vulnerability_type", user_prompt)
             cwe_id = strategy.get("cwe_id", "")
@@ -1937,16 +1582,13 @@ Respond in JSON:
     "recommendations": ["list of remediation steps"]
 }}"""
 
-            analysis_response = await self.llm.generate(
+            analysis = await self.llm.generate_json(
                 analysis_prompt,
-                get_system_prompt("confirmation")
+                get_system_prompt("confirmation"),
+                task_type="test_analysis",
             )
 
-            # Parse analysis
-            analysis_match = re.search(r'\{[\s\S]*\}', analysis_response)
-            if analysis_match:
-                analysis = json.loads(analysis_match.group())
-
+            if analysis:
                 for finding_data in analysis.get("findings", []):
                     if finding_data.get("is_vulnerable") and finding_data.get("confidence") in ["high", "medium"]:
                         evidence = finding_data.get("evidence", "")
@@ -2433,7 +2075,7 @@ VULNERABLE: <evidence>
 or
 NOT_VULNERABLE: <reason>"""
 
-                result = await self.llm.generate(analysis_prompt, get_system_prompt("verification"))
+                result = await self.llm.generate(analysis_prompt, get_system_prompt("verification"), task_type="response_quality")
                 if "VULNERABLE:" in result.upper():
                     evidence = result.split(":", 1)[1].strip() if ":" in result else result
 
@@ -3262,28 +2904,15 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         )
 
         try:
-            response = await self.llm.generate(user_prompt, system=system_prompt)
+            analysis = await self.llm.generate_json(user_prompt, system=system_prompt, task_type="recon_analysis")
 
-            # Parse JSON from response (handle markdown code fences)
-            cleaned = response.strip()
-            if cleaned.startswith("```"):
-                # Strip markdown code fences
-                lines = cleaned.split("\n")
-                lines = [l for l in lines if not l.strip().startswith("```")]
-                cleaned = "\n".join(lines)
-
-            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-            if json_match:
-                analysis = json.loads(json_match.group())
+            if analysis:
                 await self.log("info", "[RECON] AI analysis complete")
                 return analysis
             else:
-                await self.log("warning", "[RECON] AI analysis returned non-JSON, storing as text")
-                return {"raw_analysis": response, "parse_error": True}
+                await self.log("warning", "[RECON] AI analysis returned non-JSON")
+                return {"raw_analysis": "parse_error", "parse_error": True}
 
-        except json.JSONDecodeError as e:
-            await self.log("warning", f"[RECON] AI analysis JSON parse error: {e}")
-            return {"raw_analysis": response if 'response' in locals() else "", "parse_error": True}
         except Exception as e:
             await self.log("warning", f"[RECON] AI analysis failed: {e}")
             return None
@@ -4419,14 +4048,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                         f"What are the 5-10 most likely vulnerability types to test first?\n"
                         f"Respond ONLY with JSON: {{\"test_types\": [\"type1\", \"type2\", ...]}}"
                     )
-                    ai_resp = await self.llm.generate(
+                    data = await self.llm.generate_json(
                         junior_prompt,
-                        system=get_system_prompt("strategy")
+                        system=get_system_prompt("strategy"),
+                        task_type="junior_tester",
                     )
-                    start_idx = ai_resp.index('{')
-                    end_idx = ai_resp.rindex('}') + 1
-                    data = json.loads(ai_resp[start_idx:end_idx])
-                    ai_types = [t for t in data.get("test_types", [])
+                    ai_types = [t for t in (data or {}).get("test_types", [])
                                 if t in self.VULN_TYPE_MAP]
                     if ai_types:
                         priority_types = list(dict.fromkeys(ai_types + priority_types))
@@ -4640,19 +4267,18 @@ Respond ONLY with a JSON array:
 [{{"tool": "tool_name", "args": "...", "reason": "brief reason"}}]"""
 
         try:
-            resp = await self.llm.generate(
+            decisions = await self.llm.generate_json(
                 prompt,
-                system=get_system_prompt("strategy")
+                system=get_system_prompt("strategy"),
+                task_type="tool_selection",
+                array=True,
             )
-            start = resp.index('[')
-            end = resp.rindex(']') + 1
-            decisions = json.loads(resp[start:end])
             # Validate tool names against allowed set
             allowed = {"nmap", "httpx", "subfinder", "katana", "dalfox", "nikto",
                        "sqlmap", "ffuf", "gobuster", "dnsx", "whatweb", "wafw00f", "arjun",
                        "screenshot_capture", "technology_detect", "dns_lookup",
                        "execute_cvemap", "execute_tlsx", "execute_interactsh"}
-            validated = [d for d in decisions
+            validated = [d for d in (decisions or [])
                          if isinstance(d, dict) and d.get("tool") in allowed]
             return validated[:5]
         except Exception as e:
@@ -5029,11 +4655,10 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             if self.governance:
                 prompt = self.governance.constrain_analysis_prompt(prompt)
 
-            response = await self.llm.generate(prompt,
-                get_system_prompt("strategy"))
-            match = re.search(r'\{.*\}', response, re.DOTALL)
-            if match:
-                plan = json.loads(match.group())
+            plan = await self.llm.generate_json(prompt,
+                get_system_prompt("strategy"),
+                task_type="attack_surface")
+            if plan:
                 # Governance: filter AI output at the data level
                 if self.governance:
                     plan = self.governance.scope_attack_plan(plan)
@@ -5443,6 +5068,13 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                     # Strategy: skip vuln types with diminishing returns on this endpoint
                     if self.strategy and not self.strategy.should_test_type(vuln_type, url):
                         continue
+
+                    # Strategy: pivot away from low-confidence vuln types
+                    if self.strategy:
+                        should_pivot, pivot_reason = self.strategy.should_pivot_approach(vuln_type)
+                        if should_pivot:
+                            logger.debug(f"Pivoting away from {vuln_type}: {pivot_reason}")
+                            continue
 
                     finding = await self._test_vulnerability_type(
                         url,
@@ -6105,7 +5737,8 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                             f"Did the submission succeed? If not, what's wrong? "
                             f"Look for error messages, missing fields, validation failures. "
                             f"Reply in 1-2 sentences.",
-                            get_system_prompt("interpretation")
+                            get_system_prompt("interpretation"),
+                            task_type="form_analysis",
                         )
                         await self.log("info", f"    [AI] Form analysis: {ai_hint[:150]}")
                     return None  # Don't waste time if form doesn't store
@@ -6728,18 +6361,17 @@ Respond with ONLY a JSON array of payload strings:
 ["payload1", "payload2", ...]"""
 
         try:
-            response = await self.llm.generate(
+            payloads = await self.llm.generate_json(
                 prompt,
-                get_system_prompt("testing")
+                get_system_prompt("testing"),
+                task_type="xss_payloads",
+                array=True,
             )
 
-            match = re.search(r'\[[\s\S]*?\]', response)
-            if match:
-                payloads = json.loads(match.group())
-                if isinstance(payloads, list):
-                    payloads = [p for p in payloads if isinstance(p, str) and len(p) > 0]
-                    await self.log("info", f"    [AI] Generated {len(payloads)} custom payloads")
-                    return payloads[:max_payloads]
+            if payloads and isinstance(payloads, list):
+                payloads = [p for p in payloads if isinstance(p, str) and len(p) > 0]
+                await self.log("info", f"    [AI] Generated {len(payloads)} custom payloads")
+                return payloads[:max_payloads]
         except Exception as e:
             await self.log("debug", f"    [AI] Payload generation failed: {e}")
 
@@ -7183,7 +6815,7 @@ Respond with exactly one of:
 
         try:
             system = get_prompt_for_vuln_type(vuln_type, "confirmation")
-            ai_response = await self.llm.generate(prompt, system)
+            ai_response = await self.llm.generate(prompt, system, task_type="confirm_finding")
 
             if "CONFIRMED" not in ai_response.upper():
                 return False
@@ -7440,7 +7072,7 @@ Response excerpt (first 1000 chars):
 Answer in 1-2 sentences: Was the payload reflected? Filtered? Blocked by WAF? Ignored? What happened?"""
 
             system = get_system_prompt("interpretation")
-            result = await self.llm.generate(prompt, system)
+            result = await self.llm.generate(prompt, system, task_type="interpret_response")
             return result.strip()[:300] if result else None
         except Exception:
             return None
@@ -7468,18 +7100,7 @@ Respond in this exact JSON format:
 {{"effective": true/false, "impact_level": "critical/high/medium/low", "exploitation_notes": "brief notes", "false_positive_risk": "low/medium/high", "additional_steps": ["step1", "step2"]}}"""
 
             system = get_system_prompt("confirmation")
-            result = await self.llm.generate(prompt, system)
-            if not result:
-                return None
-
-            # Extract JSON from response
-            import json as _json
-            # Try to find JSON in the response
-            start = result.find('{')
-            end = result.rfind('}')
-            if start >= 0 and end > start:
-                return _json.loads(result[start:end + 1])
-            return None
+            return await self.llm.generate_json(prompt, system, task_type="validate_exploitation")
         except Exception:
             return None
 
@@ -7507,19 +7128,12 @@ Respond with ONLY a JSON array of vulnerability type strings to test next:
 ["type1", "type2", ...]"""
 
             system = get_system_prompt("strategy")
-            result = await self.llm.generate(prompt, system)
-            if not result:
+            suggestions = await self.llm.generate_json(prompt, system, task_type="suggest_tests", array=True)
+            if not suggestions:
                 return []
-
-            import json as _json
-            start = result.find('[')
-            end = result.rfind(']')
-            if start >= 0 and end > start:
-                suggestions = _json.loads(result[start:end + 1])
-                # Validate against known types
-                valid = [s for s in suggestions if isinstance(s, str) and s in self.VULN_TYPE_MAP]
-                return valid[:5]
-            return []
+            # Validate against known types
+            valid = [s for s in suggestions if isinstance(s, str) and s in self.VULN_TYPE_MAP]
+            return valid[:5]
         except Exception:
             return []
 
@@ -7888,10 +7502,8 @@ Respond in JSON format:
 
         try:
             system = get_system_prompt("reporting")
-            response = await self.llm.generate(prompt, system)
-            match = re.search(r'\{.*\}', response, re.DOTALL)
-            if match:
-                return json.loads(match.group())
+            result = await self.llm.generate_json(prompt, system, task_type="enhance_finding")
+            return result or {}
         except Exception as e:
             await self.log("debug", f"AI enhance error: {e}")
 
@@ -7999,10 +7611,9 @@ Respond with your execution plan in JSON format:
 {{"steps": ["action1", "action2", ...]}}"""
 
         try:
-            response = await self.llm.generate(plan_prompt, get_system_prompt("strategy"))
-            match = re.search(r'\{.*\}', response, re.DOTALL)
-            if match:
-                return json.loads(match.group())
+            plan = await self.llm.generate_json(plan_prompt, get_system_prompt("strategy"), task_type="create_plan")
+            if plan:
+                return plan
         except Exception:
             pass
 
@@ -8178,7 +7789,8 @@ Provide your analysis:"""
 
         try:
             return await self.llm.generate(prompt,
-                get_system_prompt("reporting"))
+                get_system_prompt("reporting"),
+                task_type="passive_analysis")
         except Exception:
             return "Analysis failed"
 
@@ -8470,7 +8082,8 @@ Write in a professional, non-technical tone suitable for C-level executives and 
 
         try:
             return await self.llm.generate(prompt,
-                get_system_prompt("reporting"))
+                get_system_prompt("reporting"),
+                task_type="executive_summary")
         except Exception:
             return "Assessment completed. Review findings for details."
 

@@ -193,6 +193,35 @@ RULE: If your confidence in a finding is below 90%, be transparent about it.
 Professional pentesters mark uncertain findings for manual review."""
 
 
+PROMPT_DECISION_CONFIDENCE = """## DECISION CONFIDENCE FRAMEWORK
+
+Apply a cognitive loop for every test decision: KNOW -> THINK -> TEST -> VALIDATE
+
+### Confidence Thresholds
+- **>75% confidence**: Proceed to exploit/confirm the vulnerability
+- **40-75% confidence**: Gather more evidence before deciding (test more payloads, contexts)
+- **<40% confidence**: Pivot to a different vulnerability type or approach
+
+### Confidence Deltas (adjust running confidence after each test)
+- **+20%**: Test result confirms hypothesis (e.g., boolean difference matches, time delay proportional)
+- **-30%**: Test result refutes hypothesis (e.g., same response for attack and benign)
+- **-10%**: Test result is ambiguous (e.g., inconsistent responses, network jitter)
+
+### Adaptation Triggers
+- **Confidence < 40% after 3+ tests**: PIVOT to a different vulnerability type on this endpoint
+- **Confidence < 30% after 5+ tests**: SWITCH to a completely different vulnerability category
+- **3+ consecutive failures with 0 confirmations**: FORCE PIVOT regardless of confidence
+
+### Cognitive Loop
+1. **KNOW**: What evidence do I have? What is my current confidence?
+2. **THINK**: What is the most efficient next test to move confidence decisively up or down?
+3. **TEST**: Execute the test, record the exact response evidence
+4. **VALIDATE**: Apply confidence delta. If threshold crossed, take corresponding action.
+
+RULE: Never continue testing the same type after 3+ failures with <40% confidence.
+Time spent on unproductive paths is time stolen from productive ones."""
+
+
 PROMPT_ACCESS_CONTROL_INTELLIGENCE = """## ACCESS CONTROL INTELLIGENCE (BOLA/BFLA/IDOR)
 
 HTTP status codes (200, 403, 401) are NOT sufficient for access control testing.
@@ -345,6 +374,12 @@ PROMPT_CATALOG: Dict[str, Dict] = {
         "content": PROMPT_ACCESS_CONTROL_INTELLIGENCE,
         "contexts": ["testing", "verification", "confirmation"],
     },
+    "decision_confidence": {
+        "id": "decision_confidence",
+        "title": "Decision Confidence Framework",
+        "content": PROMPT_DECISION_CONFIDENCE,
+        "contexts": ["testing", "strategy", "verification"],
+    },
 }
 
 
@@ -361,6 +396,7 @@ CONTEXT_PROMPTS: Dict[str, List[str]] = {
         "negative_controls",
         "proof_of_execution",
         "multi_phase_tests",
+        "decision_confidence",
         "operational_humility",
     ],
     # Verification: when verifying if a signal is a real vulnerability
@@ -371,6 +407,7 @@ CONTEXT_PROMPTS: Dict[str, List[str]] = {
         "think_like_pentester",
         "proof_of_execution",
         "frontend_backend_correlation",
+        "decision_confidence",
         "operational_humility",
     ],
     # Confirmation: AI confirm/reject decision for a finding
@@ -391,6 +428,7 @@ CONTEXT_PROMPTS: Dict[str, List[str]] = {
         "anti_hallucination",
         "think_like_pentester",
         "multi_phase_tests",
+        "decision_confidence",
         "anti_severity_inflation",
         "operational_humility",
     ],
@@ -457,6 +495,67 @@ def get_system_prompt(context: str, extra_prompts: Optional[List[str]] = None) -
         "Follow ALL directives below strictly — violations produce invalid findings.\n"
     ]
 
+    for pid in prompt_ids:
+        entry = PROMPT_CATALOG.get(pid)
+        if entry:
+            parts.append(entry["content"])
+
+    return "\n\n".join(parts)
+
+
+def get_tier_prompt(context: str, tier: str, extra_prompts: Optional[List[str]] = None) -> str:
+    """Build a tier-aware system prompt.
+
+    This is a convenience wrapper that delegates to the PromptComposer
+    in the unified LLM layer for fast/balanced tiers, and falls through
+    to the full prompt set for the deep tier.
+
+    Args:
+        context: Task context (testing, verification, confirmation, etc.)
+        tier: One of "fast", "balanced", "deep"
+        extra_prompts: Optional additional prompt IDs
+
+    Returns:
+        Combined system prompt string optimized for the given tier.
+    """
+    if tier == "deep":
+        return get_system_prompt(context, extra_prompts=extra_prompts)
+
+    # Fast and balanced tiers use reduced prompt sets
+    tier_prompt_ids = {
+        "fast": ["anti_hallucination", "operational_humility"],
+        "balanced": {
+            "testing": ["anti_hallucination", "anti_scanner", "proof_of_execution", "operational_humility"],
+            "verification": ["anti_hallucination", "anti_scanner", "proof_of_execution", "frontend_backend_correlation", "operational_humility"],
+            "confirmation": ["anti_hallucination", "anti_scanner", "proof_of_execution", "confidence_score", "operational_humility"],
+            "strategy": ["anti_hallucination", "think_like_pentester", "anti_severity_inflation", "operational_humility"],
+            "reporting": ["anti_hallucination", "think_like_pentester", "anti_severity_inflation", "operational_humility"],
+            "interpretation": ["anti_hallucination", "anti_scanner", "operational_humility"],
+            "recon_analysis": ["anti_hallucination", "think_like_pentester", "operational_humility"],
+        },
+    }
+
+    if tier == "fast":
+        prompt_ids = list(tier_prompt_ids["fast"])
+    else:
+        balanced_map = tier_prompt_ids.get("balanced", {})
+        prompt_ids = list(balanced_map.get(context, balanced_map.get("testing", ["anti_hallucination", "operational_humility"])))
+
+    if extra_prompts:
+        seen = set(prompt_ids)
+        for pid in extra_prompts:
+            if pid not in seen:
+                prompt_ids.append(pid)
+                seen.add(pid)
+
+    preamble = (
+        "You are a security analysis assistant. Be concise. Follow ALL directives below.\n"
+        if tier == "fast" else
+        "You are a senior penetration tester performing real security assessments. "
+        "Follow ALL directives below strictly.\n"
+    )
+
+    parts = [preamble]
     for pid in prompt_ids:
         entry = PROMPT_CATALOG.get(pid)
         if entry:

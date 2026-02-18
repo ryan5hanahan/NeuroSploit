@@ -30,6 +30,9 @@ interface Settings {
   aws_bedrock_region: string
   aws_bedrock_model: string
   llm_model: string
+  model_fast: string
+  model_balanced: string
+  model_deep: string
 }
 
 interface DbStats {
@@ -57,7 +60,7 @@ interface LlmTestResponse {
 
 const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
   claude: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
     { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
     { label: 'Custom', value: '__custom__' },
@@ -69,7 +72,7 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   openrouter: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'anthropic/claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'anthropic/claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'anthropic/claude-opus-4-6' },
     { label: 'GPT-4o', value: 'openai/gpt-4o' },
     { label: 'Custom', value: '__custom__' },
@@ -81,9 +84,53 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   bedrock: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'us.anthropic.claude-sonnet-4-6-v1:0' },
     { label: 'Claude Opus 4.6', value: 'us.anthropic.claude-opus-4-6-v1:0' },
     { label: 'Claude Haiku 4.5', value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+}
+
+// Default model per tier per provider (matches router.py DEFAULT_TIER_CONFIG)
+const TIER_DEFAULTS: Record<string, Record<string, string>> = {
+  claude: { fast: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-4-6', deep: 'claude-opus-4-6' },
+  openai: { fast: 'gpt-4o-mini', balanced: 'gpt-4o', deep: 'gpt-4o' },
+  openrouter: { fast: 'anthropic/claude-haiku-4-5-20251001', balanced: 'anthropic/claude-sonnet-4-6', deep: 'anthropic/claude-opus-4-6' },
+  ollama: { fast: 'llama3.2:3b', balanced: 'llama3.2', deep: 'llama3.2' },
+  bedrock: { fast: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', balanced: 'us.anthropic.claude-sonnet-4-6-v1:0', deep: 'us.anthropic.claude-opus-4-6-v1:0' },
+}
+
+const TIER_PRESETS: Record<string, { label: string; value: string }[]> = {
+  claude: [
+    { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
+    { label: 'Claude Sonnet 4.6', value: 'claude-sonnet-4-6' },
+    { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  openai: [
+    { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+    { label: 'GPT-4o', value: 'gpt-4o' },
+    { label: 'GPT-4 Turbo', value: 'gpt-4-turbo' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  openrouter: [
+    { label: 'Claude Haiku 4.5', value: 'anthropic/claude-haiku-4-5-20251001' },
+    { label: 'Claude Sonnet 4.6', value: 'anthropic/claude-sonnet-4-6' },
+    { label: 'Claude Opus 4.6', value: 'anthropic/claude-opus-4-6' },
+    { label: 'GPT-4o', value: 'openai/gpt-4o' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  ollama: [
+    { label: 'Llama 3.2 3B', value: 'llama3.2:3b' },
+    { label: 'Llama 3.2', value: 'llama3.2' },
+    { label: 'Llama 3.1', value: 'llama3.1' },
+    { label: 'Mistral', value: 'mistral' },
+    { label: 'Custom', value: '__custom__' },
+  ],
+  bedrock: [
+    { label: 'Claude Haiku 4.5', value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0' },
+    { label: 'Claude Sonnet 4.6', value: 'us.anthropic.claude-sonnet-4-6-v1:0' },
+    { label: 'Claude Opus 4.6', value: 'us.anthropic.claude-opus-4-6-v1:0' },
     { label: 'Custom', value: '__custom__' },
   ],
 }
@@ -108,6 +155,12 @@ export default function SettingsPage() {
   const [defaultScanType, setDefaultScanType] = useState('full')
   const [reconEnabledByDefault, setReconEnabledByDefault] = useState(true)
   const [enableModelRouting, setEnableModelRouting] = useState(false)
+  const [modelFast, setModelFast] = useState('')
+  const [modelBalanced, setModelBalanced] = useState('')
+  const [modelDeep, setModelDeep] = useState('')
+  const [isCustomFast, setIsCustomFast] = useState(false)
+  const [isCustomBalanced, setIsCustomBalanced] = useState(false)
+  const [isCustomDeep, setIsCustomDeep] = useState(false)
   const [enableKnowledgeAugmentation, setEnableKnowledgeAugmentation] = useState(false)
   const [enableBrowserValidation, setEnableBrowserValidation] = useState(false)
   const [enableExtendedThinking, setEnableExtendedThinking] = useState(false)
@@ -139,6 +192,17 @@ export default function SettingsPage() {
         setDefaultScanType(data.default_scan_type || 'full')
         setReconEnabledByDefault(data.recon_enabled_by_default ?? true)
         setEnableModelRouting(data.enable_model_routing ?? false)
+        // Load per-tier models
+        const savedFast = data.model_fast || ''
+        const savedBalanced = data.model_balanced || ''
+        const savedDeep = data.model_deep || ''
+        setModelFast(savedFast)
+        setModelBalanced(savedBalanced)
+        setModelDeep(savedDeep)
+        const tierPresets = TIER_PRESETS[data.llm_provider] || []
+        setIsCustomFast(savedFast !== '' && !tierPresets.some((p: { value: string }) => p.value === savedFast))
+        setIsCustomBalanced(savedBalanced !== '' && !tierPresets.some((p: { value: string }) => p.value === savedBalanced))
+        setIsCustomDeep(savedDeep !== '' && !tierPresets.some((p: { value: string }) => p.value === savedDeep))
         setEnableKnowledgeAugmentation(data.enable_knowledge_augmentation ?? false)
         setEnableBrowserValidation(data.enable_browser_validation ?? false)
         setEnableExtendedThinking(data.enable_extended_thinking ?? false)
@@ -195,6 +259,9 @@ export default function SettingsPage() {
           default_scan_type: defaultScanType,
           recon_enabled_by_default: reconEnabledByDefault,
           enable_model_routing: enableModelRouting,
+          model_fast: enableModelRouting ? modelFast : undefined,
+          model_balanced: enableModelRouting ? modelBalanced : undefined,
+          model_deep: enableModelRouting ? modelDeep : undefined,
           enable_knowledge_augmentation: enableKnowledgeAugmentation,
           enable_browser_validation: enableBrowserValidation,
           enable_extended_thinking: enableExtendedThinking,
@@ -304,7 +371,7 @@ export default function SettingsPage() {
                 <Button
                   key={provider}
                   variant={llmProvider === provider ? 'primary' : 'secondary'}
-                  onClick={() => { setLlmProvider(provider); setLlmModel(''); setIsCustomModel(false); setTestResult(null); setPreviousResult(null) }}
+                  onClick={() => { setLlmProvider(provider); setLlmModel(''); setIsCustomModel(false); setModelFast(''); setModelBalanced(''); setModelDeep(''); setIsCustomFast(false); setIsCustomBalanced(false); setIsCustomDeep(false); setTestResult(null); setPreviousResult(null) }}
                 >
                   {provider === 'openrouter' ? 'OpenRouter' : provider === 'bedrock' ? 'AWS Bedrock' : provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </Button>
@@ -527,6 +594,56 @@ export default function SettingsPage() {
             </div>
             <ToggleSwitch enabled={enableModelRouting} onToggle={() => setEnableModelRouting(!enableModelRouting)} />
           </div>
+
+          {/* Per-tier model selection (shown when routing is enabled) */}
+          {enableModelRouting && (
+            <div className="ml-8 p-4 bg-dark-800/50 border border-dark-700 rounded-lg space-y-4">
+              <p className="text-xs text-dark-400 mb-2">
+                Select which model to use for each task complexity tier. Leave empty for provider defaults.
+              </p>
+              {[
+                { tier: 'fast', label: 'Fast', desc: 'Recon parsing, tool selection, classification', model: modelFast, setModel: setModelFast, isCustom: isCustomFast, setIsCustom: setIsCustomFast },
+                { tier: 'balanced', label: 'Balanced', desc: 'Vuln testing, payload generation, analysis', model: modelBalanced, setModel: setModelBalanced, isCustom: isCustomBalanced, setIsCustom: setIsCustomBalanced },
+                { tier: 'deep', label: 'Deep', desc: 'Strategy planning, confirmation, reporting', model: modelDeep, setModel: setModelDeep, isCustom: isCustomDeep, setIsCustom: setIsCustomDeep },
+              ].map(({ tier, label, desc, model, setModel, isCustom, setIsCustom }) => (
+                <div key={tier}>
+                  <label className="block text-sm font-medium text-dark-200 mb-1">
+                    {label} Tier
+                    <span className="text-xs text-dark-500 ml-2">{desc}</span>
+                  </label>
+                  <select
+                    value={isCustom ? '__custom__' : model}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setIsCustom(true)
+                        setModel('')
+                      } else {
+                        setIsCustom(false)
+                        setModel(e.target.value)
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                  >
+                    <option value="">Default ({TIER_DEFAULTS[llmProvider]?.[tier] || '—'})</option>
+                    {(TIER_PRESETS[llmProvider] || []).map((preset) => (
+                      <option key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  {isCustom && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom model ID..."
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="w-full mt-1 px-3 py-1.5 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
             <div className="flex items-center gap-3">

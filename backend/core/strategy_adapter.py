@@ -306,6 +306,21 @@ class StrategyAdapter:
 
         return True
 
+    def should_pivot_approach(self, vuln_type: str) -> tuple:
+        """Check if we should pivot away from a vuln type due to low confidence.
+
+        Returns:
+            (should_pivot: bool, reason: str)
+        """
+        vs = self._get_vuln_stats(vuln_type)
+        if not vs or vs.total_tests < 3:
+            return False, ""
+        if vs.avg_confidence < 30 and vs.total_tests > 2:
+            return True, "confidence_below_30"
+        if vs.avg_confidence < 40 and vs.rejected_count >= 3 and vs.confirmed_count == 0:
+            return True, "three_failures_low_confidence"
+        return False, ""
+
     def should_reduce_payloads(self, vuln_type: str, tested_count: int) -> bool:
         """Check if we should stop testing payloads (diminishing returns)."""
         vs = self._get_vuln_stats(vuln_type)

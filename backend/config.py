@@ -43,9 +43,12 @@ class Settings(BaseSettings):
     AWS_BEDROCK_REGION: Optional[str] = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
     AWS_BEDROCK_MODEL: Optional[str] = os.getenv("AWS_BEDROCK_MODEL")
     DEFAULT_LLM_PROVIDER: str = "claude"
-    DEFAULT_LLM_MODEL: str = "claude-sonnet-4-5-20250929"
+    DEFAULT_LLM_MODEL: str = "claude-sonnet-4-6"
     MAX_OUTPUT_TOKENS: Optional[int] = None
     ENABLE_MODEL_ROUTING: bool = False
+    LLM_MODEL_FAST: Optional[str] = None
+    LLM_MODEL_BALANCED: Optional[str] = None
+    LLM_MODEL_DEEP: Optional[str] = None
 
     # Feature Flags
     ENABLE_KNOWLEDGE_AUGMENTATION: bool = False

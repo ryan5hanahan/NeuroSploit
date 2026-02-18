@@ -1288,37 +1288,52 @@ async def get_llm_status():
     Returns information about which LLM providers are configured and available,
     useful for debugging connection issues.
     """
-    from backend.core.autonomous_agent import LLMClient
+    from backend.core.llm import UnifiedLLMClient
+    from backend.core.autonomous_agent import AutonomousAgent
 
-    llm = LLMClient()
+    llm = UnifiedLLMClient(AutonomousAgent._load_config())
     status = llm.get_status()
+
+    # Query individual providers for detailed status
+    providers_checked = {}
+    for name, provider in llm._providers.items():
+        try:
+            available = await provider.is_available()
+        except Exception:
+            available = False
+
+        info: dict = {"available": available}
+
+        # Add provider-specific details
+        if name == "anthropic":
+            from backend.core.llm.providers.anthropic_provider import ANTHROPIC_AVAILABLE
+            info["library_installed"] = ANTHROPIC_AVAILABLE
+            info["configured"] = available
+        elif name == "openai":
+            from backend.core.llm.providers.openai_provider import OPENAI_AVAILABLE
+            info["library_installed"] = OPENAI_AVAILABLE
+            info["configured"] = available
+        elif name == "gemini":
+            info["configured"] = available
+        elif name == "bedrock":
+            from backend.core.llm.providers.bedrock_provider import BOTO3_AVAILABLE
+            info["library_installed"] = BOTO3_AVAILABLE
+            info["configured"] = available
+        elif name == "ollama":
+            info["running"] = available
+            info["url"] = getattr(provider, "_base_url", "http://localhost:11434")
+            info["model"] = getattr(provider, "_default_model", "llama3.2")
+        elif name == "lmstudio":
+            info["running"] = available
+            info["url"] = getattr(provider, "_base_url", "http://localhost:1234")
+
+        providers_checked[name] = info
 
     return {
         "available": status.get("available", False),
         "provider": status.get("provider"),
         "error": status.get("error"),
-        "providers_checked": {
-            "claude": {
-                "library_installed": status.get("anthropic_lib", False),
-                "configured": bool(llm.anthropic_key)
-            },
-            "openai": {
-                "library_installed": status.get("openai_lib", False),
-                "configured": bool(llm.openai_key)
-            },
-            "gemini": {
-                "configured": status.get("has_google_key", False)
-            },
-            "ollama": {
-                "running": status.get("ollama_available", False),
-                "url": llm.OLLAMA_URL,
-                "model": llm.ollama_model
-            },
-            "lmstudio": {
-                "running": status.get("lmstudio_available", False),
-                "url": llm.LMSTUDIO_URL
-            }
-        }
+        "providers_checked": providers_checked,
     }
 
 
@@ -1447,12 +1462,13 @@ async def send_realtime_message(session_id: str, request: RealtimeMessageRequest
 
     # Execute with LLM
     try:
-        from backend.core.autonomous_agent import LLMClient, LLMConnectionError
+        from backend.core.llm import UnifiedLLMClient, LLMConnectionError
+        from backend.core.autonomous_agent import AutonomousAgent
         import aiohttp
         import json
         import re
 
-        llm = LLMClient()
+        llm = UnifiedLLMClient(AutonomousAgent._load_config())
         llm_status = llm.get_status()
 
         if not llm.is_available():

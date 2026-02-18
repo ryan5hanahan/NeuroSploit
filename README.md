@@ -10,13 +10,14 @@
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 100 vulnerability types, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening, exploit chaining, and a modern React web interface with real-time monitoring.
+NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 100 vulnerability types, 3-tier LLM model routing (fast/balanced/deep), per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
 
 ---
 
 ## Highlights
 
 - **100 Vulnerability Types** across 10 categories with AI-driven testing prompts
+- **3-Tier LLM Routing** - Fast (Haiku) / Balanced (Sonnet) / Deep (Opus) with 18 mapped call sites, per-tier cost tracking
 - **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
 - **Opsec Profiles** - Stealth/balanced/aggressive profiles controlling rate limits, jitter, proxy routing, and DNS-over-HTTPS per tool
 - **Full ProjectDiscovery Suite** - 20 Go tools pre-compiled (nuclei, httpx, katana, subfinder, tlsx, asnmap, cvemap, and more)
@@ -24,11 +25,13 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - **Per-Scan Kali Containers** - Each scan runs in its own isolated Docker container
 - **mitmproxy Integration** - Opt-in HTTP/HTTPS traffic interception, flow capture, replay, and export
 - **Self-Hosted OOB Server** - Optional interactsh-server for out-of-band vulnerability testing
-- **Anti-Hallucination Pipeline** - Negative controls, proof-of-execution, confidence scoring
+- **Anti-Hallucination Pipeline** - Negative controls, proof-of-execution, decision confidence scoring with adaptive pivoting
 - **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
-- **WAF Detection & Bypass** - 16 WAF signatures, 12 bypass techniques
-- **Smart Strategy Adaptation** - Dead endpoint detection, diminishing returns, priority recomputation
+- **WAF Detection & Bypass** - 16 WAF signatures, 13 bypass techniques, composite WAF-specific evasion
+- **DB-Specific Payloads** - Auto-detect database type from error signatures, select MySQL/Postgres/MSSQL/Oracle/SQLite/MongoDB payloads
+- **Smart Strategy Adaptation** - Dead endpoint detection, diminishing returns, confidence-based pivoting, priority recomputation
 - **Multi-Provider LLM** - Claude, GPT, Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter
+- **Tradecraft Library** - 35 built-in TTP entries including 23 LOLBin techniques with MITRE ATT&CK mapping and detection profiles
 - **Real-Time Dashboard** - WebSocket-powered live scan progress, findings, and reports
 - **Sandbox Dashboard** - Monitor running Kali containers, tools, health checks in real-time
 
@@ -47,6 +50,8 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [mitmproxy Integration](#mitmproxy-integration)
 - [interactsh OOB Server](#interactsh-oob-server)
 - [Anti-Hallucination & Validation](#anti-hallucination--validation)
+- [Unified LLM Layer](#unified-llm-layer)
+- [Tradecraft Library](#tradecraft-library)
 - [Web GUI](#web-gui)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
@@ -126,7 +131,7 @@ Access the web interface at **http://localhost:8000** (production build) or **ht
 ```
 NeuroSploit/
 ├── backend/                         # FastAPI Backend
-│   ├── api/v1/                      # REST API (13 routers)
+│   ├── api/v1/                      # REST API (16 routers)
 │   │   ├── scans.py                 # Scan CRUD + pause/resume/stop
 │   │   ├── agent.py                 # AI Agent control
 │   │   ├── agent_tasks.py           # Scan task tracking
@@ -139,14 +144,27 @@ NeuroSploit/
 │   │   ├── targets.py               # Target validation
 │   │   ├── prompts.py               # Preset prompts
 │   │   ├── vulnerabilities.py       # Vulnerability management
+│   │   ├── tradecraft.py            # TTP tradecraft library (35 entries)
+│   │   ├── memory.py                # Agent memory management
+│   │   ├── traces.py                # LLM call tracing
 │   │   └── settings.py              # Runtime settings
 │   ├── core/
 │   │   ├── autonomous_agent.py      # Main AI agent (~7600 lines)
+│   │   ├── llm/                     # Unified LLM layer (3-tier routing)
+│   │   │   ├── client.py            # UnifiedLLMClient (generate, generate_json, generate_with_tools)
+│   │   │   ├── router.py            # 3-tier ModelRouter (fast/balanced/deep)
+│   │   │   ├── providers/           # 6 provider implementations
+│   │   │   ├── prompt_composer.py   # Tier-aware system prompt composition
+│   │   │   ├── tool_adapter.py      # MCP-to-provider tool format conversion
+│   │   │   ├── conversation.py      # Multi-turn message history
+│   │   │   ├── cost_tracker.py      # Per-tier token/cost tracking with budget enforcement
+│   │   │   └── meta_tools.py        # 5 structured decision schemas
 │   │   ├── vuln_engine/             # 100-type vulnerability engine
 │   │   │   ├── registry.py          # 100 VULNERABILITY_INFO entries
-│   │   │   ├── payload_generator.py # 526 payloads across 95 libraries
+│   │   │   ├── payload_generator.py # 665 payloads across 114 libraries
+│   │   │   ├── injection_context.py # DB type detection from error signatures
 │   │   │   ├── ai_prompts.py        # Per-vuln AI decision prompts
-│   │   │   ├── system_prompts.py    # 12 anti-hallucination prompts, 8 task contexts
+│   │   │   ├── system_prompts.py    # 17 composable prompts, 8 task contexts
 │   │   │   └── testers/             # 10 category tester modules
 │   │   ├── validation/              # False-positive hardening
 │   │   │   ├── negative_control.py  # Benign request control engine
@@ -154,8 +172,8 @@ NeuroSploit/
 │   │   │   ├── confidence_scorer.py # Numeric 0-100 scoring
 │   │   │   └── validation_judge.py  # Sole authority for finding approval
 │   │   ├── request_engine.py        # Retry, rate limit, circuit breaker
-│   │   ├── waf_detector.py          # 16 WAF signatures + bypass
-│   │   ├── strategy_adapter.py      # Mid-scan strategy adaptation
+│   │   ├── waf_detector.py          # 16 WAF signatures, 13 techniques + composite evasion
+│   │   ├── strategy_adapter.py      # Mid-scan strategy + confidence-based pivoting
 │   │   ├── chain_engine.py          # 10 exploit chain rules
 │   │   ├── auth_manager.py          # Multi-user auth management
 │   │   ├── xss_context_analyzer.py  # 8-context XSS analysis
@@ -174,7 +192,7 @@ NeuroSploit/
 │   └── main.py                      # FastAPI app entry
 │
 ├── core/                            # Shared core modules
-│   ├── llm_manager.py               # Multi-provider LLM routing
+│   ├── llm_manager.py               # Legacy LLM routing (deprecated, see backend/core/llm/)
 │   ├── sandbox_manager.py           # BaseSandbox ABC + opsec-aware sandbox
 │   ├── kali_sandbox.py              # Per-scan Kali container manager
 │   ├── container_pool.py            # Global container pool coordinator
@@ -212,7 +230,7 @@ NeuroSploit/
 │   └── docker-compose.sandbox.yml   # Legacy sandbox
 │
 ├── prompts/
-│   ├── md_library/                  # 16 prompt templates (pentest, recon, OWASP, etc.)
+│   ├── md_library/                  # 16 prompt templates (pentest, recon, OWASP, APT TTPs, etc.)
 │   ├── task_library.json            # 12 preset task definitions
 │   └── library.json                 # Prompt categorization by attack phase
 │
@@ -300,10 +318,12 @@ When an LLM is configured, recon-only scans include an AI analysis phase that pr
 | Module | Description |
 |--------|-------------|
 | **Request Engine** | Retry with backoff, per-host rate limiting, circuit breaker, adaptive timeouts |
-| **WAF Detector** | 16 WAF signatures (Cloudflare, AWS, Akamai, Imperva, etc.), 12 bypass techniques |
-| **Strategy Adapter** | Dead endpoint detection, diminishing returns, 403 bypass, priority recomputation |
+| **WAF Detector** | 16 WAF signatures (Cloudflare, AWS, Akamai, Imperva, etc.), 13 bypass techniques, composite WAF-specific evasion (per-WAF technique chaining) |
+| **Strategy Adapter** | Dead endpoint detection, diminishing returns, 403 bypass, confidence-based pivoting (<30% auto-pivot, 3+ failures force switch), priority recomputation |
 | **Chain Engine** | 10 chain rules (SSRF->internal, SQLi->DB-specific, LFI->config, IDOR pattern transfer) |
 | **Auth Manager** | Multi-user contexts (user_a, user_b, admin), login form detection, session management |
+| **Injection Context** | Auto-detect database type from error signatures (MySQL, Postgres, MSSQL, Oracle, SQLite), select DB-specific payloads |
+| **Cost Tracker** | Per-tier token and cost tracking with configurable budget limits and warning thresholds |
 
 ### Scan Features
 
@@ -374,7 +394,7 @@ python3 -m core.mcp_server
 | Template | Focus |
 |----------|-------|
 | **Pentestfull** | Elite pentester with full OWASP WSTG v4.2, CVE analysis, zero-day methodology |
-| **pentest_generalist** | Professional workflow with tool execution and documentation format |
+| **pentest / pentest_generalist** | Professional workflow with tool execution and documentation format |
 | **recon_specialist** | AI-enhanced reconnaissance with attack surface analysis and strategic recommendations |
 | **red_team_agent** | Red team attack simulation with real tool execution |
 | **bug_bounty_hunter** | Bug bounty focused assessment |
@@ -382,8 +402,9 @@ python3 -m core.mcp_server
 | **cwe_expert** | CWE Top 25 analysis |
 | **exploit_expert** | Exploit development guidance |
 | **blue_team_agent** | Defensive security analysis |
-| **malware_analyst** | Malware analysis |
-| **replay_attack** | Replay attack testing |
+| **malware_analyst / malware_analysis** | Malware analysis |
+| **replay_attack / replay_attack_specialist** | Replay attack testing |
+| **apt_ttp_profiles** | APT group profiles (APT1, Lazarus, Cozy Bear) with OPSEC decision trees, stealth scoring, and campaign lifecycle |
 
 ### Task Presets (`prompts/task_library.json`)
 
@@ -418,10 +439,14 @@ python3 -m core.mcp_server
 
 ### Payload Engine
 
-- **526 payloads** across 95 libraries
+- **665 payloads** across 114 libraries
 - **73 XSS stored payloads** + 5 context-specific sets
+- **DB-specific SQLi payloads** - MySQL, PostgreSQL, MSSQL, Oracle, SQLite, MongoDB (auto-selected via error fingerprinting)
+- **Polyglot payloads** - Multi-context payloads combining SQL+XSS, Cmd+XSS, SSTI+XSS
+- **Extended XXE** - Parameter entity, blind XXE with external DTD, SVG-based, XInclude
+- **Extended SSRF** - AWS/GCP/Azure/DigitalOcean cloud metadata paths
 - Per-type AI decision prompts with anti-hallucination directives
-- WAF-adaptive payload transformation (12 techniques)
+- WAF-adaptive payload transformation (13 techniques + composite per-WAF evasion)
 
 ---
 
@@ -541,7 +566,7 @@ Finding Candidate
           ▼
 ┌─────────────────────┐
 │ AI Interpretation    │  LLM with anti-hallucination prompts
-│ Per-type system msgs │  12 composable prompt templates
+│ Per-type system msgs │  17 composable prompt templates
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
@@ -559,19 +584,67 @@ Finding Candidate
 
 ### Anti-Hallucination System Prompts
 
-12 composable prompts applied across 8 task contexts (testing, verification, confirmation, strategy, reporting, interpretation, poc_generation, recon_analysis):
+17 composable prompts applied across 8 task contexts (testing, verification, confirmation, strategy, reporting, interpretation, poc_generation, recon_analysis):
 - `anti_hallucination` - Core truthfulness directives
 - `proof_of_execution` - Require concrete evidence
 - `negative_controls` - Compare with benign requests
 - `anti_severity_inflation` - Accurate severity ratings
 - `access_control_intelligence` - BOLA/BFLA data comparison methodology
 - `operational_humility` - Uncertainty over false confidence
+- `decision_confidence` - Cognitive loop (KNOW/THINK/TEST/VALIDATE) with confidence thresholds (>75% exploit, 40-75% test more, <40% pivot) and adaptive triggers
 
 ### Access Control Adaptive Learning
 
 - Records TP/FP outcomes per domain for BOLA/BFLA/IDOR
 - 9 default response patterns, 6 known FP patterns (WSO2, Keycloak, etc.)
 - Historical FP rate influences future confidence scoring
+
+---
+
+## Unified LLM Layer
+
+The unified LLM layer (`backend/core/llm/`) provides 3-tier model routing, native tool calling, structured JSON output, and per-session cost tracking across 6 providers.
+
+### 3-Tier Model Routing
+
+| Tier | Default Model | Task Types | Use Case |
+|------|--------------|------------|----------|
+| **Fast** | Claude Haiku 4.5 | Classification, formatting, simple extraction, status checks, log parsing | High-volume, low-complexity calls |
+| **Balanced** | Claude Sonnet 4.6 | Testing decisions, strategy, analysis, report generation, prompt processing | Core agent reasoning |
+| **Deep** | Claude Opus 4.5 | Exploit validation, chain analysis, zero-day research, complex auth testing, novel attack planning, executive reporting, architecture review, threat modeling | High-stakes decisions |
+
+All 18 LLM call sites in the agent use `task_type=` routing. Per-tier model overrides are available via environment variables (`LLM_MODEL_FAST`, `LLM_MODEL_BALANCED`, `LLM_MODEL_DEEP`) or the Settings UI.
+
+### Providers
+
+| Provider | Authentication | Models |
+|----------|---------------|--------|
+| **Anthropic** | `ANTHROPIC_API_KEY` | Claude Haiku, Sonnet, Opus |
+| **OpenAI** | `OPENAI_API_KEY` | GPT-4o-mini, GPT-4o |
+| **Google Gemini** | `GEMINI_API_KEY` | Gemini 2.0 Flash, Gemini 2.0 Pro |
+| **AWS Bedrock** | AWS credential chain | Claude models via Bedrock |
+| **Ollama** | Local (no key) | Any Ollama model |
+| **LM Studio** | Local (no key) | Any LM Studio model |
+
+### Cost Tracking
+
+Per-session budget enforcement with configurable limits (default $5.00/scan). Tracks input/output tokens per tier with warning thresholds at 80% budget utilization. Full cost reports available per scan with tier-level breakdowns.
+
+---
+
+## Tradecraft Library
+
+35 built-in TTP entries accessible via the `/api/v1/tradecraft` endpoint, including 23 LOLBin techniques for red team operations.
+
+### LOLBin Techniques (23)
+
+| Platform | Techniques |
+|----------|-----------|
+| **Windows** (10) | PowerShell Download Cradle, CertUtil, BITSAdmin, MSBuild, RegSvr32, WMI, Scheduled Task, SC Service, Rundll32, NET Command |
+| **Linux** (10) | Bash Reverse Shell, Curl/Wget, Cron Persistence, SSH Key Persistence, Python Reverse Shell, Systemd Persistence, Find Discovery, Netcat, Perl Reverse Shell, SSH Tunneling |
+| **macOS** (3) | LaunchAgent Persistence, Python Reverse Shell, AppleScript Execution |
+
+Each entry includes MITRE ATT&CK technique IDs and detection probability profiles across 8 vectors (AV, IDS, EDR, Heuristic, Sandbox, Traffic, Logs, Memory).
 
 ---
 
@@ -668,6 +741,13 @@ http://localhost:8000/api/v1
 | `GET` | `/vuln-lab/challenges` | List challenge runs |
 | `GET` | `/vuln-lab/stats` | Detection rate stats |
 
+#### Tradecraft
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/tradecraft` | List all tradecraft TTP entries |
+| `GET` | `/tradecraft/{id}` | Get tradecraft entry details |
+
 #### Reports & Dashboard
 
 | Method | Endpoint | Description |
@@ -708,7 +788,7 @@ OPENROUTER_API_KEY=your-key
 # AWS Bedrock (uses AWS credential chain - no API key needed)
 # Authenticate via env vars, ~/.aws/credentials, IAM role, or SSO
 AWS_BEDROCK_REGION=us-east-1
-AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6-v1:0
 # AWS_ACCESS_KEY_ID=your-access-key
 # AWS_SECRET_ACCESS_KEY=your-secret-key
 # AWS_PROFILE=default
@@ -831,7 +911,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 |-------|-------------|
 | **Backend** | Python, FastAPI, SQLAlchemy, Pydantic, aiohttp |
 | **Frontend** | React 18, TypeScript, TailwindCSS, Vite |
-| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter |
+| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter (3-tier routing, native tool calling, structured JSON) |
 | **Sandbox** | Docker, Kali Linux, 20 ProjectDiscovery tools, Nmap, SQLMap, Nikto |
 | **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh, FFuf, Dalfox |
 | **Proxy** | mitmproxy (opt-in traffic interception, replay, TLS inspection) |
