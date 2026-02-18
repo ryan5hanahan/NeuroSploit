@@ -1116,6 +1116,196 @@
       "remediation": "1. Use response DTOs/serializers\n2. Implement field-level filtering\n3. Apply least-data principle\n4. Separate admin and user endpoints",
       "has_tester": true,
       "false_positive_markers": []
+    },
+    "account_takeover": {
+      "title": "Account Takeover",
+      "severity": "critical",
+      "cwe_id": "CWE-284",
+      "description": "Flaws in password reset flows, token handling, or session management that allow an attacker to gain unauthorized access to another user's account. Common vectors include predictable reset tokens, lack of rate limiting on authentication endpoints, and insecure token transmission.",
+      "impact": "An attacker can fully compromise victim accounts, access sensitive personal data, perform unauthorized transactions, and pivot to further attacks using the hijacked identity.",
+      "remediation": "1. Use cryptographically random, time-limited password reset tokens\n2. Implement rate limiting and account lockout on authentication endpoints\n3. Require re-authentication for sensitive account changes\n4. Send reset tokens over secure channels and invalidate after single use",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "client_side_path_traversal": {
+      "title": "Client-Side Path Traversal",
+      "severity": "medium",
+      "cwe_id": "CWE-22",
+      "description": "Path traversal sequences in client-side routing or dynamically constructed fetch/XHR URLs allow an attacker to manipulate which resources the browser requests. This can redirect API calls or asset loads to attacker-controlled endpoints.",
+      "impact": "Attackers can force the client to fetch unauthorized resources, exfiltrate data to malicious endpoints, or bypass client-side access controls by manipulating request paths.",
+      "remediation": "1. Validate and sanitize all user-controlled path segments on the client side\n2. Use allowlists for permitted API paths and resource locations\n3. Implement server-side path validation as a defense-in-depth measure\n4. Avoid constructing URLs from raw user input in frontend code",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "denial_of_service": {
+      "title": "Denial of Service",
+      "severity": "medium",
+      "cwe_id": "CWE-400",
+      "description": "Application-layer denial of service caused by resource exhaustion, algorithmic complexity attacks, or uncontrolled resource allocation. Attackers can craft requests that consume disproportionate CPU, memory, or I/O resources.",
+      "impact": "Service becomes unavailable to legitimate users, causing business disruption, SLA violations, and potential cascading failures across dependent systems.",
+      "remediation": "1. Implement request rate limiting and throttling per client\n2. Set timeouts and resource limits on all operations\n3. Avoid algorithms with worst-case exponential or quadratic complexity on user input\n4. Use circuit breakers and graceful degradation patterns",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "dependency_confusion": {
+      "title": "Dependency Confusion",
+      "severity": "critical",
+      "cwe_id": "CWE-427",
+      "description": "A supply chain attack where a malicious public package with the same name as a private internal dependency is published to a public registry. Package managers may resolve the public package instead of the intended private one, executing attacker-controlled code during installation.",
+      "impact": "Arbitrary code execution in build pipelines, CI/CD systems, and developer machines. Can lead to full supply chain compromise, credential theft, and backdoor installation.",
+      "remediation": "1. Configure package managers to use scoped namespaces for internal packages\n2. Pin dependencies to exact versions and use lockfiles\n3. Set up a private registry proxy that prioritizes internal packages\n4. Monitor public registries for packages matching internal naming conventions",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "dns_rebinding": {
+      "title": "DNS Rebinding",
+      "severity": "high",
+      "cwe_id": "CWE-350",
+      "description": "DNS rebinding attacks exploit the gap between DNS resolution and same-origin policy enforcement. An attacker's domain initially resolves to an external IP, then switches to an internal IP, allowing the attacker's script to interact with internal services through the victim's browser.",
+      "impact": "Bypass of network perimeter controls, enabling attackers to scan and interact with internal services, access sensitive administrative interfaces, and exfiltrate data from behind firewalls.",
+      "remediation": "1. Validate the Host header on all internal services\n2. Implement DNS pinning or rebinding protection in application frameworks\n3. Use authentication on all internal services regardless of network location\n4. Block private IP ranges in DNS responses from external domains at the resolver level",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "external_variable_modification": {
+      "title": "External Variable Modification",
+      "severity": "high",
+      "cwe_id": "CWE-473",
+      "description": "External input is used to modify internal application variables such as configuration settings, class attributes, or global state. This often occurs through mass assignment, prototype pollution, or unvalidated parameter binding in web frameworks.",
+      "impact": "Attackers can escalate privileges by modifying role attributes, bypass security controls by altering configuration flags, or cause unexpected application behavior by corrupting internal state.",
+      "remediation": "1. Use explicit allowlists for bindable parameters in mass assignment\n2. Freeze or seal objects and prototypes where mutation is not expected\n3. Validate and sanitize all external input before applying to internal state\n4. Implement framework-level protections such as strong parameter filtering",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "gwt_deserialization": {
+      "title": "GWT Deserialization",
+      "severity": "high",
+      "cwe_id": "CWE-502",
+      "description": "Insecure deserialization in Google Web Toolkit (GWT) RPC endpoints allows attackers to craft malicious serialized objects. GWT's custom serialization format can be exploited to instantiate arbitrary classes and trigger gadget chains on the server.",
+      "impact": "Remote code execution on the server, denial of service, or data tampering through deserialization of malicious objects via GWT RPC interfaces.",
+      "remediation": "1. Upgrade to the latest GWT version with serialization hardening\n2. Implement a whitelist of allowed classes for deserialization\n3. Apply input validation on all GWT RPC endpoints\n4. Consider migrating from GWT RPC to a safer communication protocol like REST or gRPC",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "headless_browser_abuse": {
+      "title": "Headless Browser Abuse",
+      "severity": "high",
+      "cwe_id": "CWE-94",
+      "description": "Server-side headless browsers (Puppeteer, Playwright, PhantomJS) that process user-controlled URLs or HTML content can be exploited to read local files, access internal services, or execute arbitrary JavaScript in a privileged context.",
+      "impact": "Server-side request forgery via the browser engine, local file disclosure through file:// protocol, credential theft from internal services, and potential remote code execution through browser exploits.",
+      "remediation": "1. Sandbox headless browser processes with minimal privileges and network restrictions\n2. Block file://, data:, and internal URL schemes in user-provided inputs\n3. Set strict timeouts and resource limits on browser instances\n4. Use content security policies and disable JavaScript execution when only rendering is needed",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "java_rmi": {
+      "title": "Java RMI Exploitation",
+      "severity": "critical",
+      "cwe_id": "CWE-502",
+      "description": "Exposed Java Remote Method Invocation (RMI) registries allow attackers to enumerate remote objects, invoke methods, or exploit deserialization vulnerabilities in the RMI transport layer. Default RMI configurations often lack authentication and use insecure deserialization.",
+      "impact": "Remote code execution through deserialization gadget chains, unauthorized access to backend services, and full server compromise via exposed RMI endpoints.",
+      "remediation": "1. Restrict RMI registry access to trusted networks using firewall rules\n2. Enable and enforce RMI authentication and TLS transport\n3. Apply deserialization filters (JEP 290) to restrict allowed classes\n4. Avoid exposing RMI services to untrusted networks and prefer modern alternatives",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "latex_injection": {
+      "title": "LaTeX Injection",
+      "severity": "high",
+      "cwe_id": "CWE-94",
+      "description": "User-controlled input embedded in LaTeX documents can exploit compiler features such as \\input, \\write18, or \\immediate to read files, execute system commands, or cause denial of service during PDF generation.",
+      "impact": "Server-side file disclosure, remote code execution through LaTeX shell escape commands, and denial of service by triggering infinite loops or excessive resource consumption during compilation.",
+      "remediation": "1. Disable shell escape and restrict file I/O commands in the LaTeX compiler configuration\n2. Sanitize user input to remove or escape dangerous LaTeX directives\n3. Run LaTeX compilation in a sandboxed environment with no network access\n4. Use a restricted LaTeX engine or a safe rendering alternative for user-generated content",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "prompt_injection": {
+      "title": "LLM Prompt Injection",
+      "severity": "high",
+      "cwe_id": "CWE-77",
+      "description": "Adversarial input designed to manipulate large language model behavior by overriding system instructions, extracting hidden prompts, or causing the model to perform unintended actions. This includes both direct injection in user input and indirect injection via retrieved content.",
+      "impact": "Bypass of AI safety controls, extraction of confidential system prompts, unauthorized data exfiltration, manipulation of AI-driven workflows, and abuse of tool-calling capabilities.",
+      "remediation": "1. Implement strict input/output filtering and validation layers around LLM interactions\n2. Use privilege separation between system instructions and user content\n3. Apply output validation to detect and block injected instructions in responses\n4. Monitor LLM interactions for anomalous patterns and implement rate limiting",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "redos": {
+      "title": "ReDoS",
+      "severity": "medium",
+      "cwe_id": "CWE-1333",
+      "description": "Regular expressions with catastrophic backtracking behavior can be exploited by crafting input strings that trigger exponential or polynomial time complexity. This causes excessive CPU consumption during regex evaluation.",
+      "impact": "Application-layer denial of service where a single crafted request can block a thread or event loop for seconds to minutes, degrading or halting service for all users.",
+      "remediation": "1. Audit regex patterns for nested quantifiers and overlapping alternations\n2. Use regex engines with linear-time guarantees (RE2, rust regex)\n3. Set timeout limits on regex evaluation operations\n4. Validate input length before applying complex regex patterns",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "reverse_proxy_misconfig": {
+      "title": "Reverse Proxy Misconfiguration",
+      "severity": "high",
+      "cwe_id": "CWE-441",
+      "description": "Misconfigurations in reverse proxies (nginx, Apache, HAProxy) where inconsistent path normalization, header handling, or routing rules between the proxy and backend allow attackers to bypass access controls or reach unintended endpoints.",
+      "impact": "Bypass of authentication and authorization controls, access to restricted admin panels or internal APIs, and request smuggling through path normalization inconsistencies.",
+      "remediation": "1. Ensure consistent path normalization between proxy and backend servers\n2. Use explicit allowlists for proxied paths rather than broad wildcard rules\n3. Validate and sanitize hop-by-hop headers at the proxy layer\n4. Regularly test proxy configurations for path traversal and routing bypass vectors",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "saml_injection": {
+      "title": "SAML Injection",
+      "severity": "critical",
+      "cwe_id": "CWE-287",
+      "description": "Manipulation of SAML responses or assertions to bypass authentication, including XML signature wrapping attacks, assertion replay, and modification of attribute values in the SAML token before or after signature verification.",
+      "impact": "Complete authentication bypass allowing attackers to impersonate any user, escalate privileges to administrator, or gain unauthorized access to federated services.",
+      "remediation": "1. Strictly validate XML signatures and enforce canonicalization on SAML responses\n2. Verify all assertion conditions including audience, timestamps, and recipient\n3. Use a well-maintained SAML library and keep it updated\n4. Implement assertion replay detection using a consumed-assertion cache",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "ssi_injection": {
+      "title": "SSI Injection",
+      "severity": "high",
+      "cwe_id": "CWE-97",
+      "description": "Server-Side Include (SSI) directive injection occurs when user input is embedded in pages processed by the web server's SSI engine. Attackers can inject directives like <!--#exec --> or <!--#include --> to execute commands or read files.",
+      "impact": "Remote code execution through SSI exec directives, server-side file disclosure via include directives, and information leakage about the server environment.",
+      "remediation": "1. Disable SSI processing on pages that include user-generated content\n2. Sanitize user input to strip or encode SSI directive syntax\n3. Use the Options -IncludesNOEXEC directive to disable command execution in SSI\n4. Migrate from SSI to a modern templating engine with auto-escaping",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "vhost_enumeration": {
+      "title": "Virtual Host Enumeration",
+      "severity": "medium",
+      "cwe_id": "CWE-200",
+      "description": "Discovery of hidden virtual hosts on a web server by brute-forcing or guessing Host header values. Internal or development virtual hosts may expose sensitive functionality, debug interfaces, or unprotected APIs.",
+      "impact": "Exposure of internal applications, development or staging environments, administrative interfaces, and APIs that were not intended to be publicly accessible.",
+      "remediation": "1. Configure the web server to reject requests with unrecognized Host headers\n2. Set a restrictive default virtual host that returns 404 for unknown hosts\n3. Avoid using predictable naming patterns for internal virtual hosts\n4. Place internal virtual hosts on separate network segments inaccessible from the public internet",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "web_cache_deception": {
+      "title": "Web Cache Deception",
+      "severity": "high",
+      "cwe_id": "CWE-525",
+      "description": "An attacker tricks a caching layer into storing authenticated or sensitive responses by appending static file extensions to dynamic URLs. When the cache serves these stored responses to other users, sensitive data is exposed.",
+      "impact": "Leakage of authenticated user data including personal information, session tokens, and account details to unauthenticated attackers through cached responses.",
+      "remediation": "1. Configure cache rules based on response headers (Cache-Control) rather than URL patterns\n2. Set Cache-Control: no-store on all authenticated or dynamic responses\n3. Normalize URLs at the proxy layer before cache key computation\n4. Implement Vary headers correctly and audit cache behavior for sensitive endpoints",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "xs_leak": {
+      "title": "Cross-Site Leak",
+      "severity": "medium",
+      "cwe_id": "CWE-203",
+      "description": "Side-channel attacks that exploit browser behaviors such as timing differences, error events, frame counting, or cache state to infer information about a user's authenticated state on another origin. These attacks do not require direct content access.",
+      "impact": "Leakage of sensitive cross-origin information including login state, user identity, search results, and private resource existence without violating same-origin policy directly.",
+      "remediation": "1. Deploy Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy headers\n2. Use SameSite cookie attributes to prevent cross-origin authenticated requests\n3. Ensure consistent response behavior regardless of authentication state where possible\n4. Implement Fetch Metadata request headers (Sec-Fetch-*) to reject cross-site requests",
+      "has_tester": false,
+      "false_positive_markers": []
+    },
+    "xslt_injection": {
+      "title": "XSLT Injection",
+      "severity": "high",
+      "cwe_id": "CWE-91",
+      "description": "Exploitation of XSLT transformation engines by injecting malicious XSLT directives into user-controlled input that is processed by an XML/XSLT pipeline. Attackers can leverage XSLT functions to read files, execute code, or perform server-side request forgery.",
+      "impact": "Remote code execution through XSLT extension functions, server-side file disclosure, SSRF via document() function, and information leakage about the server environment.",
+      "remediation": "1. Disable XSLT extension functions and external entity loading in the XSLT processor\n2. Validate and sanitize all user input before including it in XSLT transformations\n3. Use a sandboxed XSLT processor with restricted capabilities\n4. Avoid processing user-supplied XSLT stylesheets and prefer server-controlled templates",
+      "has_tester": false,
+      "false_positive_markers": []
     }
   },
   "category_mappings": {

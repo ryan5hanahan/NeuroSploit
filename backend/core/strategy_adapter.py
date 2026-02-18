@@ -182,13 +182,14 @@ class StrategyAdapter:
     """
 
     DEAD_ENDPOINT_THRESHOLD = 3        # Consecutive failures before marking dead
-    DIMINISHING_RETURNS_THRESHOLD = 10 # Max failed payloads before skipping type
+    DIMINISHING_RETURNS_THRESHOLD = 10 # Base max failed payloads before skipping type
     ADAPTATION_INTERVAL = 50           # Tests between priority recomputations
     MAX_403_BYPASS_PER_URL = 2         # Max bypass attempts per URL
     HOT_ENDPOINT_THRESHOLD = 2         # Findings to mark endpoint as "hot"
 
-    def __init__(self, memory=None):
+    def __init__(self, memory=None, payload_generator=None):
         self.memory = memory
+        self._payload_generator = payload_generator
         self._endpoints: Dict[str, EndpointHealth] = {}
         self._vuln_stats: Dict[str, VulnTypeStats] = {}
         self._global_test_count = 0
@@ -325,15 +326,29 @@ class StrategyAdapter:
             return True, "three_failures_low_confidence"
         return False, ""
 
+    def _get_diminishing_threshold(self, vuln_type: str) -> int:
+        """Scale threshold based on available payloads for the vuln type.
+
+        With PATT, some types may have hundreds of payloads — allow more
+        testing before giving up.
+        """
+        base = self.DIMINISHING_RETURNS_THRESHOLD
+        if self._payload_generator:
+            total = len(self._payload_generator.get_all_payloads(vuln_type))
+            if total > 50:
+                return min(base * 3, 30)  # Cap at 30
+        return base
+
     def should_reduce_payloads(self, vuln_type: str, tested_count: int) -> bool:
         """Check if we should stop testing payloads (diminishing returns)."""
         vs = self._get_vuln_stats(vuln_type)
+        threshold = self._get_diminishing_threshold(vuln_type)
 
         # Allow more payloads for types with good success rate
         if vs.success_rate > 0.1:
-            return tested_count >= self.DIMINISHING_RETURNS_THRESHOLD * 2
+            return tested_count >= threshold * 2
 
-        return tested_count >= self.DIMINISHING_RETURNS_THRESHOLD
+        return tested_count >= threshold
 
     def should_attempt_403_bypass(self, url: str) -> bool:
         """Check if we should try 403 bypass for this URL."""

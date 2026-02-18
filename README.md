@@ -5,18 +5,20 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 ![React](https://img.shields.io/badge/React-18-61dafb)
-![Vuln Types](https://img.shields.io/badge/Vuln%20Types-100-red)
+![Vuln Types](https://img.shields.io/badge/Vuln%20Types-119-red)
+![Payloads](https://img.shields.io/badge/Payloads-34K+-orange)
 ![Docker](https://img.shields.io/badge/Docker-Kali%20Sandbox-informational)
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 100 vulnerability types, 3-tier LLM model routing (fast/balanced/deep), per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
+NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
 
 ---
 
 ## Highlights
 
-- **100 Vulnerability Types** across 10 categories with AI-driven testing prompts
+- **119 Vulnerability Types** across 11 categories with AI-driven testing prompts
+- **34,000+ Payloads** - 665 curated + 33,500 from PayloadsAllTheThings (PATT), merged at all scan depths
 - **3-Tier LLM Routing** - Fast (Haiku) / Balanced (Sonnet) / Deep (Opus) with 18 mapped call sites, per-tier cost tracking
 - **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
 - **Opsec Profiles** - Stealth/balanced/aggressive profiles controlling rate limits, jitter, proxy routing, and DNS-over-HTTPS per tool
@@ -29,7 +31,7 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
 - **WAF Detection & Bypass** - 16 WAF signatures, 13 bypass techniques, composite WAF-specific evasion
 - **DB-Specific Payloads** - Auto-detect database type from error signatures, select MySQL/Postgres/MSSQL/Oracle/SQLite/MongoDB payloads
-- **Smart Strategy Adaptation** - Dead endpoint detection, diminishing returns, confidence-based pivoting, priority recomputation
+- **Smart Strategy Adaptation** - Dead endpoint detection, dynamic diminishing returns (scales with payload pool size), confidence-based pivoting, priority recomputation
 - **Multi-Provider LLM** - Claude, GPT, Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter
 - **Tradecraft Library** - 35 built-in TTP entries including 23 LOLBin techniques with MITRE ATT&CK mapping and detection profiles
 - **Real-Time Dashboard** - WebSocket-powered live scan progress, findings, and reports
@@ -45,7 +47,8 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [Opsec Profiles](#opsec-profiles)
 - [MCP Server & Tools](#mcp-server--tools)
 - [Prompt & Task Library](#prompt--task-library)
-- [100 Vulnerability Types](#100-vulnerability-types)
+- [119 Vulnerability Types](#119-vulnerability-types)
+- [PayloadsAllTheThings Integration](#payloadsallthethings-integration)
 - [Kali Sandbox System](#kali-sandbox-system)
 - [mitmproxy Integration](#mitmproxy-integration)
 - [interactsh OOB Server](#interactsh-oob-server)
@@ -65,24 +68,27 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 ### Option 1: Docker (Recommended)
 
 ```bash
-# Clone repository
-git clone https://github.com/your-org/NeuroSploit.git
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/your-org/NeuroSploit.git
 cd NeuroSploit
+
+# If already cloned without submodules, initialize PATT payload library
+git submodule update --init
 
 # Copy environment file and add your API keys
 cp .env.example .env
 nano .env  # Add an LLM API key or configure AWS Bedrock credentials
 
-# Build the Kali sandbox image (first time only, ~5 min)
-./scripts/build-kali.sh
-
-# Start backend
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# Start all services
+docker compose up -d
 ```
 
 ### Option 2: Manual Setup
 
 ```bash
+# Initialize PATT submodule (optional but recommended for 33K+ extra payloads)
+git submodule update --init
+
 # Backend
 pip install -r requirements.txt
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -159,12 +165,17 @@ NeuroSploit/
 │   │   │   ├── conversation.py      # Multi-turn message history
 │   │   │   ├── cost_tracker.py      # Per-tier token/cost tracking with budget enforcement
 │   │   │   └── meta_tools.py        # 5 structured decision schemas
-│   │   ├── vuln_engine/             # 100-type vulnerability engine
-│   │   │   ├── registry.py          # 100 VULNERABILITY_INFO entries
-│   │   │   ├── payload_generator.py # 665 payloads across 114 libraries
+│   │   ├── vuln_engine/             # 119-type vulnerability engine
+│   │   │   ├── registry.py          # 119 VULNERABILITY_INFO entries (100 base + 19 PATT)
+│   │   │   ├── payload_generator.py # 34K+ payloads (665 curated + PATT merge)
 │   │   │   ├── injection_context.py # DB type detection from error signatures
-│   │   │   ├── ai_prompts.py        # Per-vuln AI decision prompts
+│   │   │   ├── ai_prompts.py        # Per-vuln AI decision prompts (119 types)
 │   │   │   ├── system_prompts.py    # 17 composable prompts, 8 task contexts
+│   │   │   ├── patt/               # PayloadsAllTheThings integration
+│   │   │   │   ├── category_map.py  # 61 PATT category mappings
+│   │   │   │   ├── parser.py        # Intruder wordlist + markdown parsers
+│   │   │   │   ├── loader.py        # PATTLoader with lazy loading + caching
+│   │   │   │   └── cli.py           # PATT CLI (status/parse/dump/update)
 │   │   │   └── testers/             # 10 category tester modules
 │   │   ├── validation/              # False-positive hardening
 │   │   │   ├── negative_control.py  # Benign request control engine
@@ -237,8 +248,10 @@ NeuroSploit/
 ├── config/
 │   ├── config.json                  # Profiles, tools, sandbox, MCP, opsec
 │   └── opsec_profiles.json          # Stealth/balanced/aggressive opsec profiles
+├── vendor/
+│   └── PayloadsAllTheThings/        # PATT git submodule (33,500+ payloads)
 ├── data/
-│   ├── vuln_knowledge_base.json     # 100 vuln type definitions
+│   ├── vuln_knowledge_base.json     # 119 vuln type definitions
 │   ├── execution_history.json       # Cross-scan learning data
 │   └── access_control_learning.json # BOLA/BFLA adaptive data
 │
@@ -261,8 +274,8 @@ The AI agent (`autonomous_agent.py`) orchestrates security assessments across 5 
 
 | Mode | Description |
 |------|-------------|
-| **Full Auto** | 5-phase workflow: recon, AI attack surface analysis, vulnerability testing (100 types), AI finding enhancement, report generation |
-| **Auto Pentest** | 3-stream parallel architecture (see below) with deep analysis and comprehensive 100-type testing |
+| **Full Auto** | 5-phase workflow: recon, AI attack surface analysis, vulnerability testing (119 types), AI finding enhancement, report generation |
+| **Auto Pentest** | 3-stream parallel architecture (see below) with deep analysis and comprehensive 119-type testing |
 | **Recon Only** | Tool-based reconnaissance (3 depth levels) + WAF detection + AI-powered attack surface analysis with technology risk mapping, auth boundary identification, and strategic recommendations |
 | **Prompt Only** | AI-driven mode where the LLM plans and executes the full assessment based on a user prompt or task preset |
 | **Analyze Only** | Passive analysis of provided data without active testing |
@@ -301,7 +314,7 @@ When an LLM is configured, recon-only scans include an AI analysis phase that pr
                            ▼
               ┌─────────────────────┐
               │  Deep Analysis      │
-              │  100 vuln types     │
+              │  119 vuln types     │
               │  Full payload sets  │
               │  Chain exploitation │
               └─────────┬───────────┘
@@ -319,7 +332,7 @@ When an LLM is configured, recon-only scans include an AI analysis phase that pr
 |--------|-------------|
 | **Request Engine** | Retry with backoff, per-host rate limiting, circuit breaker, adaptive timeouts |
 | **WAF Detector** | 16 WAF signatures (Cloudflare, AWS, Akamai, Imperva, etc.), 13 bypass techniques, composite WAF-specific evasion (per-WAF technique chaining) |
-| **Strategy Adapter** | Dead endpoint detection, diminishing returns, 403 bypass, confidence-based pivoting (<30% auto-pivot, 3+ failures force switch), priority recomputation |
+| **Strategy Adapter** | Dead endpoint detection, dynamic diminishing returns (scales with payload pool size), 403 bypass, confidence-based pivoting (<30% auto-pivot, 3+ failures force switch), priority recomputation |
 | **Chain Engine** | 10 chain rules (SSRF->internal, SQLi->DB-specific, LFI->config, IDOR pattern transfer) |
 | **Auth Manager** | Multi-user contexts (user_a, user_b, admin), login form detection, session management |
 | **Injection Context** | Auto-detect database type from error signatures (MySQL, Postgres, MSSQL, Oracle, SQLite), select DB-specific payloads |
@@ -420,7 +433,7 @@ python3 -m core.mcp_server
 
 ---
 
-## 100 Vulnerability Types
+## 119 Vulnerability Types
 
 ### Categories
 
@@ -436,17 +449,101 @@ python3 -m core.mcp_server
 | **Client-Side** | 8 | CORS, Clickjacking, Open Redirect, DOM Clobbering, Prototype Pollution, PostMessage, CSS Injection |
 | **Infrastructure** | 6 | SSL/TLS, HTTP Methods, Subdomain Takeover, Host Header, CNAME Hijacking |
 | **Cloud/Supply** | 4 | Cloud Metadata, S3 Bucket Misconfiguration, Dependency Confusion, Third-Party Script |
+| **PATT Extended** | 19 | Account Takeover, Prompt Injection, SAML Injection, Web Cache Deception, ReDoS, LaTeX Injection, XSLT Injection, SSI Injection, Java RMI, GWT Deserialization, XS-Leak, and more |
+
+### PATT Extended Types (19)
+
+| Type | Severity | CWE |
+|------|----------|-----|
+| Account Takeover | Critical | CWE-284 |
+| Client-Side Path Traversal | Medium | CWE-22 |
+| Denial of Service | Medium | CWE-400 |
+| Dependency Confusion | Critical | CWE-427 |
+| DNS Rebinding | High | CWE-350 |
+| External Variable Modification | High | CWE-473 |
+| GWT Deserialization | High | CWE-502 |
+| Headless Browser Abuse | High | CWE-94 |
+| Java RMI Exploitation | Critical | CWE-502 |
+| LaTeX Injection | High | CWE-94 |
+| LLM Prompt Injection | High | CWE-77 |
+| ReDoS | Medium | CWE-1333 |
+| Reverse Proxy Misconfiguration | High | CWE-441 |
+| SAML Injection | Critical | CWE-287 |
+| SSI Injection | High | CWE-97 |
+| Virtual Host Enumeration | Medium | CWE-200 |
+| Web Cache Deception | High | CWE-525 |
+| Cross-Site Leak (XS-Leak) | Medium | CWE-203 |
+| XSLT Injection | High | CWE-91 |
+
+Each new type includes full AI testing prompts, proof-of-execution requirements, and knowledge base entries. Types are conditionally visible in the Vuln Lab when the PATT submodule is initialized.
 
 ### Payload Engine
 
-- **665 payloads** across 114 libraries
-- **73 XSS stored payloads** + 5 context-specific sets
-- **DB-specific SQLi payloads** - MySQL, PostgreSQL, MSSQL, Oracle, SQLite, MongoDB (auto-selected via error fingerprinting)
+- **34,000+ total payloads** - 665 curated + 33,500 from PayloadsAllTheThings
+- **Curated-first ordering** - Curated payloads always tried first, PATT payloads appended (deduplicated)
+- **Available at all scan depths** - Quick (3), standard (10), thorough (20), exhaustive (all) draw from the merged pool
+- **73 XSS stored payloads** + 5 context-specific sets + 2,162 PATT XSS payloads
+- **DB-specific SQLi payloads** - MySQL, PostgreSQL, MSSQL, Oracle, SQLite, MongoDB (auto-selected via error fingerprinting) + 1,537 PATT SQLi payloads
+- **22,582 path traversal payloads** from PATT Intruder wordlists
 - **Polyglot payloads** - Multi-context payloads combining SQL+XSS, Cmd+XSS, SSTI+XSS
 - **Extended XXE** - Parameter entity, blind XXE with external DTD, SVG-based, XInclude
 - **Extended SSRF** - AWS/GCP/Azure/DigitalOcean cloud metadata paths
-- Per-type AI decision prompts with anti-hallucination directives
+- Per-type AI decision prompts with anti-hallucination directives (119 types)
 - WAF-adaptive payload transformation (13 techniques + composite per-WAF evasion)
+
+---
+
+## PayloadsAllTheThings Integration
+
+NeuroSploit integrates [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings) (PATT) as a git submodule, providing 33,500+ community-maintained payloads across 61 mapped categories.
+
+### Setup
+
+```bash
+# Initialize the PATT submodule (one time)
+git submodule update --init
+
+# Or via the PATT CLI
+python -m backend.core.vuln_engine.patt.cli update
+```
+
+### How It Works
+
+- **61 PATT categories** mapped to NeuroSploit vuln types (1:1, 1:N fan-out, and 19 new types)
+- **Parser pipeline** extracts payloads from Intruder wordlists and Markdown code blocks, filtering out prose, language-tagged code examples, and duplicates
+- **Merge strategy**: curated payloads come first in ordering, PATT payloads are appended (deduplicated), available at all scan depths
+- **Dynamic diminishing returns**: strategy adapter scales testing thresholds based on available payload pool size
+- **Graceful degradation**: returns empty lists when submodule is not initialized; all base functionality works without PATT
+
+### PATT CLI
+
+```bash
+# Show submodule status and payload counts per vuln type
+python -m backend.core.vuln_engine.patt.cli status
+
+# Parse a single PATT category and preview results
+python -m backend.core.vuln_engine.patt.cli parse "SQL Injection"
+
+# Dump all PATT payloads for a vuln type
+python -m backend.core.vuln_engine.patt.cli dump command_injection
+
+# Update submodule to latest
+python -m backend.core.vuln_engine.patt.cli update
+```
+
+### Top Payload Counts
+
+| Vuln Type | PATT Payloads |
+|-----------|---------------|
+| Path Traversal | 22,582 |
+| LFI | 4,758 |
+| XSS Reflected | 2,162 |
+| Web Cache Deception | 1,125 |
+| SQLi (error+union+blind+time) | 1,537 |
+| Command Injection | 491 |
+| Open Redirect | 305 |
+| SSTI | 183 |
+| XXE | 102 |
 
 ---
 
@@ -656,7 +753,7 @@ Each entry includes MITRE ATT&CK technique IDs and detection probability profile
 |------|-------|-------------|
 | **Dashboard** | `/` | Stats overview, severity distribution, recent activity feed |
 | **Auto Pentest** | `/auto` | One-click autonomous pentest with 3-stream live display |
-| **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (100 types, 11 categories) |
+| **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (119 types, 11 categories + PATT Extended) |
 | **Terminal Agent** | `/terminal` | AI-powered interactive security chat + tool execution |
 | **Sandboxes** | `/sandboxes` | Real-time Docker container monitoring + management |
 | **AI Agent** | `/scan/new` | Scan creation with mode selector, recon depth, prompt/task selection |
@@ -736,7 +833,7 @@ http://localhost:8000/api/v1
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/vuln-lab/types` | List 100 vuln types by category |
+| `GET` | `/vuln-lab/types` | List 119 vuln types by category (includes PATT Extended when available) |
 | `POST` | `/vuln-lab/run` | Run per-type vulnerability test |
 | `GET` | `/vuln-lab/challenges` | List challenge runs |
 | `GET` | `/vuln-lab/stats` | Detection rate stats |
@@ -826,8 +923,8 @@ Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock
     "profiles": { ... }
   },
   "agent_roles": {
-    "pentest_generalist": { "vuln_coverage": 100 },
-    "bug_bounty_hunter": { "vuln_coverage": 100 }
+    "pentest_generalist": { "vuln_coverage": 119 },
+    "bug_bounty_hunter": { "vuln_coverage": 119 }
   },
   "sandbox": {
     "mode": "per_scan",
@@ -886,6 +983,19 @@ npm run build      # Production build
 python3 -m core.mcp_server        # Starts stdio MCP server (28 tools)
 ```
 
+### PATT Payload Library
+
+```bash
+# Initialize/update PayloadsAllTheThings submodule
+git submodule update --init
+
+# Check status and payload counts
+python3 -m backend.core.vuln_engine.patt.cli status
+
+# Run PATT integration tests
+pytest tests/test_patt_integration.py -v
+```
+
 ---
 
 ## Security Notice
@@ -916,6 +1026,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 | **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh, FFuf, Dalfox |
 | **Proxy** | mitmproxy (opt-in traffic interception, replay, TLS inspection) |
 | **OOB** | interactsh-server (self-hosted out-of-band interaction server) |
+| **Payloads** | PayloadsAllTheThings (33,500+ community payloads via git submodule, 61 mapped categories) |
 | **Infra** | Docker Compose, MCP Protocol (28 tools), Playwright, APScheduler |
 
 ---

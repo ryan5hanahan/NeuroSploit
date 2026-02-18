@@ -152,6 +152,25 @@ VULN_CATEGORIES = {
     },
 }
 
+# Conditionally add PATT-extended category if submodule is available
+try:
+    from backend.core.vuln_engine.patt.loader import PATTLoader
+    if PATTLoader().available:
+        VULN_CATEGORIES["patt_extended"] = {
+            "label": "PATT Extended",
+            "types": [
+                "account_takeover", "client_side_path_traversal",
+                "denial_of_service", "dependency_confusion", "dns_rebinding",
+                "external_variable_modification", "gwt_deserialization",
+                "headless_browser_abuse", "java_rmi", "latex_injection",
+                "prompt_injection", "redos", "reverse_proxy_misconfig",
+                "saml_injection", "ssi_injection", "vhost_enumeration",
+                "web_cache_deception", "xs_leak", "xslt_injection",
+            ]
+        }
+except ImportError:
+    pass
+
 
 def _get_vuln_category(vuln_type: str) -> str:
     """Get category for a vuln type"""

@@ -29,10 +29,31 @@ except ImportError:
     logger.warning("APScheduler not installed. Scheduler disabled. Install with: pip install apscheduler>=3.10.0")
 
 
+_scheduler_instance: Optional['ScanScheduler'] = None
+
+
+async def _run_scheduled_scan(job_id: str, target: str, scan_type: str,
+                              agent_role: Optional[str],
+                              llm_profile: Optional[str]):
+    """Module-level callback for APScheduler SQLite persistence.
+
+    APScheduler serializes this as 'core.scheduler:_run_scheduled_scan' (a string),
+    avoiding pickle of the entire ScanScheduler instance.
+    """
+    if _scheduler_instance is not None:
+        await _scheduler_instance._execute_scheduled_scan(
+            job_id, target, scan_type, agent_role, llm_profile)
+    else:
+        logger.warning("Scheduler instance not set; skipping scheduled scan")
+
+
 class ScanScheduler:
     """Manages recurring scan jobs via APScheduler."""
 
     def __init__(self, config: Dict, database_url: str = "sqlite:///./data/neurosploit_scheduler.db"):
+        global _scheduler_instance
+        _scheduler_instance = self
+
         self.config = config
         self.scheduler_config = config.get('scheduler', {})
         self.enabled = self.scheduler_config.get('enabled', False)
@@ -102,12 +123,12 @@ class ScanScheduler:
             return {"error": "Provide either cron_expression or interval_minutes"}
 
         self.scheduler.add_job(
-            self._execute_scheduled_scan,
+            _run_scheduled_scan,
             trigger=trigger,
             id=job_id,
-            args=[target, scan_type, agent_role, llm_profile],
+            args=[job_id, target, scan_type, agent_role, llm_profile],
             replace_existing=True,
-            name=f"scan_{target}_{scan_type}"
+            name=schedule_desc,
         )
 
         meta = {
@@ -181,16 +202,18 @@ class ScanScheduler:
                     "schedule": meta.get("schedule", "unknown"),
                     "status": meta.get("status", "active"),
                     "last_run": meta.get("last_run"),
-                    "run_count": meta.get("run_count", 0)
+                    "run_count": meta.get("run_count", 0),
+                    "agent_role": meta.get("agent_role"),
+                    "llm_profile": meta.get("llm_profile"),
                 })
         return jobs
 
-    async def _execute_scheduled_scan(self, target: str, scan_type: str,
+    async def _execute_scheduled_scan(self, job_id: str, target: str,
+                                       scan_type: str,
                                        agent_role: Optional[str],
                                        llm_profile: Optional[str]):
         """Execute a scheduled scan. Called by APScheduler."""
-        job_id = f"scan_{target}_{scan_type}"
-        logger.info(f"Executing scheduled scan: {target} ({scan_type})")
+        logger.info(f"Executing scheduled scan [{job_id}]: {target} ({scan_type})")
 
         if job_id in self.jobs_meta:
             self.jobs_meta[job_id]["last_run"] = datetime.now().isoformat()
@@ -206,11 +229,45 @@ class ScanScheduler:
         else:
             logger.warning("No scan callback registered. Scheduled scan skipped.")
 
+    def _rehydrate_meta(self):
+        """Reconstruct ``jobs_meta`` from APScheduler's persisted jobs.
+
+        On startup the SQLite jobstore already contains previously added jobs,
+        but the in-memory ``jobs_meta`` dict is empty.  Walk persisted jobs and
+        rebuild metadata from the stored ``job.args`` and ``job.name`` (which
+        stores the human-readable schedule description).
+        """
+        for job in self.scheduler.get_jobs():
+            if job.id not in self.jobs_meta:
+                args = job.args or []
+                self.jobs_meta[job.id] = {
+                    "id": job.id,
+                    "target": args[1] if len(args) > 1 else "unknown",
+                    "scan_type": args[2] if len(args) > 2 else "unknown",
+                    "schedule": job.name or "unknown",
+                    "agent_role": args[3] if len(args) > 3 else None,
+                    "llm_profile": args[4] if len(args) > 4 else None,
+                    "created_at": None,
+                    "last_run": None,
+                    "run_count": 0,
+                    "status": "paused" if job.next_run_time is None else "active",
+                }
+
     def start(self):
-        """Start the scheduler."""
-        if self.scheduler and self.enabled:
-            self.scheduler.start()
-            logger.info(f"Scheduler started with {len(self.list_jobs())} jobs")
+        """Start the scheduler.
+
+        Always starts the APScheduler instance so pending jobs are flushed
+        to the SQLite jobstore.  When ``self.enabled`` is False the scheduler
+        starts in *paused* mode — jobs are persisted and visible via
+        ``get_jobs()`` but triggers won't fire.
+        """
+        if self.scheduler:
+            if self.enabled:
+                self.scheduler.start()
+            else:
+                self.scheduler.start(paused=True)
+            self._rehydrate_meta()
+            logger.info(f"Scheduler started (enabled={self.enabled}) with {len(self.list_jobs())} jobs")
 
     def stop(self):
         """Stop the scheduler gracefully."""

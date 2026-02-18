@@ -1127,4 +1127,96 @@ VULN_TYPE_PROOF_REQUIREMENTS: Dict[str, str] = {
         "ReDoS, XML bomb, zip bomb, algorithmic complexity. "
         "Many requests causing slowdown = rate limiting issue, not DoS vuln."
     ),
+
+    # === PATT ADVANCED TYPES (101-118) ===
+    "client_side_path_traversal": (
+        "PROOF REQUIRED: Client-side path traversal must demonstrate navigation to "
+        "unintended routes or loading of unauthorized resources via URL path manipulation "
+        "in the browser. Must show HTTP request to traversed path returning sensitive data. "
+        "Server-side 404 or static file listing = NOT client-side path traversal."
+    ),
+    "external_variable_modification": (
+        "PROOF REQUIRED: Must demonstrate injection or override of server-side variables "
+        "via HTTP parameters (query string, POST body, headers) that changes application "
+        "behavior. Must show before/after responses proving variable was modified. "
+        "Application ignoring injected parameters = NOT vulnerable."
+    ),
+    "gwt_deserialization": (
+        "PROOF REQUIRED: Must demonstrate GWT-RPC deserialization of attacker-controlled "
+        "object leading to code execution or data access. Must show crafted GWT-RPC "
+        "payload and server response confirming deserialization. "
+        "GWT endpoint existing without exploitation = NOT a finding."
+    ),
+    "headless_browser_abuse": (
+        "PROOF REQUIRED: Must demonstrate server-side headless browser executing "
+        "attacker-controlled content (JavaScript execution, file read, SSRF). Must show "
+        "HTTP response containing evidence of browser-side execution (rendered content, "
+        "exfiltrated data). Headless browser detected but unexploitable = NOT a finding."
+    ),
+    "java_rmi": (
+        "PROOF REQUIRED: Must demonstrate Java RMI registry accessible and exploitable. "
+        "Must show: registry listing with bound objects, or successful deserialization "
+        "attack via RMI endpoint with HTTP evidence of impact. "
+        "Open RMI port without exploitation = Info only, NOT confirmed."
+    ),
+    "latex_injection": (
+        "PROOF REQUIRED: LaTeX input must be processed by server and cause file read, "
+        "command execution, or data exfiltration via \\input, \\write18, or similar. "
+        "Must show rendered output containing server-side file contents or command output. "
+        "LaTeX syntax appearing in output without execution = NOT injection."
+    ),
+    "prompt_injection": (
+        "PROOF REQUIRED: Must demonstrate LLM system prompt override or behavior "
+        "manipulation via user-controlled input. Must show HTTP response where LLM "
+        "output deviates from intended behavior (leaked system prompt, role violation, "
+        "unauthorized actions). LLM producing unexpected text = NOT confirmed injection."
+    ),
+    "redos": (
+        "PROOF REQUIRED: Must demonstrate regex pattern causing catastrophic backtracking "
+        "with measurable response time increase. Must show: normal input response time vs "
+        "crafted input response time (>5x increase). Server timeout or 504 on crafted "
+        "input is strong evidence. Fast rejection of malformed input = NOT vulnerable."
+    ),
+    "reverse_proxy_misconfig": (
+        "PROOF REQUIRED: Must demonstrate reverse proxy (nginx, HAProxy, Traefik) "
+        "allowing access to restricted backend resources via path normalization, header "
+        "manipulation, or routing bypass. Must show HTTP response from backend that "
+        "should be blocked. Proxy error pages or 502s = NOT misconfiguration proof."
+    ),
+    "saml_injection": (
+        "PROOF REQUIRED: Must demonstrate SAML assertion manipulation leading to "
+        "authentication bypass or privilege escalation. Must show: crafted SAML response "
+        "accepted by SP with altered identity or role attributes. "
+        "SAML endpoint existing without exploitation = NOT a finding."
+    ),
+    "ssi_injection": (
+        "PROOF REQUIRED: Server-Side Include directives must execute and return evidence "
+        "in HTTP response. Must show <!--#exec or <!--#include output reflected with "
+        "server-side file contents or command output. "
+        "SSI tags reflected verbatim without execution = NOT vulnerable."
+    ),
+    "vhost_enumeration": (
+        "PROOF REQUIRED: Must demonstrate discovery of hidden virtual hosts responding "
+        "with different content than the default host. Must show: Host header variation "
+        "producing distinct HTTP response (status code, body, headers) revealing internal "
+        "application. Same default page for all hosts = NOT enumerable."
+    ),
+    "web_cache_deception": (
+        "PROOF REQUIRED: Must demonstrate cached response containing another user's "
+        "sensitive data. Must show: request to deceptive path (e.g., /profile/x.css) "
+        "returning user-specific data, AND subsequent unauthenticated request to same "
+        "path returning cached sensitive content. Single cached response = NOT sufficient."
+    ),
+    "xs_leak": (
+        "PROOF REQUIRED: Must demonstrate cross-site information leakage via timing, "
+        "error events, or frame counting. Must show: measurable side-channel difference "
+        "between two states (logged-in vs logged-out, resource exists vs not). "
+        "Theoretical timing difference without measured evidence = NOT confirmed."
+    ),
+    "xslt_injection": (
+        "PROOF REQUIRED: Must demonstrate XSLT processor executing attacker-controlled "
+        "stylesheet or template injection. Must show HTTP response with evidence of "
+        "server-side file read, code execution, or SSRF via XSLT functions. "
+        "XML parsing errors without XSLT execution = NOT injection."
+    ),
 }

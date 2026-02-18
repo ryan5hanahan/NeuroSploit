@@ -241,6 +241,185 @@ TOOL_ENHANCE_FINDING = {
 }
 
 
+# ── Response Diff (Blind Injection Detection) ─────────────────────────────
+
+TOOL_RESPONSE_DIFF = {
+    "name": "response_diff",
+    "description": (
+        "Structured before/after comparison for blind injection detection. "
+        "Compare a baseline response against a test (payload-injected) response "
+        "to identify subtle behavioral differences that indicate blind vulnerabilities."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "baseline": {
+                "type": "object",
+                "description": "Baseline (clean) response measurements",
+                "properties": {
+                    "status": {"type": "integer", "description": "HTTP status code"},
+                    "body_length": {"type": "integer", "description": "Response body length in bytes"},
+                    "body_hash": {"type": "string", "description": "SHA-256 hash of response body"},
+                    "timing_ms": {"type": "number", "description": "Response time in milliseconds"},
+                    "content_snippet": {"type": "string", "description": "First 500 chars of body"},
+                },
+                "required": ["status", "body_length", "timing_ms"],
+            },
+            "test": {
+                "type": "object",
+                "description": "Test (payload-injected) response measurements",
+                "properties": {
+                    "status": {"type": "integer", "description": "HTTP status code"},
+                    "body_length": {"type": "integer", "description": "Response body length in bytes"},
+                    "body_hash": {"type": "string", "description": "SHA-256 hash of response body"},
+                    "timing_ms": {"type": "number", "description": "Response time in milliseconds"},
+                    "content_snippet": {"type": "string", "description": "First 500 chars of body"},
+                },
+                "required": ["status", "body_length", "timing_ms"],
+            },
+            "delta": {
+                "type": "object",
+                "description": "Computed differences between baseline and test",
+                "properties": {
+                    "status_changed": {"type": "boolean", "description": "Whether HTTP status changed"},
+                    "length_delta": {"type": "integer", "description": "Absolute body length difference"},
+                    "length_delta_pct": {"type": "number", "description": "Body length change as percentage"},
+                    "timing_delta_ms": {"type": "number", "description": "Timing difference in ms"},
+                    "timing_ratio": {"type": "number", "description": "test_timing / baseline_timing ratio"},
+                    "content_similarity_pct": {"type": "number", "description": "Content similarity 0-100%"},
+                    "new_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Patterns appearing in test but not baseline (e.g. error messages, SQL fragments)",
+                    },
+                    "disappeared_patterns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Patterns present in baseline but absent from test",
+                    },
+                },
+                "required": ["status_changed", "length_delta", "timing_delta_ms"],
+            },
+            "verdict": {
+                "type": "string",
+                "enum": [
+                    "blind_confirmed",
+                    "likely_blind",
+                    "behavioral_diff",
+                    "timing_anomaly",
+                    "no_diff",
+                    "inconclusive",
+                ],
+                "description": "Overall assessment of whether a blind vulnerability is indicated",
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence in verdict (0.0-1.0)",
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Explanation of why this verdict was reached",
+            },
+        },
+        "required": ["baseline", "test", "delta", "verdict", "confidence", "reasoning"],
+    },
+}
+
+
+# ── Auth Context Switch (Access Control Testing) ─────────────────────────
+
+TOOL_AUTH_CONTEXT_SWITCH = {
+    "name": "auth_context_switch",
+    "description": (
+        "Multi-identity access control testing. Compare how an endpoint responds "
+        "to requests from different user roles/identities to detect access control "
+        "bypasses, privilege escalation, and IDOR vulnerabilities."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "endpoint": {
+                "type": "string",
+                "description": "The endpoint being tested",
+            },
+            "method": {
+                "type": "string",
+                "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                "description": "HTTP method used for the test",
+            },
+            "identities": {
+                "type": "array",
+                "description": "Identities (roles) used in the comparison",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "role": {"type": "string", "description": "Role label (e.g. admin, user, anonymous)"},
+                        "auth_type": {
+                            "type": "string",
+                            "enum": ["bearer", "cookie", "basic", "api_key", "none"],
+                            "description": "Authentication mechanism",
+                        },
+                        "credentials": {"type": "string", "description": "Credential value (token, cookie, etc.)"},
+                        "description": {"type": "string", "description": "Human-readable identity description"},
+                    },
+                    "required": ["role", "auth_type"],
+                },
+                "minItems": 2,
+            },
+            "comparison_fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Response fields to compare (e.g. status, body_length, json_keys, records_count)",
+            },
+            "expected_behavior": {
+                "type": "string",
+                "enum": ["deny_lower_role", "different_data", "same_public_data", "role_scoped"],
+                "description": "What proper access control should look like",
+            },
+            "verdict": {
+                "type": "string",
+                "enum": [
+                    "access_control_bypass",
+                    "proper_enforcement",
+                    "partial_enforcement",
+                    "inconclusive",
+                ],
+                "description": "Overall access control assessment",
+            },
+            "details": {
+                "type": "array",
+                "description": "Pairwise comparison results between identities",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "identity_a": {"type": "string", "description": "First role in comparison"},
+                        "identity_b": {"type": "string", "description": "Second role in comparison"},
+                        "status_a": {"type": "integer"},
+                        "status_b": {"type": "integer"},
+                        "body_length_a": {"type": "integer"},
+                        "body_length_b": {"type": "integer"},
+                        "similarity_pct": {"type": "number", "description": "Response similarity 0-100%"},
+                        "significant": {"type": "boolean", "description": "Whether this comparison reveals an issue"},
+                        "notes": {"type": "string"},
+                    },
+                    "required": ["identity_a", "identity_b", "significant"],
+                },
+            },
+            "severity": {
+                "type": "string",
+                "enum": ["critical", "high", "medium", "low", "info"],
+                "description": "Severity if access control issue is found",
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence in verdict (0.0-1.0)",
+            },
+        },
+        "required": ["endpoint", "method", "identities", "verdict", "confidence"],
+    },
+}
+
+
 # ── All Meta-Tools ─────────────────────────────────────────────────────────
 
 META_TOOLS: Dict[str, Dict[str, Any]] = {
@@ -249,6 +428,8 @@ META_TOOLS: Dict[str, Dict[str, Any]] = {
     "analyze_attack_surface": TOOL_ANALYZE_ATTACK_SURFACE,
     "create_execution_plan": TOOL_CREATE_EXECUTION_PLAN,
     "enhance_finding": TOOL_ENHANCE_FINDING,
+    "response_diff": TOOL_RESPONSE_DIFF,
+    "auth_context_switch": TOOL_AUTH_CONTEXT_SWITCH,
 }
 
 
