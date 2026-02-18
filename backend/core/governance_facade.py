@@ -9,8 +9,10 @@ Scope layer:  Controls WHAT can be tested (vuln types, domains, tools).
 Phase layer:  Controls WHEN actions can happen (no exploitation during recon).
 """
 
+import asyncio
 import json
 import logging
+import uuid
 from typing import Any, Callable, Dict, List, Optional
 
 from backend.core.governance import (
@@ -316,6 +318,12 @@ def create_governance(
             task_category=task_category,
         )
 
+    # 3. Wire default callbacks if not provided
+    if not violation_callback:
+        violation_callback = _make_ws_violation_callback(scan_id)
+    if not db_persist_fn:
+        db_persist_fn = _make_db_persist_fn(scan_id)
+
     return Governance(
         scope_agent=scope_agent,
         phase_gate=phase_gate,
@@ -323,6 +331,59 @@ def create_governance(
         violation_callback=violation_callback,
         db_persist_fn=db_persist_fn,
     )
+
+
+def _make_ws_violation_callback(scan_id: str) -> Callable:
+    """Create a callback that broadcasts violations via WebSocket."""
+    def _callback(violation: GovernanceViolation):
+        try:
+            from backend.api.websocket import manager as ws_manager
+            violation_dict = violation.to_dict()
+            # Schedule the async broadcast from sync context
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    ws_manager.broadcast_governance_violation(scan_id, violation_dict)
+                )
+            except RuntimeError:
+                pass  # No running loop — skip WS broadcast
+        except Exception:
+            pass
+    return _callback
+
+
+def _make_db_persist_fn(scan_id: str) -> Callable:
+    """Create a callback that persists violations to the database."""
+    def _persist(violation: GovernanceViolation):
+        try:
+            from backend.db.database import async_session_factory
+            from backend.models.governance_violation import GovernanceViolationRecord
+
+            async def _do_persist():
+                async with async_session_factory() as session:
+                    record = GovernanceViolationRecord(
+                        id=str(uuid.uuid4()),
+                        scan_id=scan_id,
+                        layer=getattr(violation, "layer", "phase"),
+                        phase=getattr(violation, "phase", None),
+                        action=getattr(violation, "action", None),
+                        action_category=getattr(violation, "action_category", None),
+                        allowed_categories=getattr(violation, "allowed_categories", []),
+                        context=getattr(violation, "context", None),
+                        disposition=getattr(violation, "disposition", "blocked"),
+                        detail=getattr(violation, "detail", None),
+                    )
+                    session.add(record)
+                    await session.commit()
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_do_persist())
+            except RuntimeError:
+                pass  # No running loop — skip DB persist
+        except Exception as e:
+            logger.debug(f"Violation DB persist error: {e}")
+    return _persist
 
 
 def _load_classification_overrides(gov_config: Dict):
