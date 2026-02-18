@@ -29,10 +29,31 @@ except ImportError:
     logger.warning("APScheduler not installed. Scheduler disabled. Install with: pip install apscheduler>=3.10.0")
 
 
+_scheduler_instance: Optional['ScanScheduler'] = None
+
+
+async def _run_scheduled_scan(job_id: str, target: str, scan_type: str,
+                              agent_role: Optional[str],
+                              llm_profile: Optional[str]):
+    """Module-level callback for APScheduler SQLite persistence.
+
+    APScheduler serializes this as 'core.scheduler:_run_scheduled_scan' (a string),
+    avoiding pickle of the entire ScanScheduler instance.
+    """
+    if _scheduler_instance is not None:
+        await _scheduler_instance._execute_scheduled_scan(
+            job_id, target, scan_type, agent_role, llm_profile)
+    else:
+        logger.warning("Scheduler instance not set; skipping scheduled scan")
+
+
 class ScanScheduler:
     """Manages recurring scan jobs via APScheduler."""
 
     def __init__(self, config: Dict, database_url: str = "sqlite:///./data/neurosploit_scheduler.db"):
+        global _scheduler_instance
+        _scheduler_instance = self
+
         self.config = config
         self.scheduler_config = config.get('scheduler', {})
         self.enabled = self.scheduler_config.get('enabled', False)
@@ -102,7 +123,7 @@ class ScanScheduler:
             return {"error": "Provide either cron_expression or interval_minutes"}
 
         self.scheduler.add_job(
-            self._execute_scheduled_scan,
+            _run_scheduled_scan,
             trigger=trigger,
             id=job_id,
             args=[job_id, target, scan_type, agent_role, llm_profile],
