@@ -69,8 +69,22 @@ class Settings(BaseSettings):
     VIRUSTOTAL_API_KEY: Optional[str] = os.getenv("VIRUSTOTAL_API_KEY")
     BUILTWITH_API_KEY: Optional[str] = os.getenv("BUILTWITH_API_KEY")
 
+    # Cost Tracking
+    COST_BUDGET_PER_SCAN: float = 5.00
+    COST_WARN_AT_PCT: float = 80.0
+    ENABLE_COST_TRACKING: bool = True
+
+    # Security Testing
+    ENABLE_WAF_EVASION: bool = True
+    WAF_CONFIDENCE_THRESHOLD: float = 0.7
+    CONFIDENCE_PIVOT_THRESHOLD: int = 30
+    CONFIDENCE_REJECT_THRESHOLD: int = 40
+
     # Scan Settings
     MAX_CONCURRENT_SCANS: int = 3
+    DEFAULT_SCAN_TYPE: str = "full"
+    RECON_ENABLED_BY_DEFAULT: bool = True
+    AGGRESSIVE_MODE: bool = False
     DEFAULT_TIMEOUT: int = 30
     MAX_REQUESTS_PER_SECOND: int = 10
 

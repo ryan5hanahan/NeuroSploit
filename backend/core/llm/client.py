@@ -43,15 +43,40 @@ class UnifiedLLMClient:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+        import os
+
         config = config or {}
 
         # Initialize components
         self.router = ModelRouter(config)
         self.prompt_composer = PromptComposer()
+
+        # Resolve cost tracking config: config dict takes priority, env vars as fallback
+        cost_cfg = config.get("model_routing", {}).get("cost_tracking", {})
+
+        budget = cost_cfg.get("budget_per_scan_usd")
+        if budget is None:
+            try:
+                budget = float(os.getenv("COST_BUDGET_PER_SCAN", "5.00"))
+            except ValueError:
+                budget = 5.00
+
+        warn_pct = cost_cfg.get("warn_at_pct")
+        if warn_pct is None:
+            try:
+                warn_pct = float(os.getenv("COST_WARN_AT_PCT", "80.0"))
+            except ValueError:
+                warn_pct = 80.0
+
+        cost_enabled = cost_cfg.get("enabled")
+        if cost_enabled is None:
+            env_val = os.getenv("ENABLE_COST_TRACKING", "true").strip().lower()
+            cost_enabled = env_val not in ("false", "0", "no")
+
         self.cost_tracker = CostTracker(
-            budget_usd=config.get("model_routing", {}).get("cost_tracking", {}).get("budget_per_scan_usd", 5.00),
-            warn_at_pct=config.get("model_routing", {}).get("cost_tracking", {}).get("warn_at_pct", 80.0),
-            enabled=config.get("model_routing", {}).get("cost_tracking", {}).get("enabled", True),
+            budget_usd=budget,
+            warn_at_pct=warn_pct,
+            enabled=cost_enabled,
         )
 
         # Initialize providers (lazy — created once, reused)

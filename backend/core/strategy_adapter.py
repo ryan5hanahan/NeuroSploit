@@ -8,6 +8,7 @@ dynamic reprioritization for autonomous pentesting.
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable
@@ -312,12 +313,15 @@ class StrategyAdapter:
         Returns:
             (should_pivot: bool, reason: str)
         """
+        pivot_threshold = int(os.getenv("CONFIDENCE_PIVOT_THRESHOLD", "30"))
+        reject_threshold = int(os.getenv("CONFIDENCE_REJECT_THRESHOLD", "40"))
+
         vs = self._get_vuln_stats(vuln_type)
         if not vs or vs.total_tests < 3:
             return False, ""
-        if vs.avg_confidence < 30 and vs.total_tests > 2:
-            return True, "confidence_below_30"
-        if vs.avg_confidence < 40 and vs.rejected_count >= 3 and vs.confirmed_count == 0:
+        if vs.avg_confidence < pivot_threshold and vs.total_tests > 2:
+            return True, f"confidence_below_{pivot_threshold}"
+        if vs.avg_confidence < reject_threshold and vs.rejected_count >= 3 and vs.confirmed_count == 0:
             return True, "three_failures_low_confidence"
         return False, ""
 

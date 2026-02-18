@@ -121,6 +121,18 @@ class SettingsUpdate(BaseModel):
     enable_bugbounty_integration: Optional[bool] = None
     hackerone_api_token: Optional[str] = None
     hackerone_username: Optional[str] = None
+    # Cost tracking
+    cost_budget_per_scan: Optional[float] = None
+    cost_warn_at_pct: Optional[float] = None
+    enable_cost_tracking: Optional[bool] = None
+    # Security testing
+    enable_waf_evasion: Optional[bool] = None
+    waf_confidence_threshold: Optional[float] = None
+    confidence_pivot_threshold: Optional[int] = None
+    confidence_reject_threshold: Optional[int] = None
+    # Scan tuning
+    default_timeout: Optional[int] = None
+    max_requests_per_second: Optional[int] = None
 
 
 class SettingsResponse(BaseModel):
@@ -157,6 +169,18 @@ class SettingsResponse(BaseModel):
     # Bug bounty
     enable_bugbounty_integration: bool = False
     has_hackerone_config: bool = False
+    # Cost tracking
+    cost_budget_per_scan: float = 5.00
+    cost_warn_at_pct: float = 80.0
+    enable_cost_tracking: bool = True
+    # Security testing
+    enable_waf_evasion: bool = True
+    waf_confidence_threshold: float = 0.7
+    confidence_pivot_threshold: int = 30
+    confidence_reject_threshold: int = 40
+    # Scan tuning
+    default_timeout: int = 30
+    max_requests_per_second: int = 10
 
 
 def _load_settings_from_env() -> dict:
@@ -182,6 +206,15 @@ def _load_settings_from_env() -> dict:
         if val:
             try:
                 return int(val)
+            except ValueError:
+                pass
+        return default
+
+    def _env_float(key: str, default=None):
+        val = os.getenv(key, "").strip()
+        if val:
+            try:
+                return float(val)
             except ValueError:
                 pass
         return default
@@ -236,6 +269,18 @@ def _load_settings_from_env() -> dict:
         "enable_bugbounty_integration": _env_bool("ENABLE_BUGBOUNTY_INTEGRATION", False),
         "hackerone_api_token": os.getenv("HACKERONE_API_TOKEN", ""),
         "hackerone_username": os.getenv("HACKERONE_USERNAME", ""),
+        # Cost tracking
+        "cost_budget_per_scan": _env_float("COST_BUDGET_PER_SCAN", 5.00),
+        "cost_warn_at_pct": _env_float("COST_WARN_AT_PCT", 80.0),
+        "enable_cost_tracking": _env_bool("ENABLE_COST_TRACKING", True),
+        # Security testing
+        "enable_waf_evasion": _env_bool("ENABLE_WAF_EVASION", True),
+        "waf_confidence_threshold": _env_float("WAF_CONFIDENCE_THRESHOLD", 0.7),
+        "confidence_pivot_threshold": _env_int("CONFIDENCE_PIVOT_THRESHOLD", 30),
+        "confidence_reject_threshold": _env_int("CONFIDENCE_REJECT_THRESHOLD", 40),
+        # Scan tuning
+        "default_timeout": _env_int("DEFAULT_TIMEOUT", 30),
+        "max_requests_per_second": _env_int("MAX_REQUESTS_PER_SECOND", 10),
     }
 
 
@@ -284,6 +329,18 @@ async def get_settings():
             (_settings.get("hackerone_api_token") or os.getenv("HACKERONE_API_TOKEN"))
             and (_settings.get("hackerone_username") or os.getenv("HACKERONE_USERNAME"))
         ),
+        # Cost tracking
+        cost_budget_per_scan=_settings["cost_budget_per_scan"],
+        cost_warn_at_pct=_settings["cost_warn_at_pct"],
+        enable_cost_tracking=_settings["enable_cost_tracking"],
+        # Security testing
+        enable_waf_evasion=_settings["enable_waf_evasion"],
+        waf_confidence_threshold=_settings["waf_confidence_threshold"],
+        confidence_pivot_threshold=_settings["confidence_pivot_threshold"],
+        confidence_reject_threshold=_settings["confidence_reject_threshold"],
+        # Scan tuning
+        default_timeout=_settings["default_timeout"],
+        max_requests_per_second=_settings["max_requests_per_second"],
     )
 
 
@@ -442,6 +499,55 @@ async def update_settings(settings_data: SettingsUpdate):
             if val:
                 os.environ[env_key] = val
                 env_updates[env_key] = val
+
+    # Cost tracking
+    if settings_data.cost_budget_per_scan is not None:
+        _settings["cost_budget_per_scan"] = settings_data.cost_budget_per_scan
+        os.environ["COST_BUDGET_PER_SCAN"] = str(settings_data.cost_budget_per_scan)
+        env_updates["COST_BUDGET_PER_SCAN"] = str(settings_data.cost_budget_per_scan)
+
+    if settings_data.cost_warn_at_pct is not None:
+        _settings["cost_warn_at_pct"] = settings_data.cost_warn_at_pct
+        os.environ["COST_WARN_AT_PCT"] = str(settings_data.cost_warn_at_pct)
+        env_updates["COST_WARN_AT_PCT"] = str(settings_data.cost_warn_at_pct)
+
+    if settings_data.enable_cost_tracking is not None:
+        _settings["enable_cost_tracking"] = settings_data.enable_cost_tracking
+        val = str(settings_data.enable_cost_tracking).lower()
+        os.environ["ENABLE_COST_TRACKING"] = val
+        env_updates["ENABLE_COST_TRACKING"] = val
+
+    # Security testing
+    for field_name, env_key in [
+        ("enable_waf_evasion", "ENABLE_WAF_EVASION"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            str_val = str(val).lower()
+            os.environ[env_key] = str_val
+            env_updates[env_key] = str_val
+
+    for field_name, env_key in [
+        ("waf_confidence_threshold", "WAF_CONFIDENCE_THRESHOLD"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            os.environ[env_key] = str(val)
+            env_updates[env_key] = str(val)
+
+    for field_name, env_key in [
+        ("confidence_pivot_threshold", "CONFIDENCE_PIVOT_THRESHOLD"),
+        ("confidence_reject_threshold", "CONFIDENCE_REJECT_THRESHOLD"),
+        ("default_timeout", "DEFAULT_TIMEOUT"),
+        ("max_requests_per_second", "MAX_REQUESTS_PER_SECOND"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            os.environ[env_key] = str(val)
+            env_updates[env_key] = str(val)
 
     # Persist to .env file on disk
     if env_updates:
