@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.db.database import init_db, close_db
-from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces
+from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance
 from backend.api.websocket import manager as ws_manager
 
 
@@ -113,6 +113,7 @@ app.include_router(sandbox.router, prefix="/api/v1/sandbox", tags=["Sandbox"])
 app.include_router(tradecraft.router, prefix="/api/v1/tradecraft", tags=["Tradecraft"])
 app.include_router(memory.router, prefix="/api/v1/memory", tags=["Persistent Memory"])
 app.include_router(traces.router, prefix="/api/v1/traces", tags=["Traces"])
+app.include_router(governance.router, prefix="/api/v1/governance", tags=["Governance"])
 
 
 @app.get("/api/health")

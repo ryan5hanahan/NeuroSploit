@@ -209,6 +209,22 @@ class ConnectionManager:
             "error": error
         })
 
+    async def broadcast_governance_violation(self, scan_id: str, violation: dict):
+        """Notify a governance violation was recorded"""
+        await self.send_to_scan(scan_id, {
+            "type": "governance_violation",
+            "scan_id": scan_id,
+            "violation": violation
+        })
+
+    async def broadcast_governance_stats(self, scan_id: str, stats: dict):
+        """Broadcast updated governance statistics"""
+        await self.send_to_scan(scan_id, {
+            "type": "governance_stats",
+            "scan_id": scan_id,
+            "stats": stats
+        })
+
 
 # Global instance
 manager = ConnectionManager()

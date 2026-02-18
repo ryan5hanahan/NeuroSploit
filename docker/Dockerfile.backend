@@ -92,6 +92,7 @@ COPY tools/ ./tools/
 COPY models/ ./models/
 COPY data/ ./data/
 COPY vendor/ ./vendor/
+COPY tests/ ./tests/
 
 # Create data directories (ensure they exist even if not in COPY)
 RUN mkdir -p data/reports data/scans data/recon /root/.config/nuclei

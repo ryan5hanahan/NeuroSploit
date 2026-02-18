@@ -175,6 +175,11 @@
             "warn_at_pct": 80
         }
     },
+    "governance": {
+        "default_mode": "warn",
+        "action_classifications": {},
+        "phase_policy_overrides": {}
+    },
     "output": {
         "format": "json",
         "verbose": true,

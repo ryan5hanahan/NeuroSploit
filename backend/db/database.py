@@ -242,6 +242,39 @@ async def _run_migrations(conn):
             if "ctf_agent_count" not in columns:
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_agent_count INTEGER"))
 
+        # Check if governance_violations table exists
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='governance_violations'")
+        )
+        if not result.fetchone():
+            logger.info("Creating 'governance_violations' table...")
+            await conn.execute(text("""
+                CREATE TABLE governance_violations (
+                    id VARCHAR(36) PRIMARY KEY,
+                    scan_id VARCHAR(36) NOT NULL,
+                    layer VARCHAR(10) NOT NULL DEFAULT 'phase',
+                    phase VARCHAR(50),
+                    action VARCHAR(255),
+                    action_category VARCHAR(50),
+                    allowed_categories JSON DEFAULT '[]',
+                    context JSON,
+                    disposition VARCHAR(20) NOT NULL DEFAULT 'blocked',
+                    detail TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
+                )
+            """))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gov_violations_scan_id ON governance_violations(scan_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_gov_violations_layer ON governance_violations(layer)"))
+        else:
+            # Migrate existing table - add new columns if missing
+            result = await conn.execute(text("PRAGMA table_info(governance_violations)"))
+            columns = [row[1] for row in result.fetchall()]
+            if "layer" not in columns:
+                await conn.execute(text("ALTER TABLE governance_violations ADD COLUMN layer VARCHAR(10) DEFAULT 'phase'"))
+            if "detail" not in columns:
+                await conn.execute(text("ALTER TABLE governance_violations ADD COLUMN detail TEXT"))
+
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration check failed (may be normal on first run): {e}")
