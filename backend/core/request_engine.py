@@ -84,6 +84,7 @@ class RequestEngine:
         default_timeout: float = 10.0,
         is_cancelled_fn: Optional[Callable] = None,
         jitter_range: Optional[Tuple[float, float]] = None,
+        governance=None,
     ):
         self.session = session
         self.default_delay = default_delay
@@ -93,6 +94,7 @@ class RequestEngine:
         self.default_timeout = default_timeout
         self.is_cancelled = is_cancelled_fn or (lambda: False)
         self.jitter_range = jitter_range  # (min_seconds, max_seconds) or None
+        self.governance = governance
         
         # Per-host state
         self._hosts: Dict[str, HostState] = {}
@@ -196,12 +198,20 @@ class RequestEngine:
         json_data: Optional[Dict] = None,
     ) -> Optional[RequestResult]:
         """Make an HTTP request with retry, rate limiting, and circuit breaker.
-        
+
         Returns RequestResult on success (even 4xx), None on total failure.
         """
         if self.is_cancelled():
             return None
-        
+
+        # Governance: block out-of-scope URLs
+        if self.governance and not self.governance.is_url_in_scope(url):
+            logger.info(f"[GOVERNANCE] URL out of scope, blocked: {url}")
+            return RequestResult(
+                status=0, body="", headers={}, url=url,
+                error_type=ErrorType.CLIENT_ERROR
+            )
+
         host_state = self._get_host(url)
         
         # Circuit breaker check

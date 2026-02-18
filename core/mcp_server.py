@@ -875,6 +875,27 @@ TOOL_HANDLERS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Governance context for in-process MCP usage
+# ---------------------------------------------------------------------------
+_active_governance = None
+
+
+def set_mcp_governance(governance):
+    """Set the active governance facade for MCP tool calls.
+
+    Called by AutonomousAgent.__aenter__ when MCP runs in-process.
+    """
+    global _active_governance
+    _active_governance = governance
+
+
+def clear_mcp_governance():
+    """Clear the active governance facade (called on agent exit)."""
+    global _active_governance
+    _active_governance = None
+
+
 def create_mcp_server() -> "Server":
     """Create and configure the MCP server with all pentest tools."""
     if not HAS_MCP:
@@ -888,6 +909,16 @@ def create_mcp_server() -> "Server":
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list:
+        # Governance gate: check if tool is allowed in current phase
+        if _active_governance is not None:
+            decision = _active_governance.check_action(name, arguments)
+            if not decision.allowed:
+                logger.info(f"[GOVERNANCE] MCP tool '{name}' blocked: {decision.reason}")
+                return [TextContent(type="text", text=json.dumps({
+                    "error": f"Governance blocked: {decision.reason}",
+                    "governance_blocked": True,
+                }))]
+
         handler = TOOL_HANDLERS.get(name)
         if not handler:
             return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]

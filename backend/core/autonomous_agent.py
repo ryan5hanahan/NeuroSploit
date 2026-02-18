@@ -2813,6 +2813,7 @@ NOT_VULNERABLE: <reason>"""
             self.session, default_delay=0.1, max_retries=3,
             is_cancelled_fn=self.is_cancelled,
             jitter_range=jitter_range,
+            governance=self.governance,
         )
         self.waf_detector = WAFDetector(self.request_engine)
         self.strategy = StrategyAdapter(self.memory)
@@ -2852,9 +2853,24 @@ NOT_VULNERABLE: <reason>"""
             except Exception:
                 pass
 
+        # Set governance context for in-process MCP server
+        if self.governance:
+            try:
+                from core.mcp_server import set_mcp_governance
+                set_mcp_governance(self.governance)
+            except ImportError:
+                pass
+
         return self
 
     async def __aexit__(self, *args):
+        # Clear governance context for in-process MCP server
+        try:
+            from core.mcp_server import clear_mcp_governance
+            clear_mcp_governance()
+        except ImportError:
+            pass
+
         # Disconnect MCP tools
         if self.mcp_client:
             try:
@@ -4654,6 +4670,14 @@ Respond ONLY with a JSON array:
         """Execute a tool via MCP. Returns parsed dict or None."""
         if not self.mcp_client or not self.mcp_client.enabled:
             return None
+
+        # Governance: check if MCP tool is allowed in current phase
+        if self.governance:
+            decision = self.governance.check_action(tool_name, arguments)
+            if not decision.allowed:
+                await self.log("warning", f"[GOVERNANCE] MCP tool '{tool_name}' blocked: {decision.reason}")
+                return None
+
         try:
             result = await self.mcp_client.try_tool(tool_name, arguments or {})
             if result:
