@@ -1285,9 +1285,10 @@ async def get_llm_status():
     Returns information about which LLM providers are configured and available,
     useful for debugging connection issues.
     """
-    from backend.core.autonomous_agent import LLMClient
+    from backend.core.llm import UnifiedLLMClient
+    from backend.core.autonomous_agent import AutonomousAgent
 
-    llm = LLMClient()
+    llm = UnifiedLLMClient(AutonomousAgent._load_config())
     status = llm.get_status()
 
     return {
@@ -1444,12 +1445,13 @@ async def send_realtime_message(session_id: str, request: RealtimeMessageRequest
 
     # Execute with LLM
     try:
-        from backend.core.autonomous_agent import LLMClient, LLMConnectionError
+        from backend.core.llm import UnifiedLLMClient, LLMConnectionError
+        from backend.core.autonomous_agent import AutonomousAgent
         import aiohttp
         import json
         import re
 
-        llm = LLMClient()
+        llm = UnifiedLLMClient(AutonomousAgent._load_config())
         llm_status = llm.get_status()
 
         if not llm.is_available():

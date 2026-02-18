@@ -2,6 +2,13 @@
 """
 LLM Manager - Unified interface for multiple LLM providers
 Supports: Claude, GPT, Gemini, Ollama, and custom models
+
+DEPRECATED: This module is superseded by backend.core.llm.UnifiedLLMClient.
+New code should use:
+    from backend.core.llm import UnifiedLLMClient
+    client = UnifiedLLMClient(config)
+
+This file is kept for backward compatibility with code that imports LLMManager directly.
 """
 
 import os

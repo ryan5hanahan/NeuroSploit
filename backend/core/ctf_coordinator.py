@@ -220,7 +220,7 @@ class CTFCoordinator:
 
     async def _run_analysis_phase(self) -> List[List[str]]:
         """Use LLM to prioritize vuln types, then round-robin distribute."""
-        from backend.core.autonomous_agent import LLMClient
+        from backend.core.llm import UnifiedLLMClient
 
         await self._log_callback("info", f"[PIPELINE] Phase 2/4: LLM Analysis — prioritizing attack vectors for {self.testing_agent_count} testers")
 
@@ -246,7 +246,8 @@ class CTFCoordinator:
 
     async def _get_prioritized_vulns(self) -> List[str]:
         """Ask LLM to prioritize vuln types based on recon data, with fallback."""
-        from backend.core.autonomous_agent import LLMClient, AutonomousAgent
+        from backend.core.llm import UnifiedLLMClient
+        from backend.core.autonomous_agent import AutonomousAgent
 
         # Build context from recon
         recon_summary = ""
@@ -281,8 +282,8 @@ class CTFCoordinator:
         )
 
         try:
-            llm = LLMClient()
-            if not llm.client:
+            llm = UnifiedLLMClient(AutonomousAgent._load_config())
+            if not llm.is_available():
                 raise Exception("No LLM available")
 
             response = await llm.generate(prompt, system="You are an expert CTF solver. Return only valid JSON.")

@@ -2,13 +2,15 @@
 """
 Model Router - Task-type-based LLM routing.
 
-Routes requests to different LLM profiles based on task type:
-- reasoning: Complex logic and decision-making
-- analysis: Data analysis and pattern recognition
-- generation: Content and payload generation
-- validation: Result verification and confirmation
+DEPRECATED: This module is superseded by backend.core.llm.router.ModelRouter.
+New code should use:
+    from backend.core.llm import ModelRouter
+    router = ModelRouter(config)
 
-Enabled/disabled via config. When disabled, callers fall back to their default provider.
+The new router provides 3-tier (fast/balanced/deep) routing with 18 mapped task types,
+per-provider model resolution, and cost-optimized tier defaults.
+
+This file is kept for backward compatibility.
 """
 
 import os

@@ -465,6 +465,67 @@ def get_system_prompt(context: str, extra_prompts: Optional[List[str]] = None) -
     return "\n\n".join(parts)
 
 
+def get_tier_prompt(context: str, tier: str, extra_prompts: Optional[List[str]] = None) -> str:
+    """Build a tier-aware system prompt.
+
+    This is a convenience wrapper that delegates to the PromptComposer
+    in the unified LLM layer for fast/balanced tiers, and falls through
+    to the full prompt set for the deep tier.
+
+    Args:
+        context: Task context (testing, verification, confirmation, etc.)
+        tier: One of "fast", "balanced", "deep"
+        extra_prompts: Optional additional prompt IDs
+
+    Returns:
+        Combined system prompt string optimized for the given tier.
+    """
+    if tier == "deep":
+        return get_system_prompt(context, extra_prompts=extra_prompts)
+
+    # Fast and balanced tiers use reduced prompt sets
+    tier_prompt_ids = {
+        "fast": ["anti_hallucination", "operational_humility"],
+        "balanced": {
+            "testing": ["anti_hallucination", "anti_scanner", "proof_of_execution", "operational_humility"],
+            "verification": ["anti_hallucination", "anti_scanner", "proof_of_execution", "frontend_backend_correlation", "operational_humility"],
+            "confirmation": ["anti_hallucination", "anti_scanner", "proof_of_execution", "confidence_score", "operational_humility"],
+            "strategy": ["anti_hallucination", "think_like_pentester", "anti_severity_inflation", "operational_humility"],
+            "reporting": ["anti_hallucination", "think_like_pentester", "anti_severity_inflation", "operational_humility"],
+            "interpretation": ["anti_hallucination", "anti_scanner", "operational_humility"],
+            "recon_analysis": ["anti_hallucination", "think_like_pentester", "operational_humility"],
+        },
+    }
+
+    if tier == "fast":
+        prompt_ids = list(tier_prompt_ids["fast"])
+    else:
+        balanced_map = tier_prompt_ids.get("balanced", {})
+        prompt_ids = list(balanced_map.get(context, balanced_map.get("testing", ["anti_hallucination", "operational_humility"])))
+
+    if extra_prompts:
+        seen = set(prompt_ids)
+        for pid in extra_prompts:
+            if pid not in seen:
+                prompt_ids.append(pid)
+                seen.add(pid)
+
+    preamble = (
+        "You are a security analysis assistant. Be concise. Follow ALL directives below.\n"
+        if tier == "fast" else
+        "You are a senior penetration tester performing real security assessments. "
+        "Follow ALL directives below strictly.\n"
+    )
+
+    parts = [preamble]
+    for pid in prompt_ids:
+        entry = PROMPT_CATALOG.get(pid)
+        if entry:
+            parts.append(entry["content"])
+
+    return "\n\n".join(parts)
+
+
 def get_prompt_by_id(prompt_id: str) -> Optional[str]:
     """Get a single prompt by its ID."""
     entry = PROMPT_CATALOG.get(prompt_id)
