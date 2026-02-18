@@ -110,6 +110,10 @@ class SettingsUpdate(BaseModel):
     censys_api_secret: Optional[str] = None
     virustotal_api_key: Optional[str] = None
     builtwith_api_key: Optional[str] = None
+    # Per-tier model selection (used when model routing is enabled)
+    model_fast: Optional[str] = None
+    model_balanced: Optional[str] = None
+    model_deep: Optional[str] = None
     # Tracing & memory
     enable_tracing: Optional[bool] = None
     enable_persistent_memory: Optional[bool] = None
@@ -138,6 +142,10 @@ class SettingsResponse(BaseModel):
     aws_bedrock_region: str = "us-east-1"
     aws_bedrock_model: str = ""
     llm_model: str = ""
+    # Per-tier model selection
+    model_fast: str = ""
+    model_balanced: str = ""
+    model_deep: str = ""
     # OSINT API key presence (masked)
     has_shodan_key: bool = False
     has_censys_key: bool = False
@@ -208,6 +216,9 @@ def _load_settings_from_env() -> dict:
         "default_scan_type": os.getenv("DEFAULT_SCAN_TYPE", "full"),
         "recon_enabled_by_default": _env_bool("RECON_ENABLED_BY_DEFAULT", True),
         "enable_model_routing": _env_bool("ENABLE_MODEL_ROUTING", False),
+        "model_fast": os.getenv("LLM_MODEL_FAST", ""),
+        "model_balanced": os.getenv("LLM_MODEL_BALANCED", ""),
+        "model_deep": os.getenv("LLM_MODEL_DEEP", ""),
         "enable_knowledge_augmentation": _env_bool("ENABLE_KNOWLEDGE_AUGMENTATION", False),
         "enable_browser_validation": _env_bool("ENABLE_BROWSER_VALIDATION", False),
         "enable_extended_thinking": _env_bool("ENABLE_EXTENDED_THINKING", False),
@@ -256,6 +267,9 @@ async def get_settings():
         aws_bedrock_region=_settings.get("aws_bedrock_region", "us-east-1"),
         aws_bedrock_model=_settings.get("aws_bedrock_model", ""),
         llm_model=_settings.get("llm_model", ""),
+        model_fast=_settings.get("model_fast", ""),
+        model_balanced=_settings.get("model_balanced", ""),
+        model_deep=_settings.get("model_deep", ""),
         has_shodan_key=bool(_settings.get("shodan_api_key") or os.getenv("SHODAN_API_KEY")),
         has_censys_key=bool(
             (_settings.get("censys_api_id") or os.getenv("CENSYS_API_ID"))
@@ -362,6 +376,18 @@ async def update_settings(settings_data: SettingsUpdate):
         val = str(settings_data.enable_model_routing).lower()
         os.environ["ENABLE_MODEL_ROUTING"] = val
         env_updates["ENABLE_MODEL_ROUTING"] = val
+
+    # Per-tier model overrides
+    for field_name, env_key in [
+        ("model_fast", "LLM_MODEL_FAST"),
+        ("model_balanced", "LLM_MODEL_BALANCED"),
+        ("model_deep", "LLM_MODEL_DEEP"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            os.environ[env_key] = val
+            env_updates[env_key] = val
 
     if settings_data.enable_knowledge_augmentation is not None:
         _settings["enable_knowledge_augmentation"] = settings_data.enable_knowledge_augmentation

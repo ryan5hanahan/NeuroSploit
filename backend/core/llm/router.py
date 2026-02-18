@@ -110,6 +110,19 @@ class ModelRouter:
                     merged["models"] = existing_models
                 self._tier_config[tier_name] = merged
 
+        # Apply env var overrides: LLM_MODEL_FAST, LLM_MODEL_BALANCED, LLM_MODEL_DEEP
+        # These override the model for the configured default_provider on each tier.
+        for tier_name, env_key in (
+            ("fast", "LLM_MODEL_FAST"),
+            ("balanced", "LLM_MODEL_BALANCED"),
+            ("deep", "LLM_MODEL_DEEP"),
+        ):
+            env_val = os.getenv(env_key, "").strip()
+            if env_val:
+                models = dict(self._tier_config[tier_name].get("models", {}))
+                models[self._default_provider] = env_val
+                self._tier_config[tier_name]["models"] = models
+
     @property
     def enabled(self) -> bool:
         return self._enabled

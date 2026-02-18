@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     DEFAULT_LLM_MODEL: str = "claude-sonnet-4-5-20250929"
     MAX_OUTPUT_TOKENS: Optional[int] = None
     ENABLE_MODEL_ROUTING: bool = False
+    LLM_MODEL_FAST: Optional[str] = None
+    LLM_MODEL_BALANCED: Optional[str] = None
+    LLM_MODEL_DEEP: Optional[str] = None
 
     # Feature Flags
     ENABLE_KNOWLEDGE_AUGMENTATION: bool = False
