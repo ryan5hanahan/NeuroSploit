@@ -10,6 +10,7 @@ from backend.models.llm_test_result import LlmTestResult
 from backend.models.tradecraft import Tradecraft, ScanTradecraft
 from backend.models.memory import AttackPatternMemory, TargetFingerprint, SuccessfulPayload
 from backend.models.trace import TraceSpan
+from backend.models.governance_violation import GovernanceViolationRecord
 
 __all__ = [
     "Scan",
@@ -28,4 +29,5 @@ __all__ = [
     "TargetFingerprint",
     "SuccessfulPayload",
     "TraceSpan",
+    "GovernanceViolationRecord",
 ]

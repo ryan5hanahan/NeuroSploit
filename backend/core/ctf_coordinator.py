@@ -164,13 +164,18 @@ class CTFCoordinator:
     async def _run_recon_phase(self):
         """Run a single recon agent to populate ReconData."""
         from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-        from backend.core.governance import create_ctf_scope, GovernanceAgent
+        from backend.core.governance_facade import create_governance
 
         await self._log_callback("info", "[PIPELINE] Phase 1/4: Recon Agent starting")
 
         labeled_log = self._make_labeled_log("Recon")
-        scope = create_ctf_scope(self.target)
-        governance = GovernanceAgent(scope, log_callback=labeled_log)
+        governance = create_governance(
+            scan_id=self.scan_id,
+            target_url=self.target,
+            scope_profile="ctf",
+            governance_mode="off",
+            log_callback=labeled_log,
+        )
 
         async with AutonomousAgent(
             target=self.target,
@@ -308,7 +313,6 @@ class CTFCoordinator:
     async def _run_testing_phase(self, assignments: List[List[str]]):
         """Launch N-1 testing agents in parallel with periodic challenge polling."""
         from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-        from backend.core.governance import create_ctf_scope, GovernanceAgent
 
         await self._log_callback("info", f"[PIPELINE] Phase 3/4: Launching {self.testing_agent_count} parallel testing agents")
 
@@ -327,12 +331,17 @@ class CTFCoordinator:
     async def _run_single_tester(self, index: int, label: str, vuln_types: List[str]):
         """Run a single testing agent with preset recon and focused vuln types."""
         from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-        from backend.core.governance import create_ctf_scope, GovernanceAgent
+        from backend.core.governance_facade import create_governance
 
         labeled_log = self._make_labeled_log(label)
         labeled_finding = self._make_labeled_finding(label)
-        scope = create_ctf_scope(self.target)
-        governance = GovernanceAgent(scope, log_callback=labeled_log)
+        governance = create_governance(
+            scan_id=self.scan_id,
+            target_url=self.target,
+            scope_profile="ctf",
+            governance_mode="off",
+            log_callback=labeled_log,
+        )
 
         await labeled_log("info", f"Starting with {len(vuln_types)} vuln types")
 

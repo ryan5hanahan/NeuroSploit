@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import select, func, text
 
 from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-from backend.core.governance import GovernanceAgent, create_vuln_lab_scope, create_ctf_scope
+from backend.core.governance_facade import create_governance
 from backend.core.vuln_engine.registry import VulnerabilityRegistry
 from backend.core.ctf_flag_detector import CTFFlagDetector
 from backend.db.database import async_session_factory
@@ -515,11 +515,14 @@ async def _run_lab_test(
                 "ctf_mode": ctf_mode,
             }
 
-            if ctf_mode:
-                scope = create_ctf_scope(target)
-            else:
-                scope = create_vuln_lab_scope(target, vuln_type)
-            governance = GovernanceAgent(scope, log_callback=log_callback)
+            governance = create_governance(
+                scan_id=scan_id,
+                target_url=target,
+                scope_profile="ctf" if ctf_mode else "vuln_lab",
+                vuln_type=vuln_type if not ctf_mode else None,
+                governance_mode="off" if ctf_mode else "warn",
+                log_callback=log_callback,
+            )
 
             # Multi-agent CTF pipeline branch
             use_pipeline = ctf_mode and (ctf_agent_count or 0) > 1

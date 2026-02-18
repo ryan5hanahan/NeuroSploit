@@ -136,6 +136,11 @@
             "default": "gemini_pro_default"
         }
     },
+    "governance": {
+        "default_mode": "warn",
+        "action_classifications": {},
+        "phase_policy_overrides": {}
+    },
     "output": {
         "format": "json",
         "verbose": true,

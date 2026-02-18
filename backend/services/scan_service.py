@@ -33,6 +33,7 @@ from backend.core.autonomous_scanner import AutonomousScanner
 from backend.core.ai_pentest_agent import AIPentestAgent
 from backend.core.ai_prompt_processor import TestingPlan
 from backend.core import scan_registry
+from backend.core.governance_facade import create_governance
 
 
 # Phase control: signaling between API and running background tasks
@@ -275,6 +276,17 @@ class ScanService:
 
             await ws_manager.broadcast_log(scan_id, "info", f"Targets: {', '.join([t.url for t in targets])}")
 
+            # Create governance facade for phase tracking
+            primary_target = targets[0].url if targets else ""
+            governance = create_governance(
+                scan_id=scan_id,
+                target_url=primary_target,
+                scope_profile="full_auto",
+                governance_mode="warn",
+                scan_config=scan.config if hasattr(scan, "config") and scan.config else None,
+            )
+            governance.set_phase("initializing")
+
             # Check available tools - Create task for initialization
             init_task = await self._create_agent_task(
                 scan_id=scan_id,
@@ -324,6 +336,7 @@ class ScanService:
 
                 scan.current_phase = "recon"
                 await self.db.commit()
+                governance.set_phase("recon")
                 await ws_manager.broadcast_phase_change(scan_id, "recon")
                 await ws_manager.broadcast_progress(scan_id, 5, "Starting reconnaissance...")
                 await ws_manager.broadcast_log(scan_id, "info", "")
@@ -511,6 +524,7 @@ class ScanService:
                 # Phase 2: AI Prompt Processing
                 scan.current_phase = "analyzing"
                 await self.db.commit()
+                governance.set_phase("analyzing")
                 await ws_manager.broadcast_phase_change(scan_id, "analyzing")
                 await ws_manager.broadcast_progress(scan_id, 40, "AI analyzing prompt and data...")
                 await ws_manager.broadcast_log(scan_id, "info", "")
@@ -589,6 +603,7 @@ class ScanService:
                 # Phase 3: AI OFFENSIVE AGENT
                 scan.current_phase = "testing"
                 await self.db.commit()
+                governance.set_phase("testing")
                 await ws_manager.broadcast_phase_change(scan_id, "testing")
                 await ws_manager.broadcast_log(scan_id, "info", "")
                 await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
@@ -792,6 +807,7 @@ class ScanService:
             scan.completed_at = datetime.utcnow()
             scan.progress = 100
             scan.current_phase = "completed"
+            governance.set_phase("completed")
 
             # Calculate duration
             if scan.started_at:
