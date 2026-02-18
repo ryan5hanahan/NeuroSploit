@@ -908,6 +908,20 @@ class AutonomousScanner:
 
     async def _test_ssti(self, url: str) -> Optional[TestResult]:
         """Test for Server-Side Template Injection"""
+        import re as _re
+
+        # Fetch baseline for FP comparison
+        baseline_body = ""
+        try:
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            async with self.session.get(base_url, allow_redirects=False,
+                                        timeout=aiohttp.ClientTimeout(total=10),
+                                        ssl=False) as resp:
+                baseline_body = await resp.text()
+        except Exception:
+            pass
+
         # Mathematical expressions that should evaluate
         math_payloads = [
             ("{{7*7}}", "49"),
@@ -922,7 +936,13 @@ class AutonomousScanner:
             if not result:
                 continue
 
-            if expected in result["body"] and payload not in result["body"]:
+            body = result["body"]
+            # Require standalone token (not substring of larger number)
+            pattern = r'(?<!\d)' + _re.escape(expected) + r'(?!\d)'
+            if _re.search(pattern, body) and payload not in body:
+                # Skip if result already in baseline (common page content)
+                if baseline_body and _re.search(pattern, baseline_body):
+                    continue
                 return TestResult(
                     endpoint=url,
                     vuln_type="ssti",
@@ -931,7 +951,7 @@ class AutonomousScanner:
                     confidence=0.85,
                     evidence=f"Template expression evaluated: {payload} -> {expected}",
                     request={"url": result["url"], "method": "GET"},
-                    response={"status": result["status"], "body_preview": result["body"][:500]}
+                    response={"status": result["status"], "body_preview": body[:500]}
                 )
 
         return None

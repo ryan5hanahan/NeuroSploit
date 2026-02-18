@@ -359,9 +359,13 @@ class ProofOfExecution:
     def _proof_ssti(self, payload: str, body: str, status: int,
                     headers: Dict, baseline: Optional[Dict]) -> ProofResult:
         """SSTI proof: template expression was evaluated."""
+        baseline_body = (baseline.get("body", "") if baseline else "").lower()
         for expr, result in SSTI_EXPRESSIONS.items():
             if expr in (payload or ""):
                 if result in body and expr not in body:
+                    # Skip if result already in baseline (not injected)
+                    if baseline_body and result.lower() in baseline_body:
+                        continue
                     return ProofResult(
                         True, "expression_evaluated",
                         f"Template expression {expr}={result} evaluated",

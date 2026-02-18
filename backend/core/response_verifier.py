@@ -311,6 +311,9 @@ class ResponseVerifier:
         if vuln_type == "ssti":
             for expr, result in SSTI_EVALUATIONS.items():
                 if expr in payload and result in test_body:
+                    # Skip if result already present in baseline (not injected)
+                    if baseline_lower and result.lower() in baseline_lower:
+                        continue
                     # Confirm the raw expression is NOT present (evaluated)
                     if expr not in test_body:
                         return True, f"Template expression evaluated: {expr}={result}"

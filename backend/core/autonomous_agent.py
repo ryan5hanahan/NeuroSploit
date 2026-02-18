@@ -2695,7 +2695,11 @@ NOT_VULNERABLE: <reason>"""
             # Phase 5: Parameter discovery
             await self.log("info", "[PHASE 5/5] Parameter Discovery")
             await self._discover_parameters()
-            await self._update_progress(90, "Parameter discovery complete")
+            await self._update_progress(85, "Parameter discovery complete")
+
+            # Phase 5b: Validate discovered endpoints
+            await self._validate_endpoints()
+            await self._update_progress(90, "Endpoint validation complete")
 
         # WAF detection (new for RECON_ONLY; FULL_AUTO already does this in Phase 1b)
         if self.mode == OperationMode.RECON_ONLY and self.waf_detector and not self._waf_result:
@@ -3272,11 +3276,60 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
+        # Probe for OpenAPI/Swagger specs to discover API endpoints
+        await self._parse_api_spec(self.target)
+
         # Crawl discovered pages for more endpoints (increased depth)
         for endpoint in list(self.recon.endpoints)[:20]:
             await self._crawl_page(_get_endpoint_url(endpoint))
 
         await self.log("info", f"  Found {len(self.recon.endpoints)} endpoints")
+
+    async def _validate_endpoints(self):
+        """Validate discovered endpoints with HTTP probes, removing dead ones."""
+        if not self.recon.endpoints:
+            return
+
+        sem = asyncio.Semaphore(10)
+        validated = []
+        removed = 0
+
+        async def _probe(ep):
+            nonlocal removed
+            url = _get_endpoint_url(ep)
+            if not url:
+                removed += 1
+                return
+            try:
+                async with sem:
+                    timeout = aiohttp.ClientTimeout(total=8)
+                    async with self.session.head(url, allow_redirects=True,
+                                                 timeout=timeout, ssl=False) as resp:
+                        ep["response_status"] = resp.status
+                        if resp.status < 500:
+                            validated.append(ep)
+                        else:
+                            removed += 1
+            except Exception:
+                # Connection error — try GET as fallback (some servers reject HEAD)
+                try:
+                    async with sem:
+                        async with self.session.get(url, allow_redirects=False,
+                                                    timeout=aiohttp.ClientTimeout(total=8),
+                                                    ssl=False) as resp:
+                            ep["response_status"] = resp.status
+                            if resp.status < 500:
+                                validated.append(ep)
+                            else:
+                                removed += 1
+                except Exception:
+                    removed += 1
+
+        await asyncio.gather(*[_probe(ep) for ep in self.recon.endpoints],
+                             return_exceptions=True)
+
+        self.recon.endpoints = validated
+        await self.log("info", f"  [VALIDATE] Validated {len(validated)} endpoints, removed {removed} dead")
 
     async def _check_endpoint(self, url: str):
         """Check if endpoint exists"""
@@ -3295,6 +3348,64 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         except Exception:
             pass
 
+    async def _parse_api_spec(self, base_url: str):
+        """Probe common OpenAPI/Swagger spec URLs and extract API endpoints."""
+        spec_paths = [
+            "/api-docs", "/swagger.json", "/openapi.json",
+            "/v2/api-docs", "/v3/api-docs",
+            "/swagger/v1/swagger.json", "/.well-known/openapi.json",
+        ]
+        parsed_base = urlparse(base_url)
+        origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+
+        for spec_path in spec_paths:
+            spec_url = origin + spec_path
+            try:
+                async with self.session.get(spec_url, allow_redirects=True,
+                                            timeout=aiohttp.ClientTimeout(total=10),
+                                            ssl=False) as resp:
+                    if resp.status != 200:
+                        continue
+                    ct = resp.headers.get("Content-Type", "")
+                    if "json" not in ct and "yaml" not in ct:
+                        continue
+                    body = await resp.text()
+                    spec = json.loads(body)
+            except Exception:
+                continue
+
+            # Determine base path prefix
+            base_path = ""
+            if "basePath" in spec:  # Swagger 2.0
+                base_path = spec["basePath"].rstrip("/")
+
+            paths = spec.get("paths", {})
+            if not isinstance(paths, dict):
+                continue
+
+            added = 0
+            for path, methods in paths.items():
+                if not isinstance(methods, dict):
+                    continue
+                for method in methods:
+                    if method.lower() not in ("get", "post", "put", "delete", "patch"):
+                        continue
+                    full_path = base_path + path
+                    full_url = origin + full_path
+                    ep = {
+                        "url": full_url,
+                        "method": method.upper(),
+                        "path": full_path,
+                        "source": "openapi_spec",
+                    }
+                    if ep not in self.recon.endpoints and len(self.recon.endpoints) < 200:
+                        self.recon.endpoints.append(ep)
+                        added += 1
+
+            if added:
+                await self.log("info", f"  [API SPEC] Discovered {added} endpoints from {spec_url}")
+            break  # Stop after first valid spec
+
     async def _crawl_page(self, url: str):
         """Crawl a page for more links and forms"""
         if not url:
@@ -3302,8 +3413,12 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         try:
             async with self.session.get(url) as resp:
                 body = await resp.text()
-                await self._extract_links(body, url)
-                await self._extract_forms(body, url)
+                ct = resp.headers.get("Content-Type", "")
+                if "json" in ct:
+                    await self._extract_links_from_json(body, url)
+                else:
+                    await self._extract_links(body, url)
+                    await self._extract_forms(body, url)
         except Exception:
             pass
 
@@ -3322,7 +3437,9 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         for link in hrefs + actions:
             if link.startswith('/'):
                 full_url = base_domain + link
-            elif link.startswith('http') and base_parsed.netloc in link:
+            elif link.startswith('http'):
+                if urlparse(link).netloc != base_parsed.netloc:
+                    continue
                 full_url = link
             else:
                 continue
@@ -3338,6 +3455,45 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             }
             if endpoint_data not in self.recon.endpoints and len(self.recon.endpoints) < 100:
                 self.recon.endpoints.append(endpoint_data)
+
+    async def _extract_links_from_json(self, body: str, base_url: str):
+        """Extract links and API paths from JSON response bodies."""
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        parsed_base = urlparse(base_url)
+        origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+
+        def _walk(obj):
+            if isinstance(obj, str):
+                val = obj.strip()
+                if val.startswith("http://") or val.startswith("https://"):
+                    if urlparse(val).netloc == parsed_base.netloc:
+                        yield val
+                elif val.startswith("/") and len(val) > 1 and not val.startswith("//"):
+                    yield origin + val
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    yield from _walk(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    yield from _walk(item)
+
+        for url in _walk(data):
+            parsed = urlparse(url)
+            # Skip assets
+            if any(parsed.path.lower().endswith(ext) for ext in (".css", ".png", ".jpg", ".gif", ".ico", ".svg", ".woff", ".woff2")):
+                continue
+            ep = {
+                "url": url.split("?")[0],  # strip query for dedup
+                "method": "GET",
+                "path": parsed.path,
+                "source": "json_body",
+            }
+            if ep not in self.recon.endpoints and len(self.recon.endpoints) < 200:
+                self.recon.endpoints.append(ep)
 
     async def _extract_forms(self, body: str, base_url: str):
         """Extract forms from HTML including input types and hidden field values"""
@@ -4031,6 +4187,9 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
                         await self.log("info", "  [WAF] No WAF detected")
                 except Exception as e:
                     await self.log("debug", f"  [WAF] Detection failed: {e}")
+
+            # Phase 6: Validate endpoints before handing to pentester
+            await self._validate_endpoints()
 
             ep_count = len(self.recon.endpoints)
             param_count = sum(len(v) if isinstance(v, list) else 1 for v in self.recon.parameters.values())
@@ -5186,6 +5345,24 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                     f"Test the target {self.target} for {vt} vulnerability. "
                     f"Analyze the application behavior, attempt exploitation, and report only confirmed findings."
                 )
+
+        # ── Test Phase Summary ──
+        if self.strategy:
+            report = self.strategy.get_report_context()
+            tested_types = report.get("top_vuln_types", [])
+            await self.log("info",
+                f"[TEST SUMMARY] {report.get('total_tests', 0)} tests across "
+                f"{report.get('endpoints_tested', 0)} endpoints, "
+                f"{report.get('total_findings', 0)} findings")
+            for vt_info in tested_types:
+                await self.log("info",
+                    f"  {vt_info['type']}: {vt_info['tests']} tests, "
+                    f"{vt_info['confirmed']} confirmed ({vt_info['rate']})")
+        else:
+            confirmed = len(self.memory.confirmed_findings) if self.memory else 0
+            await self.log("info",
+                f"[TEST SUMMARY] {confirmed} confirmed findings from "
+                f"{len(test_targets)} targets")
 
     async def _test_reflected_xss(
         self, url: str, params: List[str], method: str = "GET"
@@ -6494,9 +6671,12 @@ Respond with ONLY a JSON array of payload strings:
                     result = await self.request_engine.request(
                         url, method="GET", params=params, allow_redirects=False)
                 elif is_rest:
+                    req_headers = {"Content-Type": "application/json"}
+                    if self.auth_headers:
+                        req_headers.update(self.auth_headers)
                     result = await self.request_engine.request(
                         url, method=method.upper(), json_data=params,
-                        headers={"Content-Type": "application/json"}, allow_redirects=False)
+                        headers=req_headers, allow_redirects=False)
                 else:
                     result = await self.request_engine.request(
                         url, method=method.upper(), data=params, allow_redirects=False)
@@ -6520,8 +6700,11 @@ Respond with ONLY a JSON array of payload strings:
                         "url": str(resp.url)
                     }
             elif is_rest:
+                req_headers = {"Content-Type": "application/json"}
+                if self.auth_headers:
+                    req_headers.update(self.auth_headers)
                 async with self.session.post(url, json=params, allow_redirects=False, timeout=timeout, ssl=False,
-                                             headers={"Content-Type": "application/json"}) as resp:
+                                             headers=req_headers) as resp:
                     body = await resp.text()
                     return {
                         "status": resp.status,
@@ -6919,11 +7102,14 @@ Respond with exactly one of:
             return any(m.lower() in body for m in markers)
 
         elif vuln_type == "ssti":
-            # SSTI: evaluated result must exist, raw expression should not
-            if "49" in body and "7*7" not in body:
-                return True
-            if "9" in body and "3*3" not in body and "3*3" in (payload or ""):
-                return True
+            # SSTI: evaluated result must exist as standalone token, raw expression should not
+            import re as _re
+            for expr, expected in [("7*7", "49"), ("7*'7'", "7777777"), ("3*3", "9")]:
+                if expr in (payload or ""):
+                    # Require the result as a standalone token, not substring
+                    pattern = r'(?<!\d)' + _re.escape(expected) + r'(?!\d)'
+                    if _re.search(pattern, response_body or "") and expr not in (response_body or ""):
+                        return True
             return False
 
         elif vuln_type in ("rce", "command_injection"):

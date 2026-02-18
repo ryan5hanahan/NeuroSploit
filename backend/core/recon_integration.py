@@ -551,6 +551,13 @@ class ReconIntegration:
                         if "?" in url:
                             results["parameters"].append(url)
 
+        # Filter by exact netloc to prevent cross-host leaks
+        from urllib.parse import urlparse as _urlparse
+        target_netloc = _urlparse(base_url).netloc
+        found_urls = {u for u in found_urls if _urlparse(u).netloc == target_netloc}
+        results["parameters"] = [u for u in results["parameters"] if _urlparse(u).netloc == target_netloc]
+        results["js_files"] = [u for u in results["js_files"] if _urlparse(u).netloc == target_netloc]
+
         results["urls"] = list(found_urls)
         await self.log("info", f"✓ Collected {len(found_urls)} URLs, {len(results['parameters'])} with parameters")
 
