@@ -1,0 +1,4 @@
+[submodule "vendor/PayloadsAllTheThings"]
+	path = vendor/PayloadsAllTheThings
+	url = https://github.com/swisskyrepo/PayloadsAllTheThings.git
+	branch = master

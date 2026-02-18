@@ -58,6 +58,7 @@ results/
 reports/
 data/
 models/
+!vendor/
 
 # Database
 *.db

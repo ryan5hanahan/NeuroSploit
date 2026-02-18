@@ -193,18 +193,18 @@ Select vulnerability types based on detected technology stack:
 - GraphQL → introspection, injection, DoS via nested queries
 - WordPress → file upload, SQLi, XSS, exposed admin, plugin vulns
 
-### Phase 3 — Active Testing (100 vuln types available)
+### Phase 3 — Active Testing (~119 vuln types available, including PATT-extended)
 **OWASP Top 10 2021 coverage:**
-- A01 Broken Access Control: IDOR, BOLA, BFLA, privilege escalation, forced browsing, CORS
+- A01 Broken Access Control: IDOR, BOLA, BFLA, privilege escalation, forced browsing, CORS, account takeover
 - A02 Cryptographic Failures: weak encryption/hashing, cleartext transmission, SSL issues
-- A03 Injection: SQLi (error/union/blind/time), NoSQL, LDAP, XPath, command, SSTI, XSS, XXE
-- A04 Insecure Design: business logic, race condition, mass assignment
-- A05 Security Misconfiguration: headers, debug mode, directory listing, default creds
-- A06 Vulnerable Components: outdated dependencies, insecure CDN
-- A07 Auth Failures: JWT, session fixation, brute force, 2FA bypass, OAuth misconfig
-- A08 Data Integrity: insecure deserialization, cache poisoning, HTTP smuggling
+- A03 Injection: SQLi (error/union/blind/time), NoSQL, LDAP, XPath, command, SSTI, XSS, XXE, XSLT, SSI, LaTeX, prompt injection
+- A04 Insecure Design: business logic, race condition, mass assignment, ReDoS, web cache deception
+- A05 Security Misconfiguration: headers, debug mode, directory listing, default creds, reverse proxy misconfig, vhost enumeration
+- A06 Vulnerable Components: outdated dependencies, insecure CDN, dependency confusion
+- A07 Auth Failures: JWT, session fixation, brute force, 2FA bypass, OAuth misconfig, SAML injection
+- A08 Data Integrity: insecure deserialization, cache poisoning, HTTP smuggling, GWT deserialization
 - A09 Logging Failures: log injection, improper error handling
-- A10 SSRF: standard SSRF, cloud metadata SSRF
+- A10 SSRF: standard SSRF, cloud metadata SSRF, DNS rebinding, headless browser abuse
 
 ### Phase 4 — Verification (multi-signal)
 Every finding MUST have:
@@ -324,6 +324,26 @@ class AutonomousAgent:
         "graphql_dos": "graphql_dos", "rest_api_versioning": "rest_api_versioning",
         "soap_injection": "soap_injection", "api_rate_limiting": "api_rate_limiting",
         "excessive_data_exposure": "excessive_data_exposure",
+        # PATT-extended types (19 new)
+        "account_takeover": "account_takeover", "ato": "account_takeover",
+        "client_side_path_traversal": "client_side_path_traversal",
+        "denial_of_service": "denial_of_service", "dos": "denial_of_service",
+        "dependency_confusion": "dependency_confusion", "dep_confusion": "dependency_confusion",
+        "dns_rebinding": "dns_rebinding",
+        "external_variable_modification": "external_variable_modification",
+        "gwt_deserialization": "gwt_deserialization", "gwt": "gwt_deserialization",
+        "headless_browser_abuse": "headless_browser_abuse",
+        "java_rmi": "java_rmi", "rmi": "java_rmi",
+        "latex_injection": "latex_injection", "latex": "latex_injection",
+        "prompt_injection": "prompt_injection", "prompt_inj": "prompt_injection",
+        "redos": "redos", "regex_dos": "redos",
+        "reverse_proxy_misconfig": "reverse_proxy_misconfig",
+        "saml_injection": "saml_injection", "saml": "saml_injection",
+        "ssi_injection": "ssi_injection", "ssi": "ssi_injection",
+        "vhost_enumeration": "vhost_enumeration", "vhost": "vhost_enumeration",
+        "web_cache_deception": "web_cache_deception", "wcd": "web_cache_deception",
+        "xs_leak": "xs_leak", "xsleak": "xs_leak",
+        "xslt_injection": "xslt_injection", "xslt": "xslt_injection",
     }
 
     def __init__(

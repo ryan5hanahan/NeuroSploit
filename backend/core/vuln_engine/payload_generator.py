@@ -19,10 +19,27 @@ class PayloadGenerator:
     - Extensive payload libraries per vulnerability type
     - Context-aware payload selection (WAF bypass, encoding)
     - Dynamic payload generation based on target info
+    - PATT (PayloadsAllTheThings) integration for extended payloads
     """
 
     def __init__(self):
         self.payload_libraries = self._load_payload_libraries()
+        self._patt = None
+
+    @property
+    def patt(self):
+        """Lazy-loaded PATTLoader instance."""
+        if self._patt is None:
+            try:
+                from backend.core.vuln_engine.patt.loader import PATTLoader
+                self._patt = PATTLoader()
+            except ImportError:
+                # PATT module not available — use a stub
+                class _Stub:
+                    available = False
+                    def get_payloads(self, _): return []
+                self._patt = _Stub()
+        return self._patt
 
     def _load_payload_libraries(self) -> Dict[str, List[str]]:
         """Load comprehensive payload libraries"""
@@ -1053,7 +1070,13 @@ class PayloadGenerator:
         if context.get("waf_detected"):
             base_payloads = self._add_waf_bypasses(base_payloads, vuln_type)
 
-        # Limit payloads based on scan depth
+        # Merge PATT payloads (available at all depths)
+        if self.patt.available:
+            patt_payloads = self.patt.get_payloads(vuln_type)
+            existing = set(base_payloads)
+            base_payloads = base_payloads + [p for p in patt_payloads if p not in existing]
+
+        # Limit payloads based on scan depth (applied to combined pool)
         depth = context.get("depth", "standard")
         limits = {
             "quick": 3,
@@ -1064,6 +1087,19 @@ class PayloadGenerator:
         limit = limits.get(depth, 10)
 
         return base_payloads[:limit]
+
+    def get_all_payloads(self, vuln_type: str) -> List[str]:
+        """Return all curated + PATT payloads for a vuln type (no depth limit).
+
+        Used by autonomous agent in deep exploitation phases and by
+        strategy_adapter for dynamic threshold scaling.
+        """
+        base = list(self.payload_libraries.get(vuln_type, []))
+        if self.patt.available:
+            patt_payloads = self.patt.get_payloads(vuln_type)
+            existing = set(base)
+            base = base + [p for p in patt_payloads if p not in existing]
+        return base
 
     async def get_exploitation_payloads(
         self,

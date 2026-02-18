@@ -572,6 +572,20 @@ class VulnerabilityRegistry:
         "excessive_data_exposure": SensitiveDataExposureTester,
     }
 
+    @classmethod
+    def register_type(cls, vuln_type: str, info: dict, tester_class=None) -> None:
+        """Register a new vulnerability type dynamically (idempotent).
+
+        Args:
+            vuln_type: Canonical vuln type key (e.g. 'prompt_injection')
+            info: Dict with title, severity, cwe_id, description, impact, remediation
+            tester_class: Optional tester class (defaults to BaseTester)
+        """
+        if vuln_type not in cls.VULNERABILITY_INFO:
+            cls.VULNERABILITY_INFO[vuln_type] = info
+        if vuln_type not in cls.TESTER_CLASSES:
+            cls.TESTER_CLASSES[vuln_type] = tester_class or BaseTester
+
     def __init__(self):
         self._tester_cache = {}
 
