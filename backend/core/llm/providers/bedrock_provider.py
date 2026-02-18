@@ -22,9 +22,17 @@ class BedrockProvider(LLMProvider):
         self._region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
         if BOTO3_AVAILABLE:
             try:
+                # Quick check: only attempt Bedrock if AWS credentials are explicitly
+                # configured (env vars, profiles, etc.) — skip the slow EC2 metadata
+                # endpoint probe which takes 60s+ to timeout in non-AWS containers.
+                import botocore.session
+                session = botocore.session.get_session()
+                creds = session.get_credentials()
+                if creds is None or creds.access_key is None:
+                    # No explicit AWS credentials — skip Bedrock
+                    return
+
                 self._client = boto3.client("bedrock-runtime", region_name=self._region)
-                sts = boto3.client("sts", region_name=self._region)
-                sts.get_caller_identity()
             except Exception:
                 self._client = None
 

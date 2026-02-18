@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.db.database import init_db, close_db
-from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance
+from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance, agent_v2
 from backend.api.websocket import manager as ws_manager
 
 
@@ -114,6 +114,7 @@ app.include_router(tradecraft.router, prefix="/api/v1/tradecraft", tags=["Tradec
 app.include_router(memory.router, prefix="/api/v1/memory", tags=["Persistent Memory"])
 app.include_router(traces.router, prefix="/api/v1/traces", tags=["Traces"])
 app.include_router(governance.router, prefix="/api/v1/governance", tags=["Governance"])
+app.include_router(agent_v2.router, prefix="/api/v2/agent", tags=["LLM-Driven Agent"])
 
 
 @app.get("/api/health")
@@ -170,6 +171,19 @@ async def websocket_scan(websocket: WebSocket, scan_id: str):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, scan_id)
+
+
+@app.websocket("/ws/agent/{operation_id}")
+async def websocket_agent(websocket: WebSocket, operation_id: str):
+    """WebSocket endpoint for real-time LLM-driven agent updates"""
+    await ws_manager.connect(websocket, operation_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, operation_id)
 
 
 # Serve static files (frontend) in production
