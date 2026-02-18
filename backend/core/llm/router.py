@@ -32,6 +32,10 @@ TASK_TIER_MAP: Dict[str, ModelTier] = {
     "enhance_finding": ModelTier.DEEP,        # #15 _ai_enhance_finding
     "create_plan": ModelTier.DEEP,            # #16 _ai_create_plan
     "executive_summary": ModelTier.DEEP,      # #18 _generate_executive_summary
+
+    # === LLM-Driven Agent ===
+    "agent_step": ModelTier.BALANCED,         # Per-step reasoning (high volume)
+    "agent_plan": ModelTier.DEEP,             # Initial planning (one-time)
 }
 
 
@@ -67,9 +71,9 @@ DEFAULT_TIER_CONFIG: Dict[str, Dict[str, Any]] = {
         "extended_thinking": True,
         "thinking_budget_tokens": 16000,
         "models": {
-            "anthropic": "claude-opus-4-5-20250929",
+            "anthropic": "claude-opus-4-6",
             "openai": "gpt-4o",
-            "bedrock": "us.anthropic.claude-opus-4-5-20250929-v1:0",
+            "bedrock": "us.anthropic.claude-opus-4-6-v1:0",
             "gemini": "gemini-2.0-pro",
             "ollama": "llama3.2",
             "lmstudio": "default",

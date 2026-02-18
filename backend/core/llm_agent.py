@@ -163,6 +163,7 @@ class LLMDrivenAgent:
         # Internal state
         self._cancelled = False
         self._start_time: Optional[float] = None
+        self._llm_failures = 0
 
     async def run(self) -> AgentResult:
         """Run the LLM-driven assessment.
@@ -281,8 +282,18 @@ class LLMDrivenAgent:
             # Generate LLM response
             try:
                 response = await self._generate(conv, system_prompt, tools)
+                consecutive_llm_failures = 0
             except Exception as e:
-                logger.error(f"[Agent] LLM generation failed: {e}")
+                consecutive_llm_failures = getattr(self, '_llm_failures', 0) + 1
+                self._llm_failures = consecutive_llm_failures
+                logger.error(f"[Agent] LLM generation failed ({consecutive_llm_failures}/3): {e}")
+
+                if consecutive_llm_failures >= 3:
+                    logger.error(f"[Agent] 3 consecutive LLM failures — aborting")
+                    raise RuntimeError(
+                        f"Agent aborted: 3 consecutive LLM failures. Last error: {e}"
+                    )
+
                 # Add error as user message and retry
                 conv.add_user(
                     f"LLM call failed: {e}. "
@@ -379,9 +390,9 @@ class LLMDrivenAgent:
         from backend.core.llm.tool_adapter import ToolAdapter
 
         provider = self.llm._get_provider()
-        options = self.llm.router.resolve("create_plan", self.llm._active_provider_name)
+        options = self.llm.router.resolve("agent_step", self.llm._active_provider_name)
 
-        # Use deep tier for agent reasoning
+        # Balanced tier for per-step reasoning (cost-efficient)
         options.max_tokens = 8192
 
         if provider.supports_tools():
@@ -398,7 +409,7 @@ class LLMDrivenAgent:
         elapsed_ms = (time.monotonic() - start) * 1000
 
         # Track cost
-        tier = self.llm.router.get_tier("create_plan")
+        tier = self.llm.router.get_tier("agent_step")
         self.llm.cost_tracker.record(response, "agent_step", tier, elapsed_ms)
 
         # Handle fallback tool parsing for non-native providers

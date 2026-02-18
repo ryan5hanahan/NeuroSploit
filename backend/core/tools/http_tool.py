@@ -56,37 +56,45 @@ async def _request_with_engine(
     method: str, url: str, headers: Dict, body: str, follow_redirects: bool
 ) -> str:
     """Use the existing RequestEngine for the HTTP request."""
+    import aiohttp
     from backend.core.request_engine import RequestEngine
 
-    engine = RequestEngine()
+    timeout = aiohttp.ClientTimeout(total=30)
+    connector = aiohttp.TCPConnector(ssl=False)
 
-    kwargs = {
-        "method": method,
-        "url": url,
-        "headers": headers,
-        "allow_redirects": follow_redirects,
-        "timeout": 30,
-    }
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        engine = RequestEngine(session=session, default_timeout=30)
 
-    if body and method in ("POST", "PUT", "PATCH"):
-        content_type = headers.get("Content-Type", headers.get("content-type", ""))
-        if "json" in content_type:
-            try:
-                kwargs["json"] = json.loads(body)
-            except (json.JSONDecodeError, TypeError):
+        kwargs: Dict[str, Any] = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "allow_redirects": follow_redirects,
+            "timeout": 30,
+        }
+
+        if body and method in ("POST", "PUT", "PATCH"):
+            content_type = headers.get("Content-Type", headers.get("content-type", ""))
+            if "json" in content_type:
+                try:
+                    kwargs["json_data"] = json.loads(body)
+                except (json.JSONDecodeError, TypeError):
+                    kwargs["data"] = body
+            else:
                 kwargs["data"] = body
-        else:
-            kwargs["data"] = body
 
-    response = await engine.request(**kwargs)
+        response = await engine.request(**kwargs)
 
-    return _format_response(
-        status=response.status_code,
-        headers=dict(response.headers) if hasattr(response, "headers") else {},
-        body=response.text if hasattr(response, "text") else str(response),
-        url=url,
-        method=method,
-    )
+        if response is None:
+            raise RuntimeError("RequestEngine returned None (total failure)")
+
+        return _format_response(
+            status=response.status,
+            headers=response.headers if response.headers else {},
+            body=response.body if response.body else "",
+            url=url,
+            method=method,
+        )
 
 
 async def _request_with_aiohttp(

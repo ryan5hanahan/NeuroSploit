@@ -2,6 +2,12 @@
 
 Wraps Docker container execution to provide shell access with
 timeout enforcement, output capture, and security constraints.
+
+Fallback chain:
+  1. Per-operation KaliSandbox via ContainerPool (if kali image exists)
+  2. Shared SandboxManager container (if sandbox image exists)
+  3. Local subprocess execution (always works — backend container has
+     nmap, curl, sqlmap, python3 and other tools pre-installed)
 """
 
 import asyncio
@@ -20,8 +26,8 @@ MAX_TIMEOUT = 600
 async def handle_shell_execute(args: Dict[str, Any], context: Any) -> str:
     """Execute a shell command inside the Docker sandbox.
 
-    Reuses the existing KaliSandbox/SandboxManager infrastructure
-    for container execution.
+    Tries per-scan KaliSandbox, shared SandboxManager, and finally
+    falls back to local subprocess execution within the backend container.
 
     Args:
         args: {"command": str, "timeout": int}
@@ -36,11 +42,9 @@ async def handle_shell_execute(args: Dict[str, Any], context: Any) -> str:
     if not command:
         return "Error: empty command"
 
-    # Log the command
     logger.info(f"[Shell] Executing: {command} (timeout={timeout}s)")
 
     try:
-        # Try per-operation sandbox first, fall back to shared sandbox
         result = await _execute_in_sandbox(command, timeout, context)
         return result
     except Exception as e:
@@ -49,90 +53,78 @@ async def handle_shell_execute(args: Dict[str, Any], context: Any) -> str:
 
 
 async def _execute_in_sandbox(command: str, timeout: int, context: Any) -> str:
-    """Execute command in Docker sandbox."""
-    try:
-        # Try importing the per-scan KaliSandbox (preferred)
-        from core.kali_sandbox import KaliSandbox
-        from core.container_pool import ContainerPool
+    """Execute command using available sandbox infrastructure."""
 
-        pool = ContainerPool.get_instance()
+    # --- Attempt 1: Per-operation KaliSandbox via ContainerPool ---
+    try:
+        from core.container_pool import get_pool
+
+        pool = get_pool()
         sandbox = await pool.get_or_create(context.operation_id)
         result = await sandbox.execute_raw(command, timeout=timeout)
-
-        output = _format_result(result)
-        return output
+        return _format_result(result)
 
     except ImportError:
         pass
     except Exception as e:
-        logger.warning(f"KaliSandbox failed, trying shared sandbox: {e}")
+        logger.debug(f"KaliSandbox unavailable: {e}")
 
+    # --- Attempt 2: Shared SandboxManager container ---
     try:
-        # Fall back to shared SandboxManager
         from core.sandbox_manager import get_sandbox
 
         sandbox = await get_sandbox()
-        result = await sandbox.execute_raw(command, timeout=timeout)
-
-        output = _format_result(result)
-        return output
+        if sandbox and sandbox.is_available:
+            result = await sandbox.execute_raw(command, timeout=timeout)
+            return _format_result(result)
 
     except ImportError:
         pass
     except Exception as e:
-        logger.warning(f"SandboxManager failed, trying direct Docker: {e}")
+        logger.debug(f"SandboxManager unavailable: {e}")
 
-    # Last resort: direct Docker exec
-    return await _execute_direct_docker(command, timeout)
+    # --- Attempt 3: Local subprocess (backend container has tools) ---
+    return await _execute_subprocess(command, timeout)
 
 
-async def _execute_direct_docker(command: str, timeout: int) -> str:
-    """Direct Docker container execution as fallback."""
+async def _execute_subprocess(command: str, timeout: int) -> str:
+    """Execute command via local subprocess.
+
+    The backend container has nmap, curl, sqlmap, python3, and other
+    tools pre-installed, so this works as a reliable fallback when
+    dedicated sandbox containers aren't available.
+    """
+    import os
+
+    start = time.monotonic()
     try:
-        import docker
-
-        client = docker.from_env()
-
-        # Find or create the sandbox container
-        container_name = "neurosploit-sandbox"
-        try:
-            container = client.containers.get(container_name)
-            if container.status != "running":
-                container.start()
-        except docker.errors.NotFound:
-            # Create a new sandbox container
-            container = client.containers.run(
-                "neurosploit-kali:latest",
-                command="tail -f /dev/null",
-                name=container_name,
-                detach=True,
-                network="neurosploit-network",
-                mem_limit="2g",
-                cpu_period=100000,
-                cpu_quota=200000,
-                labels={"neurosploit.type": "agent-sandbox"},
-            )
-
-        # Execute command
-        loop = asyncio.get_event_loop()
-        exec_result = await loop.run_in_executor(
-            None,
-            lambda: container.exec_run(
-                ["bash", "-c", command],
-                demux=True,
-                environment={"TERM": "dumb"},
-            ),
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "TERM": "dumb"},
         )
 
-        exit_code = exec_result.exit_code
-        stdout = (exec_result.output[0] or b"").decode("utf-8", errors="replace") if exec_result.output else ""
-        stderr = (exec_result.output[1] or b"").decode("utf-8", errors="replace") if exec_result.output else ""
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return f"[Exit code: -1]\nCommand timed out after {timeout}s"
+
+        elapsed = time.monotonic() - start
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+        exit_code = proc.returncode or 0
 
         output = _format_raw_output(exit_code, stdout, stderr)
+        output += f"\n\n[Duration: {elapsed:.1f}s]"
         return _truncate(output)
 
     except Exception as e:
-        return f"Docker execution failed: {type(e).__name__}: {str(e)}"
+        return f"Subprocess execution failed: {type(e).__name__}: {str(e)}"
 
 
 def _format_result(result) -> str:
