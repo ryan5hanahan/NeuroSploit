@@ -36,6 +36,8 @@ class ScheduleJobResponse(BaseModel):
     next_run: Optional[str] = None
     last_run: Optional[str] = None
     run_count: int = 0
+    agent_role: Optional[str] = None
+    llm_profile: Optional[str] = None
 
 
 @router.get("/", response_model=List[Dict])
