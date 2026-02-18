@@ -10,6 +10,163 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Normalize AI-returned vuln type names to canonical payload library keys.
+# Also used by scan_service detection logic.
+VULN_TYPE_ALIASES: Dict[str, str] = {
+    # Generic / short names → canonical
+    "xss": "xss_reflected",
+    "reflected_xss": "xss_reflected",
+    "stored_xss": "xss_stored",
+    "dom_xss": "xss_dom",
+    "cross_site_scripting": "xss_reflected",
+    "sqli": "sqli_error",
+    "sql_injection": "sqli_error",
+    "sql_injection_error": "sqli_error",
+    "sql_injection_blind": "sqli_blind",
+    "sql_injection_union": "sqli_union",
+    "sql_injection_time": "sqli_time",
+    "blind_sql_injection": "sqli_blind",
+    "error_based_sqli": "sqli_error",
+    "time_based_sqli": "sqli_time",
+    "union_sqli": "sqli_union",
+    "rce": "command_injection",
+    "os_injection": "command_injection",
+    "os_command_injection": "command_injection",
+    "remote_code_execution": "command_injection",
+    "cmd_injection": "command_injection",
+    "local_file_inclusion": "lfi",
+    "remote_file_inclusion": "rfi",
+    "file_inclusion": "lfi",
+    "directory_traversal": "path_traversal",
+    "server_side_request_forgery": "ssrf",
+    "server_side_template_injection": "ssti",
+    "template_injection": "ssti",
+    "xml_external_entity": "xxe",
+    "cors_misconfiguration": "cors_misconfig",
+    "cors": "cors_misconfig",
+    "csrf": "cors_misconfig",  # closest payload set
+    "cross_site_request_forgery": "cors_misconfig",
+    "redirect": "open_redirect",
+    "url_redirect": "open_redirect",
+    "nosql": "nosql_injection",
+    "nosqli": "nosql_injection",
+    "ldap": "ldap_injection",
+    "xpath": "xpath_injection",
+    "graphql": "graphql_injection",
+    "crlf": "crlf_injection",
+    "header_injection": "crlf_injection",
+    "session_fixation": "auth_bypass",
+    "brute_force": "weak_password",
+    "bola": "idor",
+    "broken_object_level_authorization": "idor",
+    "privilege_escalation": "idor",
+    "insecure_direct_object_reference": "idor",
+    "api_abuse": "rate_limit_bypass",
+    "rate_limiting": "rate_limit_bypass",
+    "file_upload": "path_traversal",
+    "unrestricted_upload": "path_traversal",
+    "security_misconfiguration": "debug_mode",
+    "missing_security_headers": "insecure_cookie_flags",
+    "deserialization": "insecure_deserialization",
+    "prototype_pollution_attack": "prototype_pollution",
+    "host_header": "host_header_injection",
+    "http_request_smuggling": "http_smuggling",
+    "web_cache_poisoning": "cache_poisoning",
+    "subdomain_takeover_check": "subdomain_takeover",
+}
+
+# Substring patterns for normalizing verbose LLM-generated vuln type names
+# (e.g. "SQL Injection (error-based, blind, time-based)" → "sqli_error")
+# Checked in order; first match wins.
+_VULN_TYPE_PATTERNS: List[tuple] = [
+    ("sql injection", "sqli_error"),
+    ("sqli", "sqli_error"),
+    ("cross-site scripting", "xss_reflected"),
+    ("cross site scripting", "xss_reflected"),
+    ("xss", "xss_reflected"),
+    ("command injection", "command_injection"),
+    ("remote code execution", "command_injection"),
+    (" rce", "command_injection"),
+    ("os injection", "command_injection"),
+    ("local file inclusion", "lfi"),
+    ("remote file inclusion", "rfi"),
+    ("file inclusion", "lfi"),
+    ("path traversal", "path_traversal"),
+    ("directory traversal", "path_traversal"),
+    ("server-side request forgery", "ssrf"),
+    ("ssrf", "ssrf"),
+    ("server-side template injection", "ssti"),
+    ("ssti", "ssti"),
+    ("xml external entity", "xxe"),
+    ("xxe", "xxe"),
+    ("authentication bypass", "auth_bypass"),
+    ("auth bypass", "auth_bypass"),
+    ("session management", "auth_bypass"),
+    ("session fixation", "auth_bypass"),
+    ("idor", "idor"),
+    ("insecure direct object", "idor"),
+    ("bola", "idor"),
+    ("broken object level", "idor"),
+    ("privilege escalation", "idor"),
+    ("open redirect", "open_redirect"),
+    ("url redirect", "open_redirect"),
+    ("cors", "cors_misconfig"),
+    ("csrf", "cors_misconfig"),
+    ("cross-site request forgery", "cors_misconfig"),
+    ("security misconfiguration", "debug_mode"),
+    ("misconfiguration", "debug_mode"),
+    ("missing security header", "insecure_cookie_flags"),
+    ("security header", "insecure_cookie_flags"),
+    ("nosql injection", "nosql_injection"),
+    ("nosql", "nosql_injection"),
+    ("ldap injection", "ldap_injection"),
+    ("xpath injection", "xpath_injection"),
+    ("graphql", "graphql_injection"),
+    ("crlf injection", "crlf_injection"),
+    ("header injection", "crlf_injection"),
+    ("deserialization", "insecure_deserialization"),
+    ("prototype pollution", "prototype_pollution"),
+    ("file upload", "path_traversal"),
+    ("unrestricted upload", "path_traversal"),
+    ("jwt", "jwt_manipulation"),
+    ("mass assignment", "mass_assignment"),
+    ("rate limit", "rate_limit_bypass"),
+    ("information disclosure", "information_disclosure"),
+    ("sensitive data", "sensitive_data_exposure"),
+    ("http smuggling", "http_smuggling"),
+    ("request smuggling", "http_smuggling"),
+    ("cache poisoning", "cache_poisoning"),
+    ("host header", "host_header_injection"),
+    ("subdomain takeover", "subdomain_takeover"),
+    ("weak password", "weak_password"),
+    ("default credential", "default_credentials"),
+    ("brute force", "weak_password"),
+]
+
+
+def normalize_vuln_type(raw: str) -> str:
+    """Normalize an AI-returned vuln type name to a canonical payload library key.
+
+    Tries exact alias match first, then substring pattern match on lowercased input.
+    Returns the original string (lowercased, spaces→underscores) if no match found.
+    """
+    # Exact alias lookup
+    if raw in VULN_TYPE_ALIASES:
+        return VULN_TYPE_ALIASES[raw]
+
+    # Lowercase + underscore form
+    normalized = raw.lower().strip().replace(" ", "_").replace("-", "_")
+    if normalized in VULN_TYPE_ALIASES:
+        return VULN_TYPE_ALIASES[normalized]
+
+    # Substring pattern matching for verbose LLM names
+    lower = raw.lower()
+    for pattern, canonical in _VULN_TYPE_PATTERNS:
+        if pattern in lower:
+            return canonical
+
+    return normalized
+
 
 class PayloadGenerator:
     """
@@ -1055,14 +1212,17 @@ class PayloadGenerator:
         Returns:
             List of payloads to test
         """
+        # Normalize AI-returned type names to canonical keys
+        canonical = normalize_vuln_type(vuln_type)
+
         # Try DB-specific payloads first for SQLi types
-        db_payloads = self._select_db_payloads(vuln_type, context)
-        base_payloads = db_payloads if db_payloads else self.payload_libraries.get(vuln_type, [])
+        db_payloads = self._select_db_payloads(canonical, context)
+        base_payloads = db_payloads if db_payloads else self.payload_libraries.get(canonical, [])
 
         if not base_payloads:
-            # Fallback to similar type
+            # Fallback to similar type by prefix match
             for key in self.payload_libraries:
-                if vuln_type.startswith(key.split('_')[0]):
+                if canonical.startswith(key.split('_')[0]):
                     base_payloads = self.payload_libraries[key]
                     break
 

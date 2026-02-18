@@ -126,7 +126,9 @@ class ConnectionManager:
         })
 
     async def broadcast_log(self, scan_id: str, level: str, message: str):
-        """Send a log message"""
+        """Send a log message (also echoed to stdout for docker logs)"""
+        if level != "debug":
+            print(f"[{level.upper()}] {message}")
         await self.send_to_scan(scan_id, {
             "type": "log_message",
             "scan_id": scan_id,

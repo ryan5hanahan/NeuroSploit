@@ -28,7 +28,7 @@ from backend.db.database import async_session_factory
 from backend.core.recon_integration import ReconIntegration, check_tools_installed
 from backend.core.ai_prompt_processor import AIPromptProcessor, AIVulnerabilityAnalyzer
 from backend.core.vuln_engine.engine import DynamicVulnerabilityEngine
-from backend.core.vuln_engine.payload_generator import PayloadGenerator
+from backend.core.vuln_engine.payload_generator import PayloadGenerator, normalize_vuln_type
 from backend.core.autonomous_scanner import AutonomousScanner
 from backend.core.ai_pentest_agent import AIPentestAgent
 from backend.core.ai_prompt_processor import TestingPlan
@@ -644,7 +644,8 @@ class ScanService:
                             log_callback=agent_log,
                             auth_headers=auth_headers,
                             max_depth=5,
-                            governance=governance
+                            governance=governance,
+                            recon_context={"data": recon_data}
                         ) as agent:
                             agent_report = await agent.run()
 
@@ -944,9 +945,12 @@ Be thorough and test all discovered endpoints aggressively.
         timeout = aiohttp.ClientTimeout(total=15)
         connector = aiohttp.TCPConnector(ssl=False, limit=10)
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            for vuln_type in testing_plan.vulnerability_types:
+            for raw_vuln_type in testing_plan.vulnerability_types:
                 if self._stop_requested:
                     break
+
+                # Normalize AI-returned type to canonical payload library key
+                vuln_type = normalize_vuln_type(raw_vuln_type)
 
                 try:
                     # Get payloads for this vulnerability type
@@ -1125,13 +1129,13 @@ Be thorough and test all discovered endpoints aggressively.
                     confidence = 0.0
                     evidence = ""
 
-                    if vuln_type in ["xss_reflected", "xss_stored"]:
+                    if vuln_type in ["xss_reflected", "xss_stored", "xss_dom"]:
                         if payload in body:
                             is_vulnerable = True
                             confidence = 0.7
                             evidence = "Payload reflected in response"
 
-                    elif vuln_type in ["sqli_error", "sqli_blind"]:
+                    elif vuln_type in ["sqli_error", "sqli_blind", "sqli_union", "sqli_time"]:
                         error_patterns = ["sql", "mysql", "syntax error", "query", "oracle", "postgresql", "sqlite", "database", "odbc", "jdbc"]
                         body_lower = body.lower()
                         for pattern in error_patterns:
@@ -1141,7 +1145,7 @@ Be thorough and test all discovered endpoints aggressively.
                                 evidence = f"SQL error pattern found: {pattern}"
                                 break
 
-                    elif vuln_type == "lfi":
+                    elif vuln_type in ["lfi", "path_traversal", "rfi", "arbitrary_file_read"]:
                         if "root:" in body or "[extensions]" in body or "boot.ini" in body.lower():
                             is_vulnerable = True
                             confidence = 0.9
@@ -1162,12 +1166,58 @@ Be thorough and test all discovered endpoints aggressively.
                                 evidence = f"Redirect to: {location}"
 
                     elif vuln_type == "ssti":
-                        # Check for template injection markers
                         # Use 13*37=481 canary — "49" (7*7) false-positives on natural page content
                         if "481" in body or "7777777" in body:
                             is_vulnerable = True
                             confidence = 0.8
                             evidence = "Template execution detected"
+
+                    elif vuln_type == "ssrf":
+                        # Check for cloud metadata or internal responses
+                        if "ami-id" in body or "instance-id" in body or "169.254.169.254" in body:
+                            is_vulnerable = True
+                            confidence = 0.9
+                            evidence = "SSRF: internal/cloud metadata in response"
+
+                    elif vuln_type == "xxe":
+                        if "root:" in body or "ENTITY" in body or "file:///" in body:
+                            is_vulnerable = True
+                            confidence = 0.8
+                            evidence = "XXE: external entity content in response"
+
+                    elif vuln_type in ["nosql_injection", "ldap_injection", "xpath_injection"]:
+                        if payload in body or "error" in body.lower():
+                            is_vulnerable = True
+                            confidence = 0.6
+                            evidence = f"Injection response anomaly for {vuln_type}"
+
+                    elif vuln_type in ["crlf_injection", "header_injection"]:
+                        injected_header = response.headers.get("X-Injected", "")
+                        if injected_header or "\r\n" in body[:500]:
+                            is_vulnerable = True
+                            confidence = 0.7
+                            evidence = "Header injection detected"
+
+                    elif vuln_type in ["cors_misconfig"]:
+                        acao = response.headers.get("Access-Control-Allow-Origin", "")
+                        if acao == "*" or "evil" in acao.lower():
+                            is_vulnerable = True
+                            confidence = 0.7
+                            evidence = f"CORS misconfiguration: ACAO={acao}"
+
+                    elif vuln_type in ["idor", "auth_bypass", "bfla"]:
+                        # Payload-in-body or 200 on protected resource
+                        if response.status == 200 and payload in url:
+                            is_vulnerable = True
+                            confidence = 0.5
+                            evidence = "Accessible without proper authorization"
+
+                    else:
+                        # Generic detection: payload reflected or error triggered
+                        if payload in body:
+                            is_vulnerable = True
+                            confidence = 0.5
+                            evidence = f"Payload reflected in response for {vuln_type}"
 
                     return {
                         "is_vulnerable": is_vulnerable,
