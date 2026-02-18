@@ -5027,6 +5027,13 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                     if self.strategy and not self.strategy.should_test_type(vuln_type, url):
                         continue
 
+                    # Strategy: pivot away from low-confidence vuln types
+                    if self.strategy:
+                        should_pivot, pivot_reason = self.strategy.should_pivot_approach(vuln_type)
+                        if should_pivot:
+                            logger.debug(f"Pivoting away from {vuln_type}: {pivot_reason}")
+                            continue
+
                     finding = await self._test_vulnerability_type(
                         url,
                         vuln_type,

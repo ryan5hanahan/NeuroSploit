@@ -461,11 +461,11 @@ _PROVIDER_MAP = {
 
 # Default models per provider (used when no model is configured)
 _DEFAULT_MODELS = {
-    "claude": "claude-sonnet-4-5-20250929",
+    "claude": "claude-sonnet-4-6",
     "gpt": "gpt-4o",
-    "openrouter": "anthropic/claude-sonnet-4-5-20250929",
+    "openrouter": "anthropic/claude-sonnet-4-6",
     "ollama": "llama3.2",
-    "bedrock": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "bedrock": "us.anthropic.claude-sonnet-4-6-v1:0",
 }
 
 # Which env var holds the API key for each settings provider

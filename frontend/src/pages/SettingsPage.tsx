@@ -60,7 +60,7 @@ interface LlmTestResponse {
 
 const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
   claude: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
     { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
     { label: 'Custom', value: '__custom__' },
@@ -72,7 +72,7 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   openrouter: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'anthropic/claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'anthropic/claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'anthropic/claude-opus-4-6' },
     { label: 'GPT-4o', value: 'openai/gpt-4o' },
     { label: 'Custom', value: '__custom__' },
@@ -84,7 +84,7 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
     { label: 'Custom', value: '__custom__' },
   ],
   bedrock: [
-    { label: 'Claude Sonnet 4.5 (Default)', value: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' },
+    { label: 'Claude Sonnet 4.6 (Default)', value: 'us.anthropic.claude-sonnet-4-6-v1:0' },
     { label: 'Claude Opus 4.6', value: 'us.anthropic.claude-opus-4-6-v1:0' },
     { label: 'Claude Haiku 4.5', value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0' },
     { label: 'Custom', value: '__custom__' },
@@ -93,17 +93,17 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
 
 // Default model per tier per provider (matches router.py DEFAULT_TIER_CONFIG)
 const TIER_DEFAULTS: Record<string, Record<string, string>> = {
-  claude: { fast: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-4-5-20250929', deep: 'claude-opus-4-6' },
+  claude: { fast: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-4-6', deep: 'claude-opus-4-6' },
   openai: { fast: 'gpt-4o-mini', balanced: 'gpt-4o', deep: 'gpt-4o' },
-  openrouter: { fast: 'anthropic/claude-haiku-4-5-20251001', balanced: 'anthropic/claude-sonnet-4-5-20250929', deep: 'anthropic/claude-opus-4-6' },
+  openrouter: { fast: 'anthropic/claude-haiku-4-5-20251001', balanced: 'anthropic/claude-sonnet-4-6', deep: 'anthropic/claude-opus-4-6' },
   ollama: { fast: 'llama3.2:3b', balanced: 'llama3.2', deep: 'llama3.2' },
-  bedrock: { fast: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', balanced: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', deep: 'us.anthropic.claude-opus-4-6-v1:0' },
+  bedrock: { fast: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', balanced: 'us.anthropic.claude-sonnet-4-6-v1:0', deep: 'us.anthropic.claude-opus-4-6-v1:0' },
 }
 
 const TIER_PRESETS: Record<string, { label: string; value: string }[]> = {
   claude: [
     { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
-    { label: 'Claude Sonnet 4.5', value: 'claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6', value: 'claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
     { label: 'Custom', value: '__custom__' },
   ],
@@ -115,7 +115,7 @@ const TIER_PRESETS: Record<string, { label: string; value: string }[]> = {
   ],
   openrouter: [
     { label: 'Claude Haiku 4.5', value: 'anthropic/claude-haiku-4-5-20251001' },
-    { label: 'Claude Sonnet 4.5', value: 'anthropic/claude-sonnet-4-5-20250929' },
+    { label: 'Claude Sonnet 4.6', value: 'anthropic/claude-sonnet-4-6' },
     { label: 'Claude Opus 4.6', value: 'anthropic/claude-opus-4-6' },
     { label: 'GPT-4o', value: 'openai/gpt-4o' },
     { label: 'Custom', value: '__custom__' },
@@ -129,7 +129,7 @@ const TIER_PRESETS: Record<string, { label: string; value: string }[]> = {
   ],
   bedrock: [
     { label: 'Claude Haiku 4.5', value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0' },
-    { label: 'Claude Sonnet 4.5', value: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' },
+    { label: 'Claude Sonnet 4.6', value: 'us.anthropic.claude-sonnet-4-6-v1:0' },
     { label: 'Claude Opus 4.6', value: 'us.anthropic.claude-opus-4-6-v1:0' },
     { label: 'Custom', value: '__custom__' },
   ],

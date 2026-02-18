@@ -186,6 +186,99 @@ BYPASS_STRATEGIES = {
             "delay": 0.5,
         },
     },
+    "akamai": {
+        "xss": [
+            "base64_encode",
+            "unicode_escape",
+            "case_mixing",
+            "html_entity",
+        ],
+        "sqli": [
+            "base64_encode",
+            "inline_comment",
+            "case_mixing",
+        ],
+        "general": {
+            "delay": 0.4,
+        },
+    },
+    "f5_bigip": {
+        "xss": [
+            "unicode_escape",
+            "case_mixing",
+            "comment_injection",
+            "whitespace_variant",
+        ],
+        "sqli": [
+            "inline_comment",
+            "double_encoding",
+            "whitespace_variant",
+        ],
+        "general": {
+            "delay": 0.3,
+        },
+    },
+    "sucuri": {
+        "xss": [
+            "case_mixing",
+            "html_entity",
+            "svg_payload",
+            "unicode_escape",
+        ],
+        "sqli": [
+            "inline_comment",
+            "case_mixing",
+            "double_encoding",
+        ],
+        "general": {
+            "delay": 0.3,
+        },
+    },
+    "fortinet": {
+        "xss": [
+            "unicode_escape",
+            "case_mixing",
+            "double_encoding",
+        ],
+        "sqli": [
+            "inline_comment",
+            "hex_encoding",
+            "whitespace_variant",
+        ],
+        "general": {
+            "delay": 0.3,
+        },
+    },
+    "azure_waf": {
+        "xss": [
+            "double_encoding",
+            "unicode_escape",
+            "svg_payload",
+        ],
+        "sqli": [
+            "double_encoding",
+            "inline_comment",
+            "scientific_notation",
+        ],
+        "general": {
+            "delay": 0.3,
+        },
+    },
+    "gcp_armor": {
+        "xss": [
+            "case_mixing",
+            "unicode_escape",
+            "html_entity",
+        ],
+        "sqli": [
+            "inline_comment",
+            "case_mixing",
+            "whitespace_variant",
+        ],
+        "general": {
+            "delay": 0.3,
+        },
+    },
     "generic": {
         "xss": [
             "case_mixing",
@@ -363,11 +456,18 @@ class WAFDetector:
         self, payload: str, waf_name: str, vuln_type: str
     ) -> List[str]:
         """Generate bypass variants of a payload for a specific WAF.
-        
+
+        Tries WAF-specific composite evasion first, then individual techniques.
         Returns list of adapted payloads, with original as fallback.
         """
-        strategy = self.get_bypass_strategy(waf_name, vuln_type)
         adapted = []
+
+        # Try WAF-specific composite evasion first
+        composite = self._composite_evasion(payload, waf_name, vuln_type)
+        if composite and composite != payload:
+            adapted.append(composite)
+
+        strategy = self.get_bypass_strategy(waf_name, vuln_type)
 
         for technique in strategy.get("techniques", []):
             variant = self._apply_technique(payload, technique, vuln_type)
@@ -383,6 +483,24 @@ class WAFDetector:
                 unique.append(p)
 
         return unique[:8]  # Max 8 variants
+
+    def _composite_evasion(self, payload: str, waf_name: str, vuln_type: str) -> Optional[str]:
+        """Try WAF-specific composite evasion before individual techniques."""
+        composites = {
+            "cloudflare": lambda p: self._case_mix(self._unicode_escape(p)),
+            "modsecurity": lambda p: self._double_encode(self._inline_comment(p)),
+            "aws_waf": lambda p: self._case_mix(self._double_encode(p)),
+            "akamai": lambda p: self._base64_encode(p),
+            "f5_bigip": lambda p: self._whitespace_variant(self._case_mix(p)),
+            "azure_waf": lambda p: self._double_encode(self._case_mix(p)),
+        }
+        fn = composites.get(waf_name)
+        if fn:
+            try:
+                return fn(payload)
+            except Exception:
+                pass
+        return None
 
     def _vuln_to_category(self, vuln_type: str) -> str:
         """Map specific vuln type to WAF bypass category."""
@@ -423,6 +541,8 @@ class WAFDetector:
                 return self._hex_encode(payload)
             elif technique == "concat_function":
                 return self._concat_function(payload)
+            elif technique == "base64_encode":
+                return self._base64_encode(payload)
         except Exception:
             pass
         return None
@@ -531,3 +651,8 @@ class WAFDetector:
             chars = ",".join(f"CHAR({ord(c)})" for c in s)
             return f"CONCAT({chars})"
         return re.sub(r"'([^']+)'", concat_str, payload)
+
+    def _base64_encode(self, payload: str) -> str:
+        """Base64-encode the payload for WAF bypass."""
+        import base64
+        return base64.b64encode(payload.encode()).decode()
