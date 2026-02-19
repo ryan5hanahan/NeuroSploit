@@ -71,7 +71,7 @@ ScanService(db: AsyncSession, scan_id: str = None)
 
 **Phase 3: AI Offensive Agent** (progress 45-90%)
 - Skippable via phase-skip signal
-- Per target: `AIPentestAgent(target, log_callback, auth_headers, max_depth=5).run()` -- AI-powered pen test agent that discovers and exploits vulnerabilities
+- Per target: `AutonomousAgent(target, mode=AUTO_PENTEST, ...)` as async context manager -- AI-driven agent with 100+ vuln types, WAF detection, validation pipeline, and exploit chaining
 - Then: `DynamicVulnerabilityEngine` tests every endpoint against every vuln type in the testing plan
 - `_execute_payload_test()`: injects payloads into query parameters, checks response for vuln indicators (reflected payload for XSS, SQL error patterns for SQLi, file contents for LFI, etc.)
 - `AIVulnerabilityAnalyzer.analyze_finding()` confirms findings with confidence >= 0.5
