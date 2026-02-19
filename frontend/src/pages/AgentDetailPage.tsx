@@ -5,6 +5,7 @@ import {
   Footprints, Shield, DollarSign, ChevronDown, ChevronRight,
   ArrowDown, Pause, Play, CheckCircle, FileText, Download,
   Send, Brain, ExternalLink, Copy, Code, XCircle, MessageSquare,
+  Repeat2, ArrowLeftRight,
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
@@ -77,6 +78,7 @@ export default function AgentDetailPage() {
   const [autoScroll, setAutoScroll] = useState(true)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isRerunning, setIsRerunning] = useState(false)
   const [decisions, setDecisions] = useState<AgentV2Decision[]>([])
   const [expandedDecisions, setExpandedDecisions] = useState<Set<number>>(new Set())
   const stepsEndRef = useRef<HTMLDivElement>(null)
@@ -303,6 +305,23 @@ export default function AgentDetailPage() {
     }
   }
 
+  const handleRerun = async () => {
+    if (!currentOperation) return
+    setIsRerunning(true)
+    try {
+      const resp = await agentV2Api.start({
+        target: currentOperation.target,
+        objective: currentOperation.objective || undefined,
+      })
+      navigate(`/agent/${resp.operation_id}`)
+    } catch (err: any) {
+      console.error('Failed to re-run:', err)
+      alert(err?.response?.data?.detail || 'Failed to re-run assessment')
+    } finally {
+      setIsRerunning(false)
+    }
+  }
+
   const toggleFinding = (idx: number) => {
     const next = new Set(expandedFindings)
     if (next.has(idx)) next.delete(idx)
@@ -419,6 +438,20 @@ export default function AgentDetailPage() {
               <Shield className="w-4 h-4 mr-2" />
               View in Dashboard
             </Button>
+          )}
+          {isTerminal && (
+            <>
+              <Button variant="secondary" onClick={handleRerun} isLoading={isRerunning}>
+                <Repeat2 className="w-4 h-4 mr-2" />
+                Re-run
+              </Button>
+              {currentOperation.scan_id && (
+                <Button variant="ghost" onClick={() => navigate(`/compare?scan=${currentOperation.scan_id}`)}>
+                  <ArrowLeftRight className="w-4 h-4 mr-2" />
+                  Compare
+                </Button>
+              )}
+            </>
           )}
           {isTerminal && (
             <div className="relative">
