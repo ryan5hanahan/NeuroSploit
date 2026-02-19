@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Download, Eye, Trash2, Calendar } from 'lucide-react'
+import { FileText, Download, Eye, Trash2, Calendar, BrainCircuit } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import { reportsApi, scansApi } from '../services/api'
@@ -79,13 +79,18 @@ export default function ReportsPage() {
       ) : (
         <div className="grid gap-4">
           {reports.map((report) => {
-            const scan = scans.get(report.scan_id)
+            const scan = report.scan_id ? scans.get(report.scan_id) : null
+            const isAgentReport = !!report.operation_id && !report.scan_id
             return (
               <Card key={report.id}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="p-3 bg-primary-500/10 rounded-lg">
-                      <FileText className="w-6 h-6 text-primary-500" />
+                    <div className={`p-3 rounded-lg ${isAgentReport ? 'bg-purple-500/10' : 'bg-primary-500/10'}`}>
+                      {isAgentReport ? (
+                        <BrainCircuit className="w-6 h-6 text-purple-500" />
+                      ) : (
+                        <FileText className="w-6 h-6 text-primary-500" />
+                      )}
                     </div>
                     <div>
                       <h3 className="font-medium text-white">
@@ -99,6 +104,11 @@ export default function ReportsPage() {
                         <span className="uppercase text-xs bg-dark-700 px-2 py-0.5 rounded">
                           {report.format}
                         </span>
+                        {isAgentReport && (
+                          <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">
+                            LLM Agent
+                          </span>
+                        )}
                         {scan && (
                           <span>
                             {scan.total_vulnerabilities} vulnerabilities

@@ -107,7 +107,8 @@ export interface PromptPreset {
 // Report types
 export interface Report {
   id: string
-  scan_id: string
+  scan_id: string | null
+  operation_id: string | null
   title: string | null
   format: 'html' | 'pdf' | 'json'
   file_path: string | null

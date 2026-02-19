@@ -20,6 +20,7 @@ router = APIRouter()
 @router.get("", response_model=ReportListResponse)
 async def list_reports(
     scan_id: Optional[str] = None,
+    operation_id: Optional[str] = None,
     auto_generated: Optional[bool] = None,
     is_partial: Optional[bool] = None,
     db: AsyncSession = Depends(get_db)
@@ -29,6 +30,9 @@ async def list_reports(
 
     if scan_id:
         query = query.where(Report.scan_id == scan_id)
+
+    if operation_id:
+        query = query.where(Report.operation_id == operation_id)
 
     if auto_generated is not None:
         query = query.where(Report.auto_generated == auto_generated)
@@ -214,7 +218,32 @@ async def download_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Get scan and vulnerabilities for generating report
+    # Agent reports: serve existing file or regenerate via agent generator
+    if report.operation_id and not report.scan_id:
+        file_path = Path(report.file_path) if report.file_path else None
+
+        # Regenerate if format differs or file missing
+        if not file_path or not file_path.exists() or report.format != format:
+            from backend.api.v1.agent_v2 import _load_operation_data
+            from backend.core.report_engine.agent_generator import AgentReportGenerator
+
+            op_data = await _load_operation_data(report.operation_id)
+            if not op_data:
+                raise HTTPException(status_code=404, detail="Operation data not found")
+            op_data.setdefault("operation_id", report.operation_id)
+
+            gen = AgentReportGenerator()
+            file_path, _ = gen.generate(op_data, format=format, title=report.title)
+            file_path = Path(file_path)
+
+        media_types = {"html": "text/html", "pdf": "application/pdf", "json": "application/json"}
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_types.get(format, "application/octet-stream"),
+            filename=file_path.name,
+        )
+
+    # Scan reports: regenerate from scan data
     scan_result = await db.execute(select(Scan).where(Scan.id == report.scan_id))
     scan = scan_result.scalar_one_or_none()
 
@@ -273,6 +302,30 @@ async def download_report_zip(
 
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+
+    # Agent reports: ZIP the existing file + screenshots from artifacts
+    if report.operation_id and not report.scan_id:
+        import zipfile
+        import tempfile as _tmpmod
+
+        report_file = Path(report.file_path) if report.file_path else None
+        if not report_file or not report_file.exists():
+            raise HTTPException(status_code=404, detail="Report file not found")
+
+        zip_name = report_file.stem + ".zip"
+        zip_path = Path(_tmpmod.gettempdir()) / zip_name
+        with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(str(report_file), report_file.name)
+            # Include screenshots from artifacts dir
+            from backend.api.v1.agent_v2 import _load_operation_data
+            op_data = await _load_operation_data(report.operation_id)
+            artifacts_dir = (op_data or {}).get("artifacts_dir", "")
+            if artifacts_dir:
+                ss_dir = Path(artifacts_dir) / "screenshots"
+                if ss_dir.is_dir():
+                    for img in ss_dir.glob("*.png"):
+                        zf.write(str(img), f"screenshots/{img.name}")
+        return FileResponse(path=str(zip_path), media_type="application/zip", filename=zip_name)
 
     scan_result = await db.execute(select(Scan).where(Scan.id == report.scan_id))
     scan = scan_result.scalar_one_or_none()

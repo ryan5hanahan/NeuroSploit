@@ -19,7 +19,8 @@ class ReportGenerate(BaseModel):
 class ReportResponse(BaseModel):
     """Schema for report response"""
     id: str
-    scan_id: str
+    scan_id: Optional[str] = None
+    operation_id: Optional[str] = None
     title: Optional[str]
     format: str
     file_path: Optional[str]

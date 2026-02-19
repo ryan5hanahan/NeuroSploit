@@ -339,7 +339,7 @@ async def generate_report(operation_id: str, request: ReportGenerateRequest):
 
     generator = AgentReportGenerator()
     try:
-        file_path, _summary = generator.generate(
+        file_path, summary = generator.generate(
             data,
             format=request.format,
             title=request.title,
@@ -347,6 +347,28 @@ async def generate_report(operation_id: str, request: ReportGenerateRequest):
     except Exception as e:
         logger.error(f"Report generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+
+    # Persist to reports table so it appears on the Reports page
+    try:
+        from backend.models.report import Report
+
+        target = data.get("target", "unknown")
+        report_title = request.title or f"Agent Report — {target}"
+
+        async with async_session_maker() as db:
+            report = Report(
+                operation_id=operation_id,
+                title=report_title,
+                format=request.format,
+                file_path=str(file_path),
+                executive_summary=summary[:2000] if summary else None,
+                auto_generated=False,
+                is_partial=data.get("status") not in ("completed",),
+            )
+            db.add(report)
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to persist report to DB: {e}")
 
     return ReportGenerateResponse(
         operation_id=operation_id,

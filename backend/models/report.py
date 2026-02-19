@@ -14,7 +14,8 @@ class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    scan_id: Mapped[str] = mapped_column(String(36), ForeignKey("scans.id", ondelete="CASCADE"))
+    scan_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("scans.id", ondelete="CASCADE"), nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
 
     # Report details
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -39,6 +40,7 @@ class Report(Base):
         return {
             "id": self.id,
             "scan_id": self.scan_id,
+            "operation_id": self.operation_id,
             "title": self.title,
             "format": self.format,
             "file_path": self.file_path,
