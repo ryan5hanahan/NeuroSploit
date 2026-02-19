@@ -697,6 +697,24 @@ export const tradecraftApi = {
   },
 }
 
+// Enrichment API
+export const enrichmentApi = {
+  enrich: async (vulnId: string) => {
+    const response = await api.post(`/enrichment/vulnerabilities/${vulnId}/enrich`)
+    return response.data
+  },
+
+  enrichScan: async (scanId: string) => {
+    const response = await api.post(`/enrichment/scans/${scanId}/enrich`)
+    return response.data
+  },
+
+  getEnrichment: async (vulnId: string) => {
+    const response = await api.get(`/enrichment/vulnerabilities/${vulnId}/enrichment`)
+    return response.data
+  },
+}
+
 // V2 LLM Agent API
 const agentV2Instance = axios.create({
   baseURL: '/api/v2/agent',

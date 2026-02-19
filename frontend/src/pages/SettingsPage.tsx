@@ -45,6 +45,9 @@ interface Settings {
   // Scan tuning
   default_timeout: number
   max_requests_per_second: number
+  // Vulnerability enrichment
+  has_nvd_key: boolean
+  enable_vuln_enrichment: boolean
 }
 
 interface DbStats {
@@ -191,6 +194,9 @@ export default function SettingsPage() {
   // Scan tuning
   const [defaultTimeout, setDefaultTimeout] = useState('30')
   const [maxRequestsPerSecond, setMaxRequestsPerSecond] = useState('10')
+  // Vulnerability enrichment
+  const [nvdApiKey, setNvdApiKey] = useState('')
+  const [enableVulnEnrichment, setEnableVulnEnrichment] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -246,6 +252,8 @@ export default function SettingsPage() {
         // Scan tuning
         setDefaultTimeout(String(data.default_timeout ?? 30))
         setMaxRequestsPerSecond(String(data.max_requests_per_second ?? 10))
+        // Vulnerability enrichment
+        setEnableVulnEnrichment(data.enable_vuln_enrichment ?? true)
         setAwsBedrockRegion(data.aws_bedrock_region || 'us-east-1')
         setAwsBedrockModel(data.aws_bedrock_model || '')
         const savedModel = data.llm_model || ''
@@ -316,7 +324,10 @@ export default function SettingsPage() {
           confidence_reject_threshold: parseInt(confidenceRejectThreshold),
           // Scan tuning
           default_timeout: parseInt(defaultTimeout),
-          max_requests_per_second: parseInt(maxRequestsPerSecond)
+          max_requests_per_second: parseInt(maxRequestsPerSecond),
+          // Vulnerability enrichment
+          nvd_api_key: nvdApiKey || undefined,
+          enable_vuln_enrichment: enableVulnEnrichment,
         })
       })
 
@@ -329,6 +340,7 @@ export default function SettingsPage() {
         setAwsAccessKeyId('')
         setAwsSecretAccessKey('')
         setAwsSessionToken('')
+        setNvdApiKey('')
         setMessage({ type: 'success', text: 'Settings saved successfully!' })
       } else {
         setMessage({ type: 'error', text: 'Failed to save settings' })
@@ -818,6 +830,36 @@ export default function SettingsPage() {
             </div>
             <ToggleSwitch enabled={enableBugbountyIntegration} onToggle={() => setEnableBugbountyIntegration(!enableBugbountyIntegration)} />
           </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-5 h-5 text-cyan-400" />
+              <div>
+                <p className="font-medium text-white">Vulnerability Enrichment</p>
+                <p className="text-sm text-dark-400">
+                  Auto-enrich findings with CVE data from NVD and known exploits from ExploitDB
+                </p>
+              </div>
+            </div>
+            <ToggleSwitch enabled={enableVulnEnrichment} onToggle={() => setEnableVulnEnrichment(!enableVulnEnrichment)} />
+          </div>
+
+          {enableVulnEnrichment && (
+            <div className="ml-8">
+              <Input
+                label="NVD API Key (Optional)"
+                type="password"
+                value={nvdApiKey}
+                onChange={(e) => setNvdApiKey(e.target.value)}
+                placeholder={settings?.has_nvd_key ? '••••••••••••••••' : 'Enter NVD API key for faster rate limits'}
+                helperText={
+                  settings?.has_nvd_key
+                    ? 'NVD API key configured (1.5 req/s). Leave empty to keep current key.'
+                    : 'Free tier: 0.16 req/s. Get a key at https://nvd.nist.gov/developers/request-an-api-key for 1.5 req/s.'
+                }
+              />
+            </div>
+          )}
         </div>
       </Card>
 

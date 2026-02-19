@@ -127,6 +127,26 @@ async def _run_migrations(conn):
                 logger.info("Adding 'auth_context' column to vulnerabilities table...")
                 await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN auth_context JSON"))
 
+            if "cve_ids" not in columns:
+                logger.info("Adding 'cve_ids' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN cve_ids JSON DEFAULT '[]'"))
+
+            if "enrichment_data" not in columns:
+                logger.info("Adding 'enrichment_data' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN enrichment_data JSON"))
+
+            if "enrichment_status" not in columns:
+                logger.info("Adding 'enrichment_status' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN enrichment_status VARCHAR(20) DEFAULT 'pending'"))
+
+            if "enriched_at" not in columns:
+                logger.info("Adding 'enriched_at' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN enriched_at DATETIME"))
+
+            if "known_exploits" not in columns:
+                logger.info("Adding 'known_exploits' column to vulnerabilities table...")
+                await conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN known_exploits JSON DEFAULT '[]'"))
+
         # Check if agent_tasks table exists
         result = await conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_tasks'")

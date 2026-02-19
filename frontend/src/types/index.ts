@@ -66,6 +66,12 @@ export interface Vulnerability {
   confidence_breakdown?: Record<string, number>
   proof_of_execution?: string
   negative_controls?: string
+  // CVE / Exploit enrichment
+  cve_ids?: string[]
+  enrichment_data?: Record<string, unknown> | null
+  enrichment_status?: 'pending' | 'in_progress' | 'complete' | 'partial' | 'failed' | 'skipped'
+  enriched_at?: string | null
+  known_exploits?: Array<{ edb_id: string; title: string; platform: string; type: string }>
   created_at: string
 }
 
@@ -706,6 +712,10 @@ export interface AgentV2Finding {
   artifact_paths?: string[]
   step_number?: number
   timestamp?: number
+  // CVE / Exploit enrichment (populated after background enrichment)
+  cve_ids?: string[]
+  enrichment_status?: string
+  known_exploits?: Array<{ edb_id: string; title: string; platform: string; type: string }>
 }
 
 export interface AgentV2FindingsResponse {
