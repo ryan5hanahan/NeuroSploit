@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Bot, Plus, ChevronUp, ChevronDown, Target, AlertTriangle,
   RefreshCw, StopCircle, CheckCircle, XCircle, DollarSign, Lock, Globe,
-  BookOpen, Trash2, UserPlus,
+  BookOpen, Trash2, UserPlus, Loader2,
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
@@ -60,6 +60,8 @@ export default function AgentPage() {
   // Multi-credential state
   const [showAuth, setShowAuth] = useState(false)
   const [credentialSets, setCredentialSets] = useState<AgentV2CredentialSet[]>([])
+  const [testingIndex, setTestingIndex] = useState<number | null>(null)
+  const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string }>>({})
 
   const addCredentialSet = () => {
     setCredentialSets(prev => [
@@ -74,6 +76,29 @@ export default function AgentPage() {
 
   const removeCredentialSet = (index: number) => {
     setCredentialSets(prev => prev.filter((_, i) => i !== index))
+    setTestResults(prev => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+  }
+
+  const handleTestCredentials = async (index: number) => {
+    const cs = credentialSets[index]
+    if (!target.trim() || !cs.auth_type) return
+    setTestingIndex(index)
+    setTestResults(prev => { const next = { ...prev }; delete next[index]; return next })
+    try {
+      const result = await agentV2Api.testCredentials(target.trim(), cs)
+      setTestResults(prev => ({ ...prev, [index]: { success: result.success, message: result.message } }))
+    } catch (err: any) {
+      setTestResults(prev => ({
+        ...prev,
+        [index]: { success: false, message: err?.response?.data?.detail || 'Request failed' },
+      }))
+    } finally {
+      setTestingIndex(null)
+    }
   }
 
   // Task library state
@@ -540,6 +565,37 @@ export default function AgentPage() {
                           />
                         </div>
                       )}
+
+                      {/* Test credentials button */}
+                      <div className="flex items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          disabled={!target.trim() || !cs.auth_type || testingIndex === idx}
+                          onClick={() => handleTestCredentials(idx)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-dark-600 text-dark-200 hover:text-white hover:border-dark-500 bg-dark-800"
+                        >
+                          {testingIndex === idx ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                          Test
+                        </button>
+                        {testResults[idx] && (
+                          <span className={`flex items-start gap-1.5 text-xs font-medium leading-snug ${
+                            testResults[idx].success ? 'text-green-400' : 'text-red-400'
+                          }`}>
+                            <span className="mt-0.5 flex-shrink-0">
+                              {testResults[idx].success ? (
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              ) : (
+                                <XCircle className="w-3.5 h-3.5" />
+                              )}
+                            </span>
+                            {testResults[idx].message}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
 

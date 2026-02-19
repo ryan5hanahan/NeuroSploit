@@ -6,7 +6,7 @@ import type {
   VulnLabChallenge, VulnLabRunRequest, VulnLabRunResponse, VulnLabRealtimeStatus,
   VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
   TradecraftTTP,
-  AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse,
+  AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse, AgentV2CredentialSet,
   AgentV2FindingsResponse, AgentV2DecisionsResponse, AgentV2OperationSummary,
 } from '../types'
 
@@ -774,6 +774,16 @@ export const agentV2Api = {
 
   getReportDownloadUrl: (operationId: string, format: string = 'html'): string => {
     return `/api/v2/agent/${operationId}/report/download?format=${format}`
+  },
+
+  testCredentials: async (target: string, credentialSet: AgentV2CredentialSet): Promise<{
+    success: boolean; status_code: number; message: string; duration_ms: number; response_preview?: string
+  }> => {
+    const response = await agentV2Instance.post('/test-credentials', {
+      target,
+      credential_set: credentialSet,
+    })
+    return response.data
   },
 
   getByScan: async (scanId: string): Promise<{ scan_id: string; operation_id: string } | null> => {

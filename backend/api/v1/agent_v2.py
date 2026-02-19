@@ -118,9 +118,125 @@ class AgentV2PromptRequest(BaseModel):
     prompt: str = Field(..., description="Custom instruction to inject")
 
 
+class TestCredentialsRequest(BaseModel):
+    target: str = Field(..., description="Target URL to test against")
+    credential_set: Dict[str, str] = Field(
+        ..., description="Credential set: {auth_type, ...type-specific fields}",
+    )
+
+
+class TestCredentialsResponse(BaseModel):
+    success: bool
+    status_code: int
+    message: str
+    duration_ms: float
+    response_preview: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+@router.post("/test-credentials", response_model=TestCredentialsResponse)
+async def test_credentials(request: TestCredentialsRequest):
+    """Test a credential set against the target before starting an operation."""
+    import aiohttp
+    from backend.core.llm.tool_executor import ExecutionContext
+
+    auth_type = request.credential_set.get("auth_type", "")
+    if not auth_type:
+        raise HTTPException(status_code=400, detail="credential_set must include auth_type")
+
+    # Build auth headers using the same logic the agent uses
+    auth_headers = ExecutionContext._build_headers_for(auth_type, request.credential_set)
+    if not auth_headers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not build auth headers for type '{auth_type}' — check credential fields",
+        )
+
+    target_url = request.target.strip()
+
+    timeout = aiohttp.ClientTimeout(total=30)
+    connector = aiohttp.TCPConnector(ssl=False)
+
+    start_ts = time.monotonic()
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            # Unauthenticated request first (baseline)
+            async with session.get(target_url, allow_redirects=True) as resp:
+                unauth_status = resp.status
+                unauth_body = await resp.text(errors="replace")
+
+            # Authenticated request
+            async with session.get(target_url, headers=auth_headers, allow_redirects=True) as resp:
+                auth_status = resp.status
+                auth_body = await resp.text(errors="replace")
+    except aiohttp.ClientError as e:
+        duration_ms = (time.monotonic() - start_ts) * 1000
+        return TestCredentialsResponse(
+            success=False,
+            status_code=0,
+            message=f"Connection failed: {e}",
+            duration_ms=round(duration_ms, 1),
+        )
+    except Exception as e:
+        duration_ms = (time.monotonic() - start_ts) * 1000
+        return TestCredentialsResponse(
+            success=False,
+            status_code=0,
+            message=f"Request error: {e}",
+            duration_ms=round(duration_ms, 1),
+        )
+
+    duration_ms = (time.monotonic() - start_ts) * 1000
+
+    # --- Assess success by comparing authenticated vs unauthenticated ---
+    is_2xx = 200 <= auth_status < 300
+    unauth_blocked = unauth_status in (401, 403)
+
+    if auth_status in (401, 403):
+        # Clear rejection
+        message = f"{auth_status} — credentials rejected"
+        success = False
+    elif is_2xx and unauth_blocked:
+        # Best case: unauth was blocked, auth got through
+        message = f"{auth_status} OK — credentials grant access (unauthenticated returned {unauth_status})"
+        success = True
+    elif is_2xx and unauth_status == auth_status:
+        # Both returned 2xx — compare bodies to see if credentials made a difference
+        # Normalize whitespace for comparison to avoid false negatives from timestamps etc.
+        auth_trimmed = auth_body.strip()[:8192]
+        unauth_trimmed = unauth_body.strip()[:8192]
+        if auth_trimmed == unauth_trimmed:
+            message = (
+                f"{auth_status} — identical response with and without credentials; "
+                f"endpoint may not validate auth (try a protected path)"
+            )
+            success = False
+        else:
+            # Bodies differ — credentials are changing behavior
+            message = f"{auth_status} OK — authenticated response differs from unauthenticated"
+            success = True
+    elif is_2xx:
+        # Auth 2xx but unauth returned something else (3xx, 5xx, etc.)
+        message = f"{auth_status} OK (unauthenticated returned {unauth_status})"
+        success = True
+    else:
+        message = f"{auth_status} — unexpected response"
+        success = False
+
+    # Truncated response preview
+    preview = auth_body[:500] if auth_body else None
+
+    return TestCredentialsResponse(
+        success=success,
+        status_code=auth_status,
+        message=message,
+        duration_ms=round(duration_ms, 1),
+        response_preview=preview,
+    )
+
 
 @router.post("/start", response_model=AgentV2StartResponse)
 async def start_agent(request: AgentV2StartRequest):
