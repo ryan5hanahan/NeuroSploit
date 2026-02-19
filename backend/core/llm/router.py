@@ -33,9 +33,12 @@ TASK_TIER_MAP: Dict[str, ModelTier] = {
     "create_plan": ModelTier.DEEP,            # #16 _ai_create_plan
     "executive_summary": ModelTier.DEEP,      # #18 _generate_executive_summary
 
-    # === LLM-Driven Agent ===
-    "agent_step": ModelTier.BALANCED,         # Per-step reasoning (high volume)
-    "agent_plan": ModelTier.DEEP,             # Initial planning (one-time)
+    # === LLM-Driven Agent (phase-routed) ===
+    "agent_plan": ModelTier.DEEP,             # Initial planning (one-time, no plan yet)
+    "agent_step_recon": ModelTier.FAST,       # Discovery phase — recon tool dispatch
+    "agent_step": ModelTier.BALANCED,         # Hypothesis phase — standard testing
+    "agent_step_analysis": ModelTier.DEEP,    # Validation/Reporting — finding confirmation
+    "agent_summary": ModelTier.DEEP,          # Final summary before budget exhaustion
 }
 
 

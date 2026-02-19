@@ -525,6 +525,32 @@ class LLMDrivenAgent:
             tool_usage=self.context.get_tool_usage_summary(),
         )
 
+    def _resolve_step_task_type(self) -> str:
+        """Determine the LLM task type for the current step based on plan phase.
+
+        Routes to different model tiers:
+        - No plan yet (step 0) → agent_plan (DEEP) for initial planning
+        - Discovery phase → agent_step_recon (FAST) for recon tool dispatch
+        - Hypothesis phase → agent_step (BALANCED) for standard testing
+        - Validation/Reporting → agent_step_analysis (DEEP) for finding confirmation
+        """
+        plan = self.plan_manager.plan
+        if plan is None:
+            return "agent_plan"
+
+        phase = plan.current_phase
+        if phase is None:
+            return "agent_step"
+
+        phase_name = phase.name.lower()
+        if phase_name == "discovery":
+            return "agent_step_recon"
+        elif phase_name in ("validation", "reporting"):
+            return "agent_step_analysis"
+        else:
+            # Hypothesis and any custom phases
+            return "agent_step"
+
     async def _generate(
         self,
         conv: Conversation,
@@ -535,10 +561,11 @@ class LLMDrivenAgent:
         from backend.core.llm.tool_adapter import ToolAdapter
 
         provider = self.llm._get_provider()
-        options = self.llm.router.resolve("agent_step", self.llm._active_provider_name)
+        task_type = self._resolve_step_task_type()
+        options = self.llm.router.resolve(task_type, self.llm._active_provider_name)
 
-        # Balanced tier for per-step reasoning (cost-efficient)
-        options.max_tokens = 8192
+        # Override max_tokens — tier default may be too small for tool-use steps
+        options.max_tokens = max(options.max_tokens, 8192)
 
         if provider.supports_tools():
             native_tools = ToolAdapter.for_provider(provider.name, tools)
@@ -557,9 +584,9 @@ class LLMDrivenAgent:
         response = await provider.generate(conv.get_messages(), system, options)
         elapsed_ms = (time.monotonic() - start) * 1000
 
-        # Track cost
-        tier = self.llm.router.get_tier("agent_step")
-        self.llm.cost_tracker.record(response, "agent_step", tier, elapsed_ms)
+        # Track cost under the resolved task type and tier
+        tier = self.llm.router.get_tier(task_type)
+        self.llm.cost_tracker.record(response, task_type, tier, elapsed_ms)
 
         # Handle fallback tool parsing for non-native providers
         if not provider.supports_tools() and not response.has_tool_calls:
