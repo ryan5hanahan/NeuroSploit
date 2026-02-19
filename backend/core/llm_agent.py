@@ -105,6 +105,7 @@ class LLMDrivenAgent:
         on_event: Optional[Callable] = None,
         auth_type: Optional[str] = None,
         auth_credentials: Optional[Dict[str, str]] = None,
+        credential_sets: Optional[List[Dict[str, str]]] = None,
         custom_headers: Optional[Dict[str, str]] = None,
         additional_targets: Optional[List[str]] = None,
         subdomain_discovery: bool = False,
@@ -144,6 +145,7 @@ class LLMDrivenAgent:
             max_steps=max_steps,
             auth_type=auth_type,
             auth_credentials=auth_credentials,
+            credential_sets=credential_sets,
             custom_headers=custom_headers,
         )
 
@@ -335,17 +337,35 @@ class LLMDrivenAgent:
 
             # Build auth context description for the LLM
             auth_context = ""
-            if self.context.auth_type:
+            cred_labels = self.context.get_credential_labels()
+            if len(cred_labels) > 1:
+                # Multi-credential mode
+                lines = ["Multiple credential contexts available for differential testing:"]
+                for cl in cred_labels:
+                    lines.append(
+                        f"- **{cl['label']}** (role: {cl['role']}, type: {cl['auth_type']})"
+                    )
+                lines.append("")
+                lines.append(
+                    "Use `credential_label` in `http_request` and `browser_navigate` "
+                    "to select which identity to use per-request. Omit for default."
+                )
+                lines.append(
+                    "Compare responses between contexts to detect BOLA/BFLA/IDOR "
+                    "and privilege escalation vulnerabilities."
+                )
+                auth_context = "\n".join(lines)
+            elif cred_labels:
                 auth_context = (
-                    f"Authentication is configured: **{self.context.auth_type}** credentials "
+                    f"Authentication is configured: **{cred_labels[0]['auth_type']}** credentials "
                     f"are automatically injected into `http_request` and `browser_*` tools. "
                     f"You do not need to manually set auth headers — they are merged "
                     f"automatically. If you need to test without auth, explicitly pass "
                     f"empty headers in the tool call."
                 )
-                if self.context.custom_headers:
-                    header_names = ", ".join(self.context.custom_headers.keys())
-                    auth_context += f"\nCustom headers also injected: {header_names}"
+            if self.context.custom_headers:
+                header_names = ", ".join(self.context.custom_headers.keys())
+                auth_context += f"\nCustom headers also injected: {header_names}"
 
             # Compose fresh system prompt with current state
             system_prompt = compose_agent_system_prompt(

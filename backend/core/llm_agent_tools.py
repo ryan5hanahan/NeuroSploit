@@ -73,6 +73,13 @@ HTTP_REQUEST = {
                 "description": "Follow HTTP redirects (default true)",
                 "default": True,
             },
+            "credential_label": {
+                "type": "string",
+                "description": (
+                    "Credential context to use (e.g., 'admin', 'user_a'). "
+                    "Omit for default credentials."
+                ),
+            },
         },
         "required": ["method", "url"],
     },
@@ -92,6 +99,13 @@ BROWSER_NAVIGATE = {
             "url": {
                 "type": "string",
                 "description": "URL to navigate to",
+            },
+            "credential_label": {
+                "type": "string",
+                "description": (
+                    "Credential context to use (e.g., 'admin', 'user_a'). "
+                    "Omit for default credentials."
+                ),
             },
         },
         "required": ["url"],

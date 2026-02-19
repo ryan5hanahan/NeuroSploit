@@ -606,6 +606,18 @@ export interface ActivityFeedItem {
 // V2 LLM Agent types
 // ---------------------------------------------------------------------------
 
+export interface AgentV2CredentialSet {
+  label: string
+  role: string
+  auth_type: 'cookie' | 'bearer' | 'basic' | 'header'
+  cookie?: string
+  token?: string
+  username?: string
+  password?: string
+  header_name?: string
+  header_value?: string
+}
+
 export interface AgentV2StartRequest {
   target: string
   additional_targets?: string[]
@@ -615,6 +627,7 @@ export interface AgentV2StartRequest {
   scope_profile?: string
   auth_type?: 'cookie' | 'bearer' | 'basic' | 'header'
   auth_credentials?: Record<string, string>
+  credential_sets?: AgentV2CredentialSet[]
   custom_headers?: Record<string, string>
   task_id?: string
 }

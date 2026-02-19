@@ -247,37 +247,47 @@ def get_browser_session(
     operation_id: str,
     artifacts_dir: str,
     auth_headers: Optional[Dict[str, str]] = None,
+    credential_label: Optional[str] = None,
 ) -> BrowserSession:
-    """Get or create a browser session for an operation."""
-    if operation_id not in _sessions:
-        _sessions[operation_id] = BrowserSession(artifacts_dir, auth_headers=auth_headers)
-    return _sessions[operation_id]
+    """Get or create a browser session for an operation.
+
+    Each credential_label gets its own browser context so cookies/headers
+    don't bleed between identities.
+    """
+    key = f"{operation_id}:{credential_label or 'default'}"
+    if key not in _sessions:
+        _sessions[key] = BrowserSession(artifacts_dir, auth_headers=auth_headers)
+    return _sessions[key]
 
 
 async def close_browser_session(operation_id: str) -> None:
-    """Close and remove a browser session."""
-    session = _sessions.pop(operation_id, None)
-    if session:
-        await session.close()
+    """Close and remove all browser sessions for an operation."""
+    keys_to_close = [k for k in _sessions if k == operation_id or k.startswith(f"{operation_id}:")]
+    for key in keys_to_close:
+        session = _sessions.pop(key, None)
+        if session:
+            await session.close()
 
 
 # ---------------------------------------------------------------------------
 # Tool handler functions (match ToolExecutor handler signature)
 # ---------------------------------------------------------------------------
 
-def _get_context_auth_headers(context: Any) -> Optional[Dict[str, str]]:
+def _get_context_auth_headers(context: Any, label: Optional[str] = None) -> Optional[Dict[str, str]]:
     """Extract auth headers from ExecutionContext if available."""
     if hasattr(context, 'get_auth_headers'):
-        headers = context.get_auth_headers()
+        headers = context.get_auth_headers(label=label)
         return headers if headers else None
     return None
 
 
 async def handle_browser_navigate(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_navigate tool call."""
+    label = args.get("credential_label")
     session = get_browser_session(
         context.operation_id, context.artifacts_dir,
-        auth_headers=_get_context_auth_headers(context),
+        auth_headers=_get_context_auth_headers(context, label=label),
+        credential_label=label,
     )
     result = await session.navigate(args["url"])
 

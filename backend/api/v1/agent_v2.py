@@ -66,6 +66,13 @@ class AgentV2StartRequest(BaseModel):
         default=None,
         description="Auth credentials (type-specific keys)",
     )
+    credential_sets: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description=(
+            "Multiple credential sets for differential access testing. "
+            "Each dict: {label, role, auth_type, ...type-specific fields}"
+        ),
+    )
     custom_headers: Optional[Dict[str, str]] = Field(
         default=None,
         description="Custom HTTP headers to inject",
@@ -185,6 +192,7 @@ async def start_agent(request: AgentV2StartRequest):
         on_event=on_event,
         auth_type=request.auth_type,
         auth_credentials=request.auth_credentials,
+        credential_sets=request.credential_sets,
         custom_headers=request.custom_headers,
         additional_targets=request.additional_targets,
         subdomain_discovery=request.subdomain_discovery,

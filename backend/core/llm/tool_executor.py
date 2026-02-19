@@ -76,10 +76,68 @@ class ExecutionContext:
     # Authentication (in-memory only, not persisted)
     auth_type: Optional[str] = None  # "cookie", "bearer", "basic", "header"
     auth_credentials: Optional[Dict[str, str]] = None
+    credential_sets: Optional[List[Dict[str, str]]] = None
     custom_headers: Optional[Dict[str, str]] = None
 
-    def get_auth_headers(self) -> Dict[str, str]:
+    # Built in __post_init__: maps label -> pre-built headers dict
+    _credential_contexts: Dict[str, Dict[str, str]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Build credential context lookup from auth config + credential_sets."""
+        self._credential_contexts = {}
+
+        # Register single auth_type/auth_credentials as "default"
+        if self.auth_type and self.auth_credentials:
+            self._credential_contexts["default"] = self._build_headers_for(
+                self.auth_type, self.auth_credentials,
+            )
+
+        # Register each credential set
+        if self.credential_sets:
+            for cs in self.credential_sets:
+                label = cs.get("label", "default")
+                auth_type = cs.get("auth_type", "")
+                if auth_type:
+                    headers = self._build_headers_for(auth_type, cs)
+                    self._credential_contexts[label] = headers
+
+            # If no "default" yet, promote first set
+            if "default" not in self._credential_contexts and self.credential_sets:
+                first_label = self.credential_sets[0].get("label", "")
+                if first_label and first_label in self._credential_contexts:
+                    self._credential_contexts["default"] = self._credential_contexts[first_label]
+
+    @staticmethod
+    def _build_headers_for(auth_type: str, creds: Dict[str, str]) -> Dict[str, str]:
+        """Build HTTP headers dict for a given auth type and credentials."""
+        headers: Dict[str, str] = {}
+        if auth_type == "bearer":
+            token = creds.get("token", "")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        elif auth_type == "cookie":
+            cookie = creds.get("cookie", "")
+            if cookie:
+                headers["Cookie"] = cookie
+        elif auth_type == "basic":
+            import base64 as b64
+            username = creds.get("username", "")
+            password = creds.get("password", "")
+            encoded = b64.b64encode(f"{username}:{password}".encode()).decode()
+            headers["Authorization"] = f"Basic {encoded}"
+        elif auth_type == "header":
+            name = creds.get("header_name", "")
+            value = creds.get("header_value", "")
+            if name:
+                headers[name] = value
+        return headers
+
+    def get_auth_headers(self, label: Optional[str] = None) -> Dict[str, str]:
         """Build HTTP headers from auth configuration.
+
+        Args:
+            label: Credential context label (e.g. 'admin', 'user_a').
+                   None or 'default' returns the default context.
 
         Returns headers dict. Tool args override these (LLM may
         intentionally test without auth).
@@ -90,30 +148,37 @@ class ExecutionContext:
         if self.custom_headers:
             headers.update(self.custom_headers)
 
-        # Auth-type-specific headers
-        if self.auth_type and self.auth_credentials:
-            creds = self.auth_credentials
-            if self.auth_type == "bearer":
-                token = creds.get("token", "")
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
-            elif self.auth_type == "cookie":
-                cookie = creds.get("cookie", "")
-                if cookie:
-                    headers["Cookie"] = cookie
-            elif self.auth_type == "basic":
-                import base64 as b64
-                username = creds.get("username", "")
-                password = creds.get("password", "")
-                encoded = b64.b64encode(f"{username}:{password}".encode()).decode()
-                headers["Authorization"] = f"Basic {encoded}"
-            elif self.auth_type == "header":
-                name = creds.get("header_name", "")
-                value = creds.get("header_value", "")
-                if name:
-                    headers[name] = value
+        # Look up credential context by label
+        ctx_label = label or "default"
+        ctx_headers = self._credential_contexts.get(ctx_label)
+
+        if ctx_headers:
+            headers.update(ctx_headers)
+        elif ctx_label != "default" and ctx_label not in self._credential_contexts:
+            logger.warning(f"Unknown credential label '{ctx_label}', using no auth")
 
         return headers
+
+    def get_credential_labels(self) -> List[Dict[str, str]]:
+        """Return summary of available credential contexts for prompt injection.
+
+        Returns list of dicts: [{label, role, auth_type}]
+        """
+        labels = []
+        if self.credential_sets:
+            for cs in self.credential_sets:
+                labels.append({
+                    "label": cs.get("label", "default"),
+                    "role": cs.get("role", "unknown"),
+                    "auth_type": cs.get("auth_type", "unknown"),
+                })
+        elif self.auth_type:
+            labels.append({
+                "label": "default",
+                "role": "default",
+                "auth_type": self.auth_type,
+            })
+        return labels
 
     # Stuck detection: track consecutive failures per method/approach
     method_attempts: Dict[str, int] = field(default_factory=dict)

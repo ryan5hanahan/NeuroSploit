@@ -32,7 +32,8 @@ async def handle_http_request(args: Dict[str, Any], context: Any) -> str:
 
     # Merge auth headers from context (tool args override)
     if hasattr(context, 'get_auth_headers'):
-        auth_headers = context.get_auth_headers()
+        label = args.get("credential_label")
+        auth_headers = context.get_auth_headers(label=label)
         if auth_headers:
             headers = {**auth_headers, **headers}
 
