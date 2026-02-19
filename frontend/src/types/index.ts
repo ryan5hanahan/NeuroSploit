@@ -743,3 +743,30 @@ export interface AgentV2WSStep {
   duration_ms: number
   findings_count: number
 }
+
+export interface AgentV2DecisionToolCall {
+  name: string
+  arguments: Record<string, unknown>
+}
+
+export interface AgentV2DecisionResult {
+  tool: string
+  preview: string
+  is_error: boolean
+}
+
+export interface AgentV2Decision {
+  step: number
+  timestamp: number
+  reasoning_text: string
+  tool_calls: AgentV2DecisionToolCall[]
+  results: AgentV2DecisionResult[]
+  findings_count_before: number
+  findings_count_after: number
+  cost_usd_cumulative: number
+}
+
+export interface AgentV2DecisionsResponse {
+  operation_id: string
+  decisions: AgentV2Decision[]
+}

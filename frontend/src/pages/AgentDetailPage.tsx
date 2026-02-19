@@ -4,7 +4,7 @@ import {
   Bot, StopCircle, RefreshCw, AlertTriangle, Clock,
   Footprints, Shield, DollarSign, ChevronDown, ChevronRight,
   ArrowDown, Pause, Play, CheckCircle, FileText, Download,
-  Send, Brain, ExternalLink, Copy, Code, XCircle,
+  Send, Brain, ExternalLink, Copy, Code, XCircle, MessageSquare,
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
@@ -16,7 +16,7 @@ import QualityScorecard from '../components/operations/QualityScorecard'
 import { agentV2Api } from '../services/api'
 import { wsService } from '../services/websocket'
 import { useOperationStore } from '../store'
-import type { AgentV2Finding, AgentV2WSStep, WSMessage } from '../types'
+import type { AgentV2Finding, AgentV2Decision, AgentV2WSStep, WSMessage } from '../types'
 
 const STATUS_STYLES: Record<string, string> = {
   running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
@@ -77,6 +77,8 @@ export default function AgentDetailPage() {
   const [autoScroll, setAutoScroll] = useState(true)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [decisions, setDecisions] = useState<AgentV2Decision[]>([])
+  const [expandedDecisions, setExpandedDecisions] = useState<Set<number>>(new Set())
   const stepsEndRef = useRef<HTMLDivElement>(null)
 
   // Custom prompt state
@@ -115,6 +117,16 @@ export default function AgentDetailPage() {
     }
   }, [operationId, setCurrentFindings])
 
+  const fetchDecisions = useCallback(async () => {
+    if (!operationId) return
+    try {
+      const data = await agentV2Api.getDecisions(operationId)
+      setDecisions(data.decisions || [])
+    } catch {
+      // Decisions may not be available yet
+    }
+  }, [operationId])
+
   // Initial fetch
   useEffect(() => {
     if (!operationId || isV1AgentId(operationId)) return
@@ -124,7 +136,7 @@ export default function AgentDetailPage() {
       setIsLoading(true)
       setError(null)
       try {
-        await Promise.all([fetchStatus(), fetchFindings()])
+        await Promise.all([fetchStatus(), fetchFindings(), fetchDecisions()])
       } catch (err: any) {
         if (!cancelled) {
           setError(err?.response?.data?.detail || 'Failed to load operation')
@@ -135,7 +147,7 @@ export default function AgentDetailPage() {
     }
     initialFetch()
     return () => { cancelled = true }
-  }, [operationId, fetchStatus, fetchFindings])
+  }, [operationId, fetchStatus, fetchFindings, fetchDecisions])
 
   // Polling
   useEffect(() => {
@@ -144,14 +156,14 @@ export default function AgentDetailPage() {
       const status = statusRef.current
       if (status && TERMINAL_STATUSES.has(status)) return
       try {
-        await Promise.all([fetchStatus(), fetchFindings()])
+        await Promise.all([fetchStatus(), fetchFindings(), fetchDecisions()])
       } catch {
         // Silently ignore
       }
     }
     const pollInterval = setInterval(poll, 5000)
     return () => clearInterval(pollInterval)
-  }, [operationId, isLoading, fetchStatus, fetchFindings])
+  }, [operationId, isLoading, fetchStatus, fetchFindings, fetchDecisions])
 
   // One-time re-fetch on terminal transition
   const prevStatusRef = useRef<string | undefined>(undefined)
@@ -162,8 +174,9 @@ export default function AgentDetailPage() {
     if (prev && !TERMINAL_STATUSES.has(prev) && curr && TERMINAL_STATUSES.has(curr)) {
       fetchStatus()
       fetchFindings()
+      fetchDecisions()
     }
-  }, [currentOperation?.status, fetchStatus, fetchFindings])
+  }, [currentOperation?.status, fetchStatus, fetchFindings, fetchDecisions])
 
   // WebSocket
   useEffect(() => {
@@ -562,7 +575,7 @@ export default function AgentDetailPage() {
           >
             {tab === 'overview' && 'Overview'}
             {tab === 'findings' && `Findings (${currentOperation.findings_count})`}
-            {tab === 'steps' && `Steps (${steps.length})`}
+            {tab === 'steps' && `Steps (${currentOperation.steps_used})`}
           </Button>
         ))}
       </div>
@@ -985,74 +998,235 @@ export default function AgentDetailPage() {
         </div>
       )}
 
-      {/* Tab: Steps Log */}
+      {/* Tab: Steps / Decision Log */}
       {activeTab === 'steps' && (
-        <Card
-          title="Steps Log"
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAutoScroll(!autoScroll)}
-            >
-              {autoScroll ? (
-                <>
-                  <Pause className="w-3 h-3 mr-1" /> Pause scroll
-                </>
-              ) : (
-                <>
-                  <ArrowDown className="w-3 h-3 mr-1" /> Auto scroll
-                </>
-              )}
-            </Button>
-          }
-        >
-          <div className="max-h-[500px] overflow-auto space-y-1 font-mono text-xs">
-            {steps.length === 0 ? (
-              <p className="text-dark-400 text-center py-8">
-                {isActive
-                  ? 'Waiting for agent steps...'
-                  : 'No steps recorded via WebSocket. Steps are available during live operations.'}
+        decisions.length > 0 ? (
+          /* Decision timeline */
+          <div className="space-y-2">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-dark-400">
+                {decisions.length} decision{decisions.length !== 1 ? 's' : ''} across {currentOperation.steps_used} tool calls
               </p>
-            ) : (
-              steps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded ${
-                    step.is_error
-                      ? 'bg-red-500/10'
-                      : idx % 2 === 0
-                      ? 'bg-dark-900/30'
-                      : ''
-                  }`}
-                >
-                  <span className="text-dark-500 w-8 text-right">
-                    #{step.step}
-                  </span>
-                  <span
-                    className={`w-36 truncate ${
-                      TOOL_CATEGORY_COLORS[step.tool] || 'text-dark-300'
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (expandedDecisions.size === decisions.length) {
+                    setExpandedDecisions(new Set())
+                  } else {
+                    setExpandedDecisions(new Set(decisions.map(d => d.step)))
+                  }
+                }}
+              >
+                {expandedDecisions.size === decisions.length ? 'Collapse All' : 'Expand All'}
+              </Button>
+            </div>
+            <div className="max-h-[600px] overflow-auto space-y-2">
+              {decisions.map((decision) => {
+                const isExpanded = expandedDecisions.has(decision.step)
+                const findingsDelta = decision.findings_count_after - decision.findings_count_before
+                const hasError = decision.results.some(r => r.is_error)
+                return (
+                  <div
+                    key={decision.step}
+                    className={`bg-dark-800 rounded-lg border overflow-hidden ${
+                      hasError ? 'border-red-500/30' : findingsDelta > 0 ? 'border-orange-500/30' : 'border-dark-700'
                     }`}
                   >
-                    {step.tool.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-dark-500 w-16 text-right">
-                    {step.duration_ms}ms
-                  </span>
-                  {step.is_error && (
-                    <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  )}
-                  {step.findings_count > 0 && (
-                    <span className="text-dark-500">
-                      {step.findings_count} finding{step.findings_count !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-              ))
-            )}
-            <div ref={stepsEndRef} />
+                    {/* Decision header */}
+                    <div
+                      className="px-4 py-3 cursor-pointer hover:bg-dark-750 transition-colors flex items-center gap-3"
+                      onClick={() => {
+                        const next = new Set(expandedDecisions)
+                        if (next.has(decision.step)) next.delete(decision.step)
+                        else next.add(decision.step)
+                        setExpandedDecisions(next)
+                      }}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-4 h-4 text-dark-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-dark-400 flex-shrink-0" />
+                      )}
+                      <span className="text-dark-500 font-mono text-xs w-8">#{decision.step}</span>
+                      {/* Tool chips */}
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
+                        {decision.tool_calls.map((tc, ti) => (
+                          <span
+                            key={ti}
+                            className={`text-xs px-2 py-0.5 rounded-full bg-dark-700 ${
+                              TOOL_CATEGORY_COLORS[tc.name] || 'text-dark-300'
+                            }`}
+                          >
+                            {tc.name.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                      {/* Indicators */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {findingsDelta > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                            +{findingsDelta} finding{findingsDelta !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {hasError && (
+                          <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                        )}
+                        <span className="text-xs text-dark-500 font-mono">
+                          ${decision.cost_usd_cumulative.toFixed(4)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-3 border-t border-dark-700 pt-3">
+                        {/* Timestamp */}
+                        <div className="flex items-center gap-2 text-xs text-dark-500">
+                          <Clock className="w-3 h-3" />
+                          {new Date(decision.timestamp * 1000).toLocaleString()}
+                        </div>
+
+                        {/* Reasoning */}
+                        {decision.reasoning_text && (
+                          <div>
+                            <p className="text-xs font-medium text-dark-400 mb-1 flex items-center gap-1.5">
+                              <MessageSquare className="w-3 h-3" /> LLM Reasoning
+                            </p>
+                            <pre className="text-xs bg-dark-900 p-3 rounded text-dark-300 font-mono whitespace-pre-wrap max-h-60 overflow-auto">
+                              {decision.reasoning_text}
+                            </pre>
+                          </div>
+                        )}
+
+                        {/* Tool Calls */}
+                        {decision.tool_calls.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-dark-400 mb-1 flex items-center gap-1.5">
+                              <Code className="w-3 h-3" /> Tool Calls
+                            </p>
+                            <div className="space-y-1.5">
+                              {decision.tool_calls.map((tc, ti) => (
+                                <div key={ti} className="bg-dark-900 rounded p-2">
+                                  <span className={`text-xs font-medium ${TOOL_CATEGORY_COLORS[tc.name] || 'text-dark-300'}`}>
+                                    {tc.name}
+                                  </span>
+                                  <pre className="text-xs text-dark-400 mt-1 font-mono whitespace-pre-wrap max-h-32 overflow-auto">
+                                    {JSON.stringify(tc.arguments, null, 2)}
+                                  </pre>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Results */}
+                        {decision.results.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-dark-400 mb-1">Results</p>
+                            <div className="space-y-1.5">
+                              {decision.results.map((result, ri) => (
+                                <div
+                                  key={ri}
+                                  className={`bg-dark-900 rounded p-2 border-l-2 ${
+                                    result.is_error ? 'border-red-500' : 'border-green-500'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className={`text-xs font-medium ${TOOL_CATEGORY_COLORS[result.tool] || 'text-dark-300'}`}>
+                                      {result.tool}
+                                    </span>
+                                    {result.is_error ? (
+                                      <span className="text-xs text-red-400">error</span>
+                                    ) : (
+                                      <span className="text-xs text-green-400">success</span>
+                                    )}
+                                  </div>
+                                  <pre className="text-xs text-dark-400 font-mono whitespace-pre-wrap max-h-32 overflow-auto">
+                                    {result.preview}
+                                  </pre>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <div ref={stepsEndRef} />
+            </div>
           </div>
-        </Card>
+        ) : (
+          /* Fallback: WS step log */
+          <Card
+            title="Steps Log"
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAutoScroll(!autoScroll)}
+              >
+                {autoScroll ? (
+                  <>
+                    <Pause className="w-3 h-3 mr-1" /> Pause scroll
+                  </>
+                ) : (
+                  <>
+                    <ArrowDown className="w-3 h-3 mr-1" /> Auto scroll
+                  </>
+                )}
+              </Button>
+            }
+          >
+            <div className="max-h-[500px] overflow-auto space-y-1 font-mono text-xs">
+              {steps.length === 0 ? (
+                <p className="text-dark-400 text-center py-8">
+                  {isActive
+                    ? 'Waiting for agent steps...'
+                    : `No decision log available for this operation (${currentOperation.steps_used} steps used).`}
+                </p>
+              ) : (
+                steps.map((step, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-center gap-3 px-3 py-1.5 rounded ${
+                      step.is_error
+                        ? 'bg-red-500/10'
+                        : idx % 2 === 0
+                        ? 'bg-dark-900/30'
+                        : ''
+                    }`}
+                  >
+                    <span className="text-dark-500 w-8 text-right">
+                      #{step.step}
+                    </span>
+                    <span
+                      className={`w-36 truncate ${
+                        TOOL_CATEGORY_COLORS[step.tool] || 'text-dark-300'
+                      }`}
+                    >
+                      {step.tool.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-dark-500 w-16 text-right">
+                      {step.duration_ms}ms
+                    </span>
+                    {step.is_error && (
+                      <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                    )}
+                    {step.findings_count > 0 && (
+                      <span className="text-dark-500">
+                        {step.findings_count} finding{step.findings_count !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+              <div ref={stepsEndRef} />
+            </div>
+          </Card>
+        )
       )}
 
       {/* Error Display */}

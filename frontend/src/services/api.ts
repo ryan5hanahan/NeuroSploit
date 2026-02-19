@@ -7,7 +7,7 @@ import type {
   VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
   TradecraftTTP,
   AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse,
-  AgentV2FindingsResponse, AgentV2OperationSummary,
+  AgentV2FindingsResponse, AgentV2DecisionsResponse, AgentV2OperationSummary,
 } from '../types'
 
 const api = axios.create({
@@ -734,6 +734,11 @@ export const agentV2Api = {
 
   getFindings: async (operationId: string): Promise<AgentV2FindingsResponse> => {
     const response = await agentV2Instance.get(`/${operationId}/findings`)
+    return response.data
+  },
+
+  getDecisions: async (operationId: string): Promise<AgentV2DecisionsResponse> => {
+    const response = await agentV2Instance.get(`/${operationId}/decisions`)
     return response.data
   },
 
