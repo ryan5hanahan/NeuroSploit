@@ -95,7 +95,7 @@ export default function PromptsPage() {
   }
 
   const handleUseInScan = (content: string) => {
-    navigate('/scan/new', { state: { promptContent: content } })
+    navigate('/agent', { state: { promptContent: content } })
   }
 
   const handleDuplicate = (preset: PresetDetail) => {

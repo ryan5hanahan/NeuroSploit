@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
-import NewScanPage from './pages/NewScanPage'
 import ScanDetailsPage from './pages/ScanDetailsPage'
 import AgentStatusPage from './pages/AgentStatusPage'
 import TaskLibraryPage from './pages/TaskLibraryPage'
@@ -16,23 +15,33 @@ import SandboxDashboardPage from './pages/SandboxDashboardPage'
 import CompareScanPage from './pages/CompareScanPage'
 import PromptsPage from './pages/PromptsPage'
 import TradecraftPage from './pages/TradecraftPage'
-import OperationsPage from './pages/OperationsPage'
-import OperationDetailPage from './pages/OperationDetailPage'
+import AgentPage from './pages/AgentPage'
+import AgentDetailPage from './pages/AgentDetailPage'
 
 function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/auto" element={<Navigate to="/operations" replace />} />
-        <Route path="/operations" element={<OperationsPage />} />
-        <Route path="/operations/:operationId" element={<OperationDetailPage />} />
+
+        {/* Unified Agent routes */}
+        <Route path="/agent" element={<AgentPage />} />
+        <Route path="/agent/:operationId" element={<AgentDetailPage />} />
+
+        {/* Redirects from old routes */}
+        <Route path="/operations" element={<Navigate to="/agent" replace />} />
+        <Route path="/operations/:id" element={<NavigateOperationToAgent />} />
+        <Route path="/scan/new" element={<Navigate to="/agent" replace />} />
+        <Route path="/auto" element={<Navigate to="/agent" replace />} />
+
+        {/* Legacy V1 agent route */}
+        <Route path="/agent-v1/:agentId" element={<AgentStatusPage />} />
+
+        {/* Existing routes */}
         <Route path="/vuln-lab" element={<VulnLabPage />} />
         <Route path="/terminal" element={<TerminalAgentPage />} />
-        <Route path="/scan/new" element={<NewScanPage />} />
         <Route path="/scan/:scanId" element={<ScanDetailsPage />} />
         <Route path="/compare" element={<CompareScanPage />} />
-        <Route path="/agent/:agentId" element={<AgentStatusPage />} />
         <Route path="/tasks" element={<TaskLibraryPage />} />
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/tradecraft" element={<TradecraftPage />} />
@@ -45,6 +54,12 @@ function App() {
       </Routes>
     </Layout>
   )
+}
+
+/** Redirect /operations/:id → /agent/:id */
+function NavigateOperationToAgent() {
+  const id = window.location.pathname.split('/').pop() || ''
+  return <Navigate to={`/agent/${id}`} replace />
 }
 
 export default App

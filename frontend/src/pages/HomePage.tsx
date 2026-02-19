@@ -112,10 +112,10 @@ export default function HomePage() {
           <h2 className="text-2xl font-bold text-white">Welcome to NeuroSploit</h2>
           <p className="text-dark-400 mt-1">AI-Powered Penetration Testing Platform</p>
         </div>
-        <Link to="/scan/new">
+        <Link to="/agent">
           <Button size="lg">
             <Plus className="w-5 h-5 mr-2" />
-            New Scan
+            New Operation
           </Button>
         </Link>
       </div>
@@ -203,9 +203,9 @@ export default function HomePage() {
       {/* Recent LLM Agent Operations */}
       {recentOperations.length > 0 && (
         <Card
-          title="Recent LLM Agent Operations"
+          title="Recent Agent Operations"
           action={
-            <Link to="/operations" className="text-sm text-primary-500 hover:text-primary-400 flex items-center gap-1">
+            <Link to="/agent" className="text-sm text-primary-500 hover:text-primary-400 flex items-center gap-1">
               View All <ArrowRight className="w-4 h-4" />
             </Link>
           }
@@ -214,7 +214,7 @@ export default function HomePage() {
             {recentOperations.map((op) => (
               <Link
                 key={op.operation_id}
-                to={`/operations/${op.operation_id}`}
+                to={`/agent/${op.operation_id}`}
                 className="flex items-center gap-4 p-3 bg-dark-900/50 rounded-lg hover:bg-dark-900 transition-colors"
               >
                 <div className="flex-shrink-0">

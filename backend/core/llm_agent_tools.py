@@ -301,6 +301,56 @@ REPORT_FINDING = {
                 "type": "string",
                 "description": "Recommended fix",
             },
+            "cvss_score": {
+                "type": "number",
+                "description": "CVSS v3.1 base score (0.0-10.0)",
+            },
+            "cvss_vector": {
+                "type": "string",
+                "description": "CVSS v3.1 vector string (e.g., 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H')",
+            },
+            "cwe_id": {
+                "type": "string",
+                "description": "CWE identifier (e.g., 'CWE-89' for SQL Injection)",
+            },
+            "impact": {
+                "type": "string",
+                "description": "Business/technical impact description",
+            },
+            "references": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Reference URLs (OWASP, CVE, vendor advisories)",
+            },
+            "poc_payload": {
+                "type": "string",
+                "description": "The exact payload that triggered the vulnerability",
+            },
+            "poc_parameter": {
+                "type": "string",
+                "description": "The vulnerable parameter name",
+            },
+            "poc_request": {
+                "type": "string",
+                "description": "Full HTTP request that demonstrates the vulnerability",
+            },
+            "poc_response": {
+                "type": "string",
+                "description": "HTTP response showing exploitation evidence",
+            },
+            "poc_code": {
+                "type": "string",
+                "description": "Proof-of-concept code snippet for reproducing the vulnerability",
+            },
+            "confidence_score": {
+                "type": "number",
+                "description": "Confidence in finding accuracy (0-100)",
+            },
+            "screenshots": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Screenshot file paths as visual evidence",
+            },
             "validation_status": {
                 "type": "string",
                 "description": (
