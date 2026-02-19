@@ -570,14 +570,16 @@ class TestEdgeCases:
 
     def test_scope_with_bare_ip(self):
         scope = create_vuln_lab_scope("http://192.168.1.1:8080", "sqli_error")
-        assert scope.allowed_domains == frozenset({"192.168.1.1"})
+        # Explicit port → both hostname and host:port are in allowed_domains
+        assert scope.allowed_domains == frozenset({"192.168.1.1", "192.168.1.1:8080"})
         gov = GovernanceAgent(scope)
         assert gov.is_url_in_scope("http://192.168.1.1:8080/api") is True
         assert gov.is_url_in_scope("http://192.168.1.2/api") is False
 
     def test_scope_with_localhost(self):
         scope = create_vuln_lab_scope("http://localhost:3000", "xss_reflected")
-        assert scope.allowed_domains == frozenset({"localhost"})
+        # Explicit port → both hostname and host:port are in allowed_domains
+        assert scope.allowed_domains == frozenset({"localhost", "localhost:3000"})
 
     def test_multiple_filter_calls_accumulate_violations(self):
         scope = create_vuln_lab_scope("https://example.com", "xss_reflected")

@@ -39,11 +39,6 @@ from tools.recon.recon_tools import FullReconRunner
 
 # Import AI Agents
 try:
-    from backend.core.ai_pentest_agent import AIPentestAgent
-except ImportError:
-    AIPentestAgent = None
-
-try:
     from backend.core.autonomous_agent import AutonomousAgent, OperationMode
     from backend.core.task_library import get_task_library, Task, TaskCategory
 except ImportError:
@@ -1032,12 +1027,12 @@ CONTEXTO DE RECON:
             context_file: Optional recon context JSON file
             llm_profile: Optional LLM profile to use
         """
-        if not AIPentestAgent:
+        if not AutonomousAgent:
             print("[!] AI Agent not available. Check backend installation.")
             return {"error": "AI Agent not installed"}
 
         print(f"\n{'='*70}")
-        print("    NEUROSPLOIT AI OFFENSIVE SECURITY AGENT")
+        print("    NEUROSPLOIT AUTONOMOUS SECURITY AGENT")
         print(f"{'='*70}")
         print(f"\n[*] Target: {target}")
         if prompt_file:
@@ -1055,9 +1050,13 @@ CONTEXTO DE RECON:
             if recon_context:
                 print(f"[+] Loaded recon context: {len(recon_context.get('data', {}).get('endpoints', []))} endpoints")
 
-        # Initialize LLM manager
-        profile = llm_profile or self.config.get('llm', {}).get('default_profile')
-        self._initialize_llm_manager(profile)
+        # Read prompt file content if provided
+        prompt_content = None
+        if prompt_file:
+            try:
+                prompt_content = Path(prompt_file).read_text()
+            except Exception as e:
+                print(f"[!] Could not read prompt file: {e}")
 
         # Run the agent
         import asyncio
@@ -1072,14 +1071,12 @@ CONTEXTO DE RECON:
                 }.get(level, "[*]")
                 print(f"{prefix} {message}")
 
-            async with AIPentestAgent(
+            async with AutonomousAgent(
                 target=target,
-                llm_manager=self.llm_manager_instance,
+                mode=OperationMode.AUTO_PENTEST,
                 log_callback=log_callback,
-                prompt_file=prompt_file,
+                custom_prompt=prompt_content,
                 recon_context=recon_context,
-                config=self.config,
-                max_depth=5
             ) as agent:
                 report = await agent.run()
                 return report
