@@ -7,7 +7,7 @@ import type {
   VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
   TradecraftTTP,
   AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse,
-  AgentV2FindingsResponse, AgentV2OperationSummary
+  AgentV2FindingsResponse, AgentV2OperationSummary,
 } from '../types'
 
 const api = axios.create({
@@ -724,6 +724,21 @@ export const agentV2Api = {
     return response.data
   },
 
+  pause: async (operationId: string): Promise<{ operation_id: string; status: string; message: string }> => {
+    const response = await agentV2Instance.post(`/${operationId}/pause`)
+    return response.data
+  },
+
+  resume: async (operationId: string): Promise<{ operation_id: string; status: string; message: string }> => {
+    const response = await agentV2Instance.post(`/${operationId}/resume`)
+    return response.data
+  },
+
+  sendPrompt: async (operationId: string, prompt: string): Promise<{ operation_id: string; status: string; message: string }> => {
+    const response = await agentV2Instance.post(`/${operationId}/prompt`, { prompt })
+    return response.data
+  },
+
   listOperations: async (): Promise<{ operations: AgentV2OperationSummary[] }> => {
     const response = await agentV2Instance.get('/operations')
     return response.data
@@ -736,6 +751,29 @@ export const agentV2Api = {
 
   getReportDownloadUrl: (operationId: string, format: string = 'html'): string => {
     return `/api/v2/agent/${operationId}/report/download?format=${format}`
+  },
+
+  getByScan: async (scanId: string): Promise<{ scan_id: string; operation_id: string } | null> => {
+    try {
+      const response = await agentV2Instance.get(`/by-scan/${scanId}`)
+      return response.data
+    } catch {
+      return null
+    }
+  },
+
+  // Task Library (mirrors agentApi.tasks)
+  tasks: {
+    list: async (category?: string): Promise<AgentTask[]> => {
+      const params = category ? `?category=${category}` : ''
+      const response = await api.get(`/agent/tasks${params}`)
+      return response.data
+    },
+
+    get: async (taskId: string): Promise<AgentTask> => {
+      const response = await api.get(`/agent/tasks/${taskId}`)
+      return response.data
+    },
   },
 }
 

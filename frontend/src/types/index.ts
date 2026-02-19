@@ -610,6 +610,7 @@ export interface AgentV2StartRequest {
   auth_type?: 'cookie' | 'bearer' | 'basic' | 'header'
   auth_credentials?: Record<string, string>
   custom_headers?: Record<string, string>
+  task_id?: string
 }
 
 export interface AgentV2StartResponse {
@@ -619,6 +620,7 @@ export interface AgentV2StartResponse {
   objective: string
   max_steps: number
   message: string
+  scan_id?: string | null
 }
 
 export interface AgentV2CostTierBreakdown {
@@ -673,8 +675,10 @@ export interface AgentV2StatusResponse {
   cost_report?: AgentV2CostReport | null
   quality_evaluation?: AgentV2QualityEvaluation | null
   stop_reason?: string | null
+  stop_summary?: string | null
   error?: string | null
   duration_seconds?: number | null
+  scan_id?: string | null
 }
 
 export interface AgentV2Finding {
@@ -686,6 +690,18 @@ export interface AgentV2Finding {
   evidence: string
   reproduction_steps?: string
   remediation?: string
+  cvss_score?: number | null
+  cvss_vector?: string | null
+  cwe_id?: string | null
+  impact?: string | null
+  references?: string[]
+  poc_payload?: string | null
+  poc_parameter?: string | null
+  poc_request?: string | null
+  poc_response?: string | null
+  poc_code?: string | null
+  confidence_score?: number | null
+  screenshots?: string[]
   validation_status?: string
   artifact_paths?: string[]
   step_number?: number

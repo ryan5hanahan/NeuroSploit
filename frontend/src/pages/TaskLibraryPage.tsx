@@ -129,8 +129,8 @@ export default function TaskLibraryPage() {
   }
 
   const handleRunTask = (task: AgentTask) => {
-    // Navigate to new scan page with task pre-selected
-    navigate('/scan/new', { state: { selectedTaskId: task.id } })
+    // Navigate to agent page with task pre-selected
+    navigate('/agent', { state: { selectedTaskId: task.id } })
   }
 
   return (

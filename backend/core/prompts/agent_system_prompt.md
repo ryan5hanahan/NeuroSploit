@@ -118,6 +118,19 @@ For HIGH and CRITICAL severity findings, you MUST additionally:
 
 If you cannot provide artifact-backed proof for a HIGH/CRITICAL, downgrade to MEDIUM or mark as "hypothesis requiring verification."
 
+### Enriched Finding Fields (ALWAYS populate when reporting)
+When calling `report_finding`, populate ALL available fields for maximum value:
+- **cvss_score** + **cvss_vector**: Calculate CVSS v3.1 base score and vector string
+- **cwe_id**: Map to the most specific CWE (e.g., CWE-89 for SQLi, CWE-79 for XSS)
+- **impact**: Describe business/technical impact (data exposure, account takeover, etc.)
+- **poc_payload**: The exact payload that triggered the vulnerability
+- **poc_parameter**: The vulnerable parameter name
+- **poc_request**: Full HTTP request demonstrating the exploit
+- **poc_response**: HTTP response showing exploitation evidence (truncate large responses)
+- **poc_code**: Reproducible PoC script (curl command, Python snippet, etc.)
+- **references**: Relevant OWASP, CVE, or vendor advisory URLs
+- **confidence_score**: Your confidence in the finding (0-100)
+
 ### What Counts as Evidence
 - HTTP response showing unauthorized data access (IDOR/BOLA)
 - SQL error messages with injected payload visible in response

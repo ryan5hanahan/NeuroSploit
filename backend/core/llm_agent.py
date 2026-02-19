@@ -177,6 +177,14 @@ class LLMDrivenAgent:
         self._llm_failures = 0
         self._conversation_messages: List[Dict[str, Any]] = []
 
+        # Pause/resume support
+        self._paused = False
+        self._pause_event = asyncio.Event()
+        self._pause_event.set()  # Starts unpaused (event is set)
+
+        # Custom prompt injection queue
+        self._prompt_queue: asyncio.Queue = asyncio.Queue()
+
     async def run(self) -> AgentResult:
         """Run the LLM-driven assessment.
 
@@ -284,6 +292,24 @@ class LLMDrivenAgent:
         _summary_generated = False
 
         while not self.context.is_stopped and not self._cancelled:
+            # Pause gate — block here if paused
+            await self._wait_if_paused()
+            if self._cancelled:
+                break
+
+            # Drain custom prompt queue — inject operator instructions
+            while not self._prompt_queue.empty():
+                try:
+                    prompt = self._prompt_queue.get_nowait()
+                    conv.add_user(f"[OPERATOR INSTRUCTION]: {prompt}")
+                    await self._emit_event("agent_custom_prompt", {
+                        "operation_id": self.operation_id,
+                        "prompt": prompt,
+                        "step": self.context.current_step,
+                    })
+                except asyncio.QueueEmpty:
+                    break
+
             # Summary check — reserve budget for final LLM summary
             if not _summary_generated and self._should_generate_summary():
                 logger.info(f"[Agent {self.operation_id[:8]}] Generating summary before budget exhaustion")
@@ -626,7 +652,40 @@ class LLMDrivenAgent:
     def cancel(self) -> None:
         """Cancel the running operation."""
         self._cancelled = True
+        # If paused, unblock so the loop can exit
+        self._pause_event.set()
         logger.info(f"[Agent {self.operation_id[:8]}] Cancellation requested")
+
+    def pause(self) -> None:
+        """Pause the agent. It will halt before the next LLM call."""
+        self._paused = True
+        self._pause_event.clear()
+        logger.info(f"[Agent {self.operation_id[:8]}] Pause requested")
+
+    def resume(self) -> None:
+        """Resume a paused agent."""
+        self._paused = False
+        self._pause_event.set()
+        logger.info(f"[Agent {self.operation_id[:8]}] Resume requested")
+
+    def add_custom_prompt(self, prompt: str) -> None:
+        """Queue a custom operator prompt for injection into the conversation."""
+        self._prompt_queue.put_nowait(prompt)
+        logger.info(f"[Agent {self.operation_id[:8]}] Custom prompt queued: {prompt[:80]}")
+
+    async def _wait_if_paused(self) -> None:
+        """If paused, emit event and block until resumed."""
+        if self._paused:
+            await self._emit_event("agent_paused", {
+                "operation_id": self.operation_id,
+                "step": self.context.current_step,
+            })
+            await self._pause_event.wait()
+            if not self._cancelled:
+                await self._emit_event("agent_resumed", {
+                    "operation_id": self.operation_id,
+                    "step": self.context.current_step,
+                })
 
     # ------------------------------------------------------------------
     # Tool handler wrappers (bridge to memory/plan systems)

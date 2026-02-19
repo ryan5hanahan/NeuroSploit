@@ -71,7 +71,7 @@ export default function ReportsPage() {
             <p className="text-dark-400 mb-4">
               Reports are generated after completing a security scan.
             </p>
-            <Link to="/scan/new">
+            <Link to="/agent">
               <Button>Start a New Scan</Button>
             </Link>
           </div>

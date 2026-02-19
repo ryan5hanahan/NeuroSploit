@@ -30,6 +30,8 @@ router = APIRouter()
 _running_agents: Dict[str, "LLMDrivenAgent"] = {}
 _agent_tasks: Dict[str, asyncio.Task] = {}
 _agent_results: Dict[str, dict] = {}
+_operation_to_scan: Dict[str, str] = {}  # operation_id -> scan_id
+_scan_to_operation: Dict[str, str] = {}  # scan_id -> operation_id
 _MAX_RETAINED = 50
 
 
@@ -68,6 +70,10 @@ class AgentV2StartRequest(BaseModel):
         default=None,
         description="Custom HTTP headers to inject",
     )
+    task_id: Optional[str] = Field(
+        default=None,
+        description="Task library ID — loads task prompt as objective",
+    )
 
 
 class AgentV2StartResponse(BaseModel):
@@ -77,6 +83,7 @@ class AgentV2StartResponse(BaseModel):
     objective: str
     max_steps: int
     message: str
+    scan_id: Optional[str] = None
 
 
 class AgentV2StatusResponse(BaseModel):
@@ -97,6 +104,11 @@ class AgentV2StatusResponse(BaseModel):
     stop_summary: Optional[str] = None
     error: Optional[str] = None
     duration_seconds: Optional[float] = None
+    scan_id: Optional[str] = None
+
+
+class AgentV2PromptRequest(BaseModel):
+    prompt: str = Field(..., description="Custom instruction to inject")
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +130,18 @@ async def start_agent(request: AgentV2StartRequest):
     # Cleanup stale entries
     _cleanup_stale()
 
+    # Resolve objective from task library if task_id provided
+    objective = request.objective
+    if request.task_id:
+        try:
+            from backend.core.task_library import get_task_library
+            library = get_task_library()
+            task_obj = library.get_task(request.task_id)
+            if task_obj:
+                objective = task_obj.prompt or objective
+        except Exception as e:
+            logger.warning(f"Failed to load task {request.task_id}: {e}")
+
     # Build combined target list for governance scope
     all_targets = [request.target]
     if request.additional_targets:
@@ -137,16 +161,25 @@ async def start_agent(request: AgentV2StartRequest):
     # Create event callback for WebSocket broadcasting
     async def on_event(event_type: str, data: dict):
         operation_id = data.get("operation_id", "")
+        # Broadcast to both the operation_id and scan_id rooms
         await ws_manager.send_to_scan(operation_id, {
             "type": f"agent_v2_{event_type}",
             "operation_id": operation_id,
             **data,
         })
+        # Also broadcast to scan_id room if mapping exists
+        sid = _operation_to_scan.get(operation_id)
+        if sid:
+            await ws_manager.send_to_scan(sid, {
+                "type": f"agent_v2_{event_type}",
+                "operation_id": operation_id,
+                **data,
+            })
 
     # Create agent
     agent = LLMDrivenAgent(
         target=request.target,
-        objective=request.objective,
+        objective=objective,
         max_steps=request.max_steps,
         governance_agent=governance,
         on_event=on_event,
@@ -159,13 +192,55 @@ async def start_agent(request: AgentV2StartRequest):
 
     operation_id = agent.operation_id
 
+    # Create Scan + Target DB records so findings appear in dashboard
+    scan_id = None
+    try:
+        from backend.models.scan import Scan, Target
+        from urllib.parse import urlparse
+        import uuid as uuid_mod
+
+        parsed = urlparse(request.target)
+        scan_id = str(uuid_mod.uuid4())
+
+        async with async_session_maker() as db:
+            scan = Scan(
+                id=scan_id,
+                name=f"Agent: {request.target}",
+                status="running",
+                scan_type="llm_driven",
+                recon_enabled=False,
+                progress=0,
+                current_phase="agent_running",
+                config={"agent_mode": "llm_driven", "operation_id": operation_id},
+            )
+            db.add(scan)
+
+            target_record = Target(
+                scan_id=scan_id,
+                url=request.target,
+                hostname=parsed.hostname or "",
+                port=parsed.port,
+                protocol=parsed.scheme or "https",
+                path=parsed.path or "/",
+                status="active",
+            )
+            db.add(target_record)
+            await db.commit()
+
+        _operation_to_scan[operation_id] = scan_id
+        _scan_to_operation[scan_id] = operation_id
+    except Exception as e:
+        logger.warning(f"Failed to create Scan/Target records: {e}")
+        scan_id = None
+
     # Store agent and start background task
     _running_agents[operation_id] = agent
     _agent_results[operation_id] = {
         "status": "running",
         "target": request.target,
-        "objective": request.objective,
+        "objective": objective,
         "started_at": datetime.utcnow().isoformat(),
+        "scan_id": scan_id,
     }
 
     task = asyncio.create_task(_run_agent(operation_id, agent))
@@ -175,9 +250,10 @@ async def start_agent(request: AgentV2StartRequest):
         operation_id=operation_id,
         status="running",
         target=request.target,
-        objective=request.objective,
+        objective=objective,
         max_steps=request.max_steps,
         message=f"LLM-driven agent started for {request.target}",
+        scan_id=scan_id,
     )
 
 
@@ -196,6 +272,45 @@ async def stop_agent(operation_id: str):
         task.cancel()
 
     return {"operation_id": operation_id, "status": "stopping", "message": "Stop requested"}
+
+
+@router.post("/{operation_id}/pause")
+async def pause_agent(operation_id: str):
+    """Pause a running LLM-driven agent."""
+    agent = _running_agents.get(operation_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found or not running")
+    agent.pause()
+    return {"operation_id": operation_id, "status": "paused", "message": "Pause requested"}
+
+
+@router.post("/{operation_id}/resume")
+async def resume_agent(operation_id: str):
+    """Resume a paused LLM-driven agent."""
+    agent = _running_agents.get(operation_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found or not running")
+    agent.resume()
+    return {"operation_id": operation_id, "status": "running", "message": "Resume requested"}
+
+
+@router.post("/{operation_id}/prompt")
+async def send_prompt(operation_id: str, request: AgentV2PromptRequest):
+    """Inject a custom prompt into a running agent's conversation."""
+    agent = _running_agents.get(operation_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found or not running")
+    agent.add_custom_prompt(request.prompt)
+    return {"operation_id": operation_id, "status": "prompt_queued", "message": "Prompt injected"}
+
+
+@router.get("/by-scan/{scan_id}")
+async def get_operation_by_scan(scan_id: str):
+    """Reverse-lookup: get operation ID from scan ID."""
+    operation_id = _scan_to_operation.get(scan_id)
+    if operation_id:
+        return {"scan_id": scan_id, "operation_id": operation_id}
+    raise HTTPException(status_code=404, detail=f"No operation found for scan {scan_id}")
 
 
 @router.get("/{operation_id}/status", response_model=AgentV2StatusResponse)
@@ -233,9 +348,12 @@ async def get_agent_status(operation_id: str):
             except Exception:
                 pass
 
+        # Determine live status (running vs paused)
+        live_status = "paused" if agent._paused else "running"
+
         return AgentV2StatusResponse(
             operation_id=operation_id,
-            status="running",
+            status=live_status,
             target=agent.target,
             objective=agent.objective,
             steps_used=agent.context.current_step,
@@ -247,6 +365,7 @@ async def get_agent_status(operation_id: str):
             tool_usage=agent.context.get_tool_usage_summary(),
             cost_report=cost_report,
             duration_seconds=duration_seconds,
+            scan_id=_operation_to_scan.get(operation_id),
         )
 
     # Check completed results (in-memory)
@@ -270,6 +389,7 @@ async def get_agent_status(operation_id: str):
             stop_summary=result.get("stop_summary"),
             error=result.get("error"),
             duration_seconds=result.get("duration_seconds"),
+            scan_id=result.get("scan_id") or _operation_to_scan.get(operation_id),
         )
 
     # DB fallback — operation may have been from a previous container session
@@ -737,6 +857,14 @@ async def _run_agent(operation_id: str, agent):
         except Exception as e:
             logger.error(f"Failed to save operation to DB: {e}")
 
+        # Save findings to vulnerabilities table + update Scan record
+        scan_id = _operation_to_scan.get(operation_id)
+        if scan_id:
+            try:
+                await _save_findings_to_scan(scan_id, result)
+            except Exception as e:
+                logger.error(f"Failed to save findings to scan {scan_id}: {e}")
+
     except asyncio.CancelledError:
         _agent_results[operation_id] = {
             **_agent_results.get(operation_id, {}),
@@ -800,6 +928,64 @@ async def _save_operation_to_db(
         )
         db.add(operation)
         await db.commit()
+
+
+async def _save_findings_to_scan(scan_id: str, result):
+    """Save agent findings to the vulnerabilities table and update the Scan record."""
+    from backend.models.scan import Scan
+    from backend.models.vulnerability import Vulnerability
+    from sqlalchemy import select
+
+    async with async_session_maker() as db:
+        # Save each finding as a Vulnerability
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for finding in result.findings:
+            sev = finding.get("severity", "info")
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+            vuln = Vulnerability(
+                scan_id=scan_id,
+                title=finding.get("title", "Unknown")[:255],
+                vulnerability_type=finding.get("vuln_type", "unknown"),
+                severity=sev,
+                description=finding.get("description", ""),
+                affected_endpoint=finding.get("endpoint", ""),
+                cvss_score=finding.get("cvss_score"),
+                cvss_vector=finding.get("cvss_vector"),
+                cwe_id=finding.get("cwe_id"),
+                impact=finding.get("impact"),
+                references=finding.get("references", []),
+                poc_payload=finding.get("poc_payload") or finding.get("evidence", "")[:5000],
+                poc_parameter=finding.get("poc_parameter"),
+                poc_request=finding.get("poc_request") or finding.get("reproduction_steps", "")[:5000],
+                poc_response=finding.get("poc_response"),
+                poc_code=finding.get("poc_code"),
+                poc_evidence=finding.get("evidence", "")[:5000],
+                remediation=finding.get("remediation", ""),
+                ai_analysis=finding.get("evidence", ""),
+            )
+            db.add(vuln)
+
+        # Update Scan record
+        stmt = select(Scan).where(Scan.id == scan_id)
+        row = await db.execute(stmt)
+        scan = row.scalar_one_or_none()
+        if scan:
+            scan.status = "completed" if result.status in ("completed", "budget_exhausted") else result.status
+            scan.progress = 100
+            scan.current_phase = "completed"
+            scan.total_vulnerabilities = len(result.findings)
+            scan.critical_count = severity_counts.get("critical", 0)
+            scan.high_count = severity_counts.get("high", 0)
+            scan.medium_count = severity_counts.get("medium", 0)
+            scan.low_count = severity_counts.get("low", 0)
+            scan.info_count = severity_counts.get("info", 0)
+            scan.completed_at = datetime.utcnow()
+            scan.duration = int(result.duration_seconds) if result.duration_seconds else None
+
+        await db.commit()
+
+    logger.info(f"Saved {len(result.findings)} findings to scan {scan_id}")
 
 
 def _cleanup_stale():

@@ -14,16 +14,14 @@ import {
   Container,
   MessageSquare,
   Crosshair,
-  BrainCircuit
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
-  { path: '/operations', icon: BrainCircuit, label: 'LLM Agent' },
+  { path: '/agent', icon: Bot, label: 'Agent' },
   { path: '/vuln-lab', icon: FlaskConical, label: 'Vuln Lab' },
   { path: '/terminal', icon: Terminal, label: 'Terminal Agent' },
   { path: '/sandboxes', icon: Container, label: 'Sandboxes' },
-  { path: '/scan/new', icon: Bot, label: 'AI Agent' },
   { path: '/realtime', icon: Zap, label: 'Real-time Task' },
   { path: '/tasks', icon: BookOpen, label: 'Task Library' },
   { path: '/prompts', icon: MessageSquare, label: 'Prompt Library' },
@@ -55,7 +53,9 @@ export default function Sidebar() {
       <nav className="flex-1 p-4">
         <ul className="space-y-2">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.path
+            const isActive = item.path === '/'
+              ? location.pathname === '/'
+              : location.pathname === item.path || location.pathname.startsWith(item.path + '/')
             const Icon = item.icon
             return (
               <li key={item.path}>
