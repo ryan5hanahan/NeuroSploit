@@ -408,6 +408,16 @@ class LLMDrivenAgent:
             else:
                 results = [await self.executor.execute(response.tool_calls[0])]
 
+            # Truncate large tool results to bound per-message token usage
+            for r in results:
+                if r.content and len(r.content) > 8000:
+                    original_len = len(r.content)
+                    r.content = (
+                        r.content[:3500]
+                        + f"\n\n[... truncated {original_len - 7000} chars ...]\n\n"
+                        + r.content[-3500:]
+                    )
+
             # Feed results back to conversation
             provider_name = self.llm._active_provider_name or "anthropic"
             conv.add_tool_results(results, provider_name)
@@ -518,6 +528,10 @@ class LLMDrivenAgent:
             # Fallback: inject tool descriptions into system prompt
             tool_prompt = ToolAdapter.mcp_to_json_prompt(tools)
             system = f"{system}\n\n{tool_prompt}"
+
+        # Trim conversation to stay within 200K context window
+        # 180K budget leaves 20K headroom for response + tool definitions
+        conv.trim_to_token_budget(max_tokens=180_000, system_tokens=len(system) // 4)
 
         start = time.monotonic()
         response = await provider.generate(conv.get_messages(), system, options)

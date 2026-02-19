@@ -1,9 +1,12 @@
 """Multi-turn conversation history for tool-use loops."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .providers.base import LLMResponse, ToolCall, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,6 +112,74 @@ class Conversation:
     def clear(self) -> None:
         """Reset conversation history."""
         self.messages.clear()
+
+    def _estimate_tokens(self, messages: Optional[List[Dict[str, Any]]] = None) -> int:
+        """Rough token estimate (~4 chars per token), recursing into content blocks."""
+        total_chars = 0
+        for msg in (messages if messages is not None else self.messages):
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total_chars += len(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        # text block
+                        total_chars += len(block.get("text", ""))
+                        # tool_result block
+                        total_chars += len(block.get("content", "") if isinstance(block.get("content"), str) else "")
+                        # tool_use block — count serialized input
+                        if "input" in block:
+                            total_chars += len(str(block["input"]))
+                    elif isinstance(block, str):
+                        total_chars += len(block)
+        return total_chars // 4
+
+    def trim_to_token_budget(self, max_tokens: int = 180_000, system_tokens: int = 0) -> int:
+        """Sliding-window trim to keep conversation within token budget.
+
+        Strategy:
+        - Always keep the first message (initial objective/context)
+        - Always keep the last 10 messages (recent decisions)
+        - If over budget, drop oldest messages from the middle
+        - If still over after dropping all middle, shrink the recent window (min 4)
+
+        Returns:
+            Number of messages dropped.
+        """
+        budget = max_tokens - system_tokens
+        if budget <= 0:
+            budget = max_tokens
+
+        estimated = self._estimate_tokens()
+        if estimated <= budget:
+            return 0
+
+        n = len(self.messages)
+        if n <= 2:
+            return 0  # Nothing to trim
+
+        # Protect first message + last N recent messages
+        keep_recent = min(10, n - 1)
+        first_msg = [self.messages[0]]
+        recent = self.messages[n - keep_recent:]
+        middle = self.messages[1:n - keep_recent]
+
+        # Drop middle messages oldest-first until under budget
+        while middle and self._estimate_tokens(first_msg + middle + recent) > budget:
+            middle.pop(0)
+
+        # If still over budget, shrink the recent window (keep min 4)
+        while len(recent) > 4 and self._estimate_tokens(first_msg + recent) > budget:
+            recent.pop(0)
+
+        new_messages = first_msg + middle + recent
+        dropped = n - len(new_messages)
+
+        if dropped > 0:
+            self.messages = new_messages
+            logger.info(f"[Conversation] Trimmed {dropped} messages ({estimated} -> {self._estimate_tokens()} est. tokens)")
+
+        return dropped
 
     def to_single_turn(self, prompt: str) -> List[Dict[str, Any]]:
         """Create a single-turn message list (no history)."""
