@@ -39,6 +39,14 @@ _MAX_RETAINED = 50
 
 class AgentV2StartRequest(BaseModel):
     target: str = Field(..., description="Target URL or host")
+    additional_targets: Optional[List[str]] = Field(
+        default=None,
+        description="Additional target URLs to include in assessment",
+    )
+    subdomain_discovery: bool = Field(
+        default=False,
+        description="Run subdomain enumeration before testing",
+    )
     objective: str = Field(
         default="Perform a comprehensive security assessment",
         description="Assessment objective",
@@ -110,11 +118,16 @@ async def start_agent(request: AgentV2StartRequest):
     # Cleanup stale entries
     _cleanup_stale()
 
+    # Build combined target list for governance scope
+    all_targets = [request.target]
+    if request.additional_targets:
+        all_targets.extend(request.additional_targets)
+
     # Create governance scope
     scope_factories = {
-        "full_auto": lambda: create_full_auto_scope(request.target),
-        "ctf": lambda: create_ctf_scope(request.target),
-        "recon_only": lambda: create_recon_only_scope(request.target),
+        "full_auto": lambda: create_full_auto_scope(all_targets),
+        "ctf": lambda: create_ctf_scope(all_targets),
+        "recon_only": lambda: create_recon_only_scope(all_targets),
         "vuln_lab": lambda: create_vuln_lab_scope(request.target, "all"),
     }
     scope_factory = scope_factories.get(request.scope_profile, scope_factories["full_auto"])
@@ -140,6 +153,8 @@ async def start_agent(request: AgentV2StartRequest):
         auth_type=request.auth_type,
         auth_credentials=request.auth_credentials,
         custom_headers=request.custom_headers,
+        additional_targets=request.additional_targets,
+        subdomain_discovery=request.subdomain_discovery,
     )
 
     operation_id = agent.operation_id

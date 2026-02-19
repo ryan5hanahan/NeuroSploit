@@ -602,6 +602,8 @@ export interface ActivityFeedItem {
 
 export interface AgentV2StartRequest {
   target: string
+  additional_targets?: string[]
+  subdomain_discovery?: boolean
   objective?: string
   max_steps?: number
   scope_profile?: string

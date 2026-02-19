@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   BrainCircuit, Plus, ChevronUp, ChevronDown, Target, AlertTriangle,
-  RefreshCw, StopCircle, CheckCircle, XCircle, DollarSign, Lock
+  RefreshCw, StopCircle, CheckCircle, XCircle, DollarSign, Lock, Globe
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
@@ -40,6 +40,9 @@ export default function OperationsPage() {
   const [objective, setObjective] = useState('')
   const [maxSteps, setMaxSteps] = useState(100)
   const [scopeProfile, setScopeProfile] = useState('full_auto')
+  const [multiTarget, setMultiTarget] = useState(false)
+  const [additionalTargets, setAdditionalTargets] = useState('')
+  const [subdomainDiscovery, setSubdomainDiscovery] = useState(false)
 
   // Auth form state
   const [showAuth, setShowAuth] = useState(false)
@@ -55,6 +58,8 @@ export default function OperationsPage() {
     try {
       const data = await agentV2Api.listOperations()
       setOperations(data.operations)
+      // Auto-show form when no operations exist
+      if (data.operations.length === 0) setShowForm(true)
     } catch (err) {
       console.error('Failed to fetch operations:', err)
     } finally {
@@ -90,6 +95,10 @@ export default function OperationsPage() {
 
       const resp = await agentV2Api.start({
         target: target.trim(),
+        additional_targets: multiTarget
+          ? additionalTargets.split('\n').map(t => t.trim()).filter(Boolean)
+          : undefined,
+        subdomain_discovery: subdomainDiscovery || undefined,
         objective: objective.trim() || undefined,
         max_steps: maxSteps,
         scope_profile: scopeProfile,
@@ -161,6 +170,42 @@ export default function OperationsPage() {
               value={target}
               onChange={(e) => setTarget(e.target.value)}
             />
+
+            {/* Subdomain Discovery & Multi-Target toggles */}
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={subdomainDiscovery}
+                  onChange={(e) => setSubdomainDiscovery(e.target.checked)}
+                  className="w-4 h-4 rounded bg-dark-900 border-dark-600 text-primary-500 focus:ring-primary-500"
+                />
+                <Globe className="w-4 h-4 text-dark-400" />
+                <span className="text-sm text-dark-200">Subdomain Discovery</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={multiTarget}
+                  onChange={(e) => setMultiTarget(e.target.checked)}
+                  className="w-4 h-4 rounded bg-dark-900 border-dark-600 text-primary-500 focus:ring-primary-500"
+                />
+                <Target className="w-4 h-4 text-dark-400" />
+                <span className="text-sm text-dark-200">Multiple Targets</span>
+              </label>
+            </div>
+
+            {/* Multi-target textarea */}
+            {multiTarget && (
+              <Textarea
+                label="Additional Targets (one per line)"
+                placeholder={"https://api.example.com\nhttps://admin.example.com"}
+                value={additionalTargets}
+                onChange={(e) => setAdditionalTargets(e.target.value)}
+                rows={3}
+              />
+            )}
 
             <Textarea
               label="Objective (optional)"

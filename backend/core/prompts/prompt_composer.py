@@ -29,6 +29,8 @@ def compose_agent_system_prompt(
     memory_overview: str = "",
     plan_snapshot: str = "",
     auth_context: str = "",
+    additional_targets: Optional[List[str]] = None,
+    subdomain_discovery: bool = False,
 ) -> str:
     """Compose the full system prompt for the LLM-driven agent.
 
@@ -42,6 +44,9 @@ def compose_agent_system_prompt(
         max_steps: Maximum steps allowed.
         memory_overview: Summary of stored memories (optional).
         plan_snapshot: Current plan state (optional).
+        auth_context: Authentication context description (optional).
+        additional_targets: Extra target URLs (optional).
+        subdomain_discovery: Whether subdomain enumeration is enabled.
 
     Returns:
         Assembled system prompt string.
@@ -80,9 +85,15 @@ def compose_agent_system_prompt(
     else:
         budget_warning = ""
 
+    # Build multi-target display for the {target} template variable
+    if additional_targets:
+        target_display = target + "\n**Additional targets:**\n" + "\n".join(f"  - {t}" for t in additional_targets)
+    else:
+        target_display = target
+
     # Inject variables into system template
     system_prompt = system_template.format(
-        target=target,
+        target=target_display,
         objective=objective,
         operation_id=operation_id,
         current_step=current_step,
@@ -96,8 +107,17 @@ def compose_agent_system_prompt(
     if auth_context:
         auth_section = f"\n\n### Authentication\n{auth_context}"
 
-    # Append execution guidance, auth context, and budget warning
-    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{budget_warning}"
+    # Append subdomain discovery section
+    subdomain_section = ""
+    if subdomain_discovery:
+        subdomain_section = (
+            "\n\n### Subdomain Discovery (ENABLED)\n"
+            "Run `subfinder -d <domain> -silent` via shell_execute during Discovery phase. "
+            "Add discovered subdomains to your target list."
+        )
+
+    # Append execution guidance, auth context, subdomain section, and budget warning
+    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{subdomain_section}{budget_warning}"
 
     return full_prompt
 
