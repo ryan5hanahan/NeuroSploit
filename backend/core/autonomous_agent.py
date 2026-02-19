@@ -382,6 +382,8 @@ class AutonomousAgent:
         self.browser_validation_enabled = os.getenv('ENABLE_BROWSER_VALIDATION', 'false').lower() == 'true'
         self.knowledge_augmentation_enabled = os.getenv('ENABLE_KNOWLEDGE_AUGMENTATION', 'false').lower() == 'true'
         self.persistent_memory_enabled = os.getenv('ENABLE_PERSISTENT_MEMORY', 'true').lower() == 'true'
+        self.waf_evasion_enabled = os.getenv('ENABLE_WAF_EVASION', 'true').lower() == 'true'
+        self.waf_confidence_threshold = float(os.getenv('WAF_CONFIDENCE_THRESHOLD', '0.7'))
         self._cancelled = False
         self._paused = False
         self._skip_to_phase: Optional[str] = None  # Phase skip target
@@ -2477,7 +2479,8 @@ NOT_VULNERABLE: <reason>"""
             jitter_range=jitter_range,
             governance=self.governance,
         )
-        self.waf_detector = WAFDetector(self.request_engine)
+        if self.waf_evasion_enabled:
+            self.waf_detector = WAFDetector(self.request_engine)
         self.strategy = StrategyAdapter(self.memory)
         self.auth_manager = AuthManager(self.request_engine, self.recon)
 
@@ -2657,6 +2660,15 @@ NOT_VULNERABLE: <reason>"""
             await self.log("error", f"  [PRE-CHECK] HTTP probe failed: {e}")
             return False
 
+    def _filter_waf_by_confidence(self, waf_result):
+        """Remove detected WAFs below the confidence threshold."""
+        if waf_result and waf_result.detected_wafs:
+            waf_result.detected_wafs = [
+                w for w in waf_result.detected_wafs
+                if w.confidence >= self.waf_confidence_threshold
+            ]
+        return waf_result
+
     async def _run_recon_only(self) -> Dict:
         """Comprehensive reconnaissance"""
         await self._update_progress(0, "Starting reconnaissance")
@@ -2706,6 +2718,7 @@ NOT_VULNERABLE: <reason>"""
             try:
                 await self.log("info", "[RECON] WAF Detection")
                 self._waf_result = await self.waf_detector.detect(self.target)
+                self._waf_result = self._filter_waf_by_confidence(self._waf_result)
                 if self._waf_result and self._waf_result.detected_wafs:
                     waf_data = {
                         "detected": True,
@@ -3809,6 +3822,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
         if self.waf_detector and not self._waf_result:
             try:
                 self._waf_result = await self.waf_detector.detect(self.target)
+                self._waf_result = self._filter_waf_by_confidence(self._waf_result)
                 if self._waf_result and self._waf_result.detected_wafs:
                     for w in self._waf_result.detected_wafs:
                         waf_label = f"WAF:{w.name} ({w.confidence:.0%})"
@@ -4173,6 +4187,7 @@ Respond with ONLY valid JSON. Ground every observation in the provided data."""
             if self.waf_detector:
                 try:
                     self._waf_result = await self.waf_detector.detect(self.target)
+                    self._waf_result = self._filter_waf_by_confidence(self._waf_result)
                     if self._waf_result and self._waf_result.detected_wafs:
                         for w in self._waf_result.detected_wafs:
                             waf_label = f"WAF:{w.name} ({w.confidence:.0%})"

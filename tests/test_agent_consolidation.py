@@ -10,6 +10,7 @@ Covers:
   - Import correctness
 """
 
+import os
 import warnings
 import pytest
 from dataclasses import fields as dataclass_fields
@@ -233,3 +234,81 @@ class TestImportsAndDeprecation:
         """_map_aa_finding_to_vulnerability is importable from scan_service."""
         from backend.services.scan_service import _map_aa_finding_to_vulnerability
         assert callable(_map_aa_finding_to_vulnerability)
+
+
+# ---------------------------------------------------------------------------
+# 5d: WAF evasion settings tests
+# ---------------------------------------------------------------------------
+
+class TestWAFEvasionSettings:
+    """Test that WAF evasion env-var settings are wired up correctly."""
+
+    def test_waf_evasion_enabled_default_true(self, monkeypatch):
+        """waf_evasion_enabled defaults to True when env not set."""
+        monkeypatch.delenv('ENABLE_WAF_EVASION', raising=False)
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_evasion_enabled = os.getenv('ENABLE_WAF_EVASION', 'true').lower() == 'true'
+        assert agent.waf_evasion_enabled is True
+
+    def test_waf_evasion_disabled_via_env(self, monkeypatch):
+        """ENABLE_WAF_EVASION=false disables WAF evasion."""
+        monkeypatch.setenv('ENABLE_WAF_EVASION', 'false')
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_evasion_enabled = os.getenv('ENABLE_WAF_EVASION', 'true').lower() == 'true'
+        assert agent.waf_evasion_enabled is False
+
+    def test_waf_confidence_threshold_default(self, monkeypatch):
+        """waf_confidence_threshold defaults to 0.7."""
+        monkeypatch.delenv('WAF_CONFIDENCE_THRESHOLD', raising=False)
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = float(os.getenv('WAF_CONFIDENCE_THRESHOLD', '0.7'))
+        assert agent.waf_confidence_threshold == 0.7
+
+    def test_waf_confidence_threshold_from_env(self, monkeypatch):
+        """WAF_CONFIDENCE_THRESHOLD=0.5 reads correctly."""
+        monkeypatch.setenv('WAF_CONFIDENCE_THRESHOLD', '0.5')
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = float(os.getenv('WAF_CONFIDENCE_THRESHOLD', '0.7'))
+        assert agent.waf_confidence_threshold == 0.5
+
+    def test_filter_waf_removes_low_confidence(self):
+        """_filter_waf_by_confidence filters out WAFs below threshold."""
+        from backend.core.waf_detector import WAFMatch, WAFResult
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = 0.7
+
+        waf_result = WAFResult(detected_wafs=[
+            WAFMatch(name="cloudflare", confidence=0.9, detection_method="header", evidence="cf-ray"),
+            WAFMatch(name="generic", confidence=0.3, detection_method="body", evidence="blocked"),
+        ])
+        filtered = agent._filter_waf_by_confidence(waf_result)
+        assert len(filtered.detected_wafs) == 1
+        assert filtered.detected_wafs[0].name == "cloudflare"
+
+    def test_filter_waf_keeps_at_threshold(self):
+        """_filter_waf_by_confidence keeps WAFs at exactly the threshold."""
+        from backend.core.waf_detector import WAFMatch, WAFResult
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = 0.7
+
+        waf_result = WAFResult(detected_wafs=[
+            WAFMatch(name="aws_waf", confidence=0.7, detection_method="header", evidence="awselb"),
+        ])
+        filtered = agent._filter_waf_by_confidence(waf_result)
+        assert len(filtered.detected_wafs) == 1
+        assert filtered.detected_wafs[0].name == "aws_waf"
+
+    def test_filter_waf_handles_none(self):
+        """_filter_waf_by_confidence handles None result gracefully."""
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = 0.7
+        assert agent._filter_waf_by_confidence(None) is None
+
+    def test_filter_waf_handles_empty_list(self):
+        """_filter_waf_by_confidence handles empty detected_wafs list."""
+        from backend.core.waf_detector import WAFResult
+        agent = AutonomousAgent.__new__(AutonomousAgent)
+        agent.waf_confidence_threshold = 0.7
+        waf_result = WAFResult(detected_wafs=[])
+        filtered = agent._filter_waf_by_confidence(waf_result)
+        assert filtered.detected_wafs == []
