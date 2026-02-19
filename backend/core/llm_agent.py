@@ -106,10 +106,14 @@ class LLMDrivenAgent:
         auth_type: Optional[str] = None,
         auth_credentials: Optional[Dict[str, str]] = None,
         custom_headers: Optional[Dict[str, str]] = None,
+        additional_targets: Optional[List[str]] = None,
+        subdomain_discovery: bool = False,
     ):
         self.target = target
         self.objective = objective
         self.max_steps = max_steps
+        self.additional_targets = additional_targets or []
+        self.subdomain_discovery = subdomain_discovery
         self.operation_id = operation_id or str(uuid.uuid4())
         self.data_dir = data_dir
         self._on_event = on_event  # Callback for WebSocket events
@@ -251,9 +255,21 @@ class LLMDrivenAgent:
         tools = get_agent_tools()
 
         # Build initial message
-        initial_message = (
-            f"Begin your security assessment of {self.target}.\n\n"
-            f"Objective: {self.objective}\n\n"
+        initial_message = f"Begin your security assessment of {self.target}.\n\n"
+        initial_message += f"Objective: {self.objective}\n\n"
+
+        if self.additional_targets:
+            targets_list = "\n".join(f"  - {t}" for t in self.additional_targets)
+            initial_message += f"**Additional targets** to assess:\n{targets_list}\n\n"
+
+        if self.subdomain_discovery:
+            initial_message += (
+                "**Subdomain discovery is ENABLED**. Before deep testing, run "
+                "`subfinder -d <domain> -silent` via shell_execute to enumerate "
+                "subdomains, then include discovered subdomains in your assessment.\n\n"
+            )
+
+        initial_message += (
             f"You have {self.max_steps} steps. Start with reconnaissance to understand "
             f"the target, then form hypotheses and test them systematically.\n\n"
             f"Begin by creating a plan with `update_plan`, then start discovery."
@@ -315,6 +331,8 @@ class LLMDrivenAgent:
                 memory_overview=self.memory.get_overview(),
                 plan_snapshot=self.plan_manager.get_snapshot(),
                 auth_context=auth_context,
+                additional_targets=self.additional_targets,
+                subdomain_discovery=self.subdomain_discovery,
             )
 
             # Snapshot findings count before this step (for decision records)

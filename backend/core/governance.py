@@ -297,30 +297,41 @@ def create_vuln_lab_scope(target_url: str, vuln_type: str) -> ScanScope:
     )
 
 
-def create_full_auto_scope(target_url: str) -> ScanScope:
+def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
     """Permissive scope for full-auto scans — all types, same-domain.
 
-    If the target URL includes an explicit port (e.g. :33000), testing is
-    scoped to that port only and port scanning is skipped.
+    Accepts a single URL or a list of URLs. If any target URL includes an
+    explicit port (e.g. :33000), testing is scoped to that port only and
+    port scanning / subdomain enum is skipped.
     """
-    explicit_port = _has_explicit_port(target_url)
+    urls = [target_url] if isinstance(target_url, str) else target_url
+    all_domains: set = set()
+    any_explicit_port = False
+    for u in urls:
+        all_domains.update(_scope_domains(u))
+        if _has_explicit_port(u):
+            any_explicit_port = True
     return ScanScope(
         profile=ScopeProfile.FULL_AUTO,
-        allowed_domains=_scope_domains(target_url),
+        allowed_domains=frozenset(all_domains),
         allowed_vuln_types=frozenset(),  # all allowed
         allowed_phases=frozenset(),      # all allowed
-        skip_subdomain_enum=explicit_port,
-        skip_port_scan=explicit_port,
+        skip_subdomain_enum=any_explicit_port,
+        skip_port_scan=any_explicit_port,
         max_recon_depth="full",
         nuclei_template_tags=None,
     )
 
 
-def create_ctf_scope(target_url: str) -> ScanScope:
+def create_ctf_scope(target_url: "str | list[str]") -> ScanScope:
     """Permissive scope for CTF challenges — all vuln types, medium recon."""
+    urls = [target_url] if isinstance(target_url, str) else target_url
+    all_domains: set = set()
+    for u in urls:
+        all_domains.update(_scope_domains(u))
     return ScanScope(
         profile=ScopeProfile.CTF,
-        allowed_domains=_scope_domains(target_url),
+        allowed_domains=frozenset(all_domains),
         allowed_vuln_types=frozenset(),   # empty = ALL types allowed
         allowed_phases=frozenset(),       # all phases allowed
         skip_subdomain_enum=True,
@@ -330,16 +341,22 @@ def create_ctf_scope(target_url: str) -> ScanScope:
     )
 
 
-def create_recon_only_scope(target_url: str) -> ScanScope:
+def create_recon_only_scope(target_url: "str | list[str]") -> ScanScope:
     """Recon-only scope — no vulnerability testing phases."""
-    explicit_port = _has_explicit_port(target_url)
+    urls = [target_url] if isinstance(target_url, str) else target_url
+    all_domains: set = set()
+    any_explicit_port = False
+    for u in urls:
+        all_domains.update(_scope_domains(u))
+        if _has_explicit_port(u):
+            any_explicit_port = True
     return ScanScope(
         profile=ScopeProfile.RECON_ONLY,
-        allowed_domains=_scope_domains(target_url),
+        allowed_domains=frozenset(all_domains),
         allowed_vuln_types=frozenset(),
         allowed_phases=frozenset({"recon", "report"}),
-        skip_subdomain_enum=explicit_port,
-        skip_port_scan=explicit_port,
+        skip_subdomain_enum=any_explicit_port,
+        skip_port_scan=any_explicit_port,
         max_recon_depth="full",
         nuclei_template_tags=None,
     )

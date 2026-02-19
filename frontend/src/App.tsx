@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import NewScanPage from './pages/NewScanPage'
@@ -10,7 +10,6 @@ import ReportsPage from './pages/ReportsPage'
 import ReportViewPage from './pages/ReportViewPage'
 import SettingsPage from './pages/SettingsPage'
 import SchedulerPage from './pages/SchedulerPage'
-import AutoPentestPage from './pages/AutoPentestPage'
 import VulnLabPage from './pages/VulnLabPage'
 import TerminalAgentPage from './pages/TerminalAgentPage'
 import SandboxDashboardPage from './pages/SandboxDashboardPage'
@@ -25,7 +24,7 @@ function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/auto" element={<AutoPentestPage />} />
+        <Route path="/auto" element={<Navigate to="/operations" replace />} />
         <Route path="/operations" element={<OperationsPage />} />
         <Route path="/operations/:operationId" element={<OperationDetailPage />} />
         <Route path="/vuln-lab" element={<VulnLabPage />} />

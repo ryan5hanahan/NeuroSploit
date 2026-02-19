@@ -383,20 +383,6 @@ export const agentApi = {
     return response.data
   },
 
-  // One-click auto pentest
-  autoPentest: async (target: string, options?: { subdomain_discovery?: boolean; targets?: string[]; auth_type?: string; auth_value?: string; prompt?: string }): Promise<AgentResponse> => {
-    const response = await api.post('/agent/run', {
-      target,
-      mode: 'auto_pentest',
-      subdomain_discovery: options?.subdomain_discovery || false,
-      targets: options?.targets,
-      auth_type: options?.auth_type,
-      auth_value: options?.auth_value,
-      prompt: options?.prompt,
-    })
-    return response.data
-  },
-
   // Quick synchronous run (for small targets)
   quickRun: async (target: string, mode: AgentMode = 'full_auto') => {
     const response = await api.post(`/agent/quick?target=${encodeURIComponent(target)}&mode=${mode}`)
