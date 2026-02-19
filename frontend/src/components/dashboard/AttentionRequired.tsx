@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, X, Clock } from 'lucide-react'
+import { CheckCircle, Check, ChevronDown, ChevronUp } from 'lucide-react'
 import Card from '../common/Card'
 import { SeverityBadge } from '../common/Badge'
 import { dashboardApi } from '../../services/api'
@@ -19,6 +19,7 @@ export default function AttentionRequired() {
   const [totalUnreviewed, setTotalUnreviewed] = useState(0)
   const [loading, setLoading] = useState(true)
   const [dismissing, setDismissing] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -51,6 +52,10 @@ export default function AttentionRequired() {
 
   if (loading) return null
 
+  // Show 3 collapsed, all when expanded
+  const visible = expanded ? findings : findings.slice(0, 3)
+  const hasMore = findings.length > 3
+
   return (
     <Card
       title={
@@ -65,45 +70,51 @@ export default function AttentionRequired() {
       }
     >
       {findings.length === 0 ? (
-        <div className="text-center py-6">
-          <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
-          <p className="text-green-400 text-sm font-medium">All findings reviewed</p>
-          <p className="text-dark-500 text-xs mt-1">No critical or high findings need attention</p>
+        <div className="text-center py-4">
+          <CheckCircle className="w-6 h-6 text-green-500 mx-auto mb-1" />
+          <p className="text-green-400 text-sm font-medium">All clear</p>
         </div>
       ) : (
-        <div className="space-y-1">
-          {findings.map((finding) => (
-            <div
-              key={finding.id}
-              className="flex items-center gap-3 p-2.5 bg-dark-900/50 rounded-lg hover:bg-dark-900 transition-colors group"
-            >
-              <SeverityBadge severity={finding.severity} />
-              <div className="flex-1 min-w-0">
+        <>
+          <div className="space-y-1">
+            {visible.map((finding) => (
+              <div
+                key={finding.id}
+                className="flex items-center gap-2 py-1.5 px-2 bg-dark-900/50 rounded-lg hover:bg-dark-900 transition-colors"
+              >
+                <SeverityBadge severity={finding.severity} />
                 <Link
                   to={`/scan/${finding.scan_id}`}
-                  className="font-medium text-white text-sm truncate block hover:text-primary-400"
+                  className="flex-1 min-w-0 text-sm text-white truncate hover:text-primary-400"
                 >
                   {finding.title}
                 </Link>
-                <p className="text-xs text-dark-500 truncate">
-                  {finding.target || finding.endpoint}
-                </p>
+                <span className="text-[10px] text-dark-500 flex-shrink-0">
+                  {timeAgo(finding.created_at)}
+                </span>
+                <button
+                  onClick={() => handleDismiss(finding.id)}
+                  disabled={dismissing === finding.id}
+                  className="flex-shrink-0 px-2 py-0.5 rounded text-xs text-dark-400 hover:text-green-400 hover:bg-green-500/10 border border-dark-700 hover:border-green-500/30 transition-colors disabled:opacity-50"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <span className="text-xs text-dark-500 flex items-center gap-1 flex-shrink-0">
-                <Clock className="w-3 h-3" />
-                {timeAgo(finding.created_at)}
-              </span>
-              <button
-                onClick={(e) => { e.preventDefault(); handleDismiss(finding.id) }}
-                disabled={dismissing === finding.id}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded text-dark-500 hover:text-white hover:bg-dark-700 transition-all disabled:opacity-50"
-                title="Dismiss"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center justify-center gap-1 w-full mt-2 py-1 text-xs text-dark-400 hover:text-white transition-colors"
+            >
+              {expanded ? (
+                <>Show less <ChevronUp className="w-3 h-3" /></>
+              ) : (
+                <>{findings.length - 3} more <ChevronDown className="w-3 h-3" /></>
+              )}
+            </button>
+          )}
+        </>
       )}
     </Card>
   )
