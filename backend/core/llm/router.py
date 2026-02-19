@@ -48,9 +48,9 @@ DEFAULT_TIER_CONFIG: Dict[str, Dict[str, Any]] = {
         "temperature": 0.0,
         "max_tokens": 1024,
         "models": {
-            "anthropic": "claude-haiku-4-5-20250929",
+            "anthropic": "claude-haiku-4-5-20251001",
             "openai": "gpt-4o-mini",
-            "bedrock": "us.anthropic.claude-haiku-4-5-20250929-v1:0",
+            "bedrock": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "gemini": "gemini-2.0-flash",
             "ollama": "llama3.2:3b",
             "lmstudio": "default",
