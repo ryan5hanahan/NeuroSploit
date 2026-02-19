@@ -873,6 +873,12 @@ async def _run_agent(operation_id: str, agent):
             except Exception as e:
                 logger.error(f"Failed to save findings to scan {scan_id}: {e}")
 
+        # Auto-generate report so it appears on the Reports page
+        try:
+            await _auto_generate_agent_report(operation_id, result, scan_id)
+        except Exception as e:
+            logger.warning(f"Failed to auto-generate agent report: {e}")
+
     except asyncio.CancelledError:
         _agent_results[operation_id] = {
             **_agent_results.get(operation_id, {}),
@@ -1005,6 +1011,57 @@ async def _save_findings_to_scan(scan_id: str, result):
         await enrichment_svc.enqueue(vid, scan_id)
 
     logger.info(f"Saved {len(result.findings)} findings to scan {scan_id}")
+
+
+async def _auto_generate_agent_report(
+    operation_id: str, result, scan_id: Optional[str] = None
+):
+    """Auto-generate an HTML report for a completed agent operation.
+
+    Creates a Report DB record so the report appears on the Reports page.
+    """
+    from backend.core.report_engine.agent_generator import AgentReportGenerator
+    from backend.models.report import Report
+
+    data = {
+        "operation_id": operation_id,
+        "target": result.target,
+        "objective": result.objective,
+        "status": result.status,
+        "findings": result.findings,
+        "findings_count": len(result.findings),
+        "steps_used": result.steps_used,
+        "max_steps": result.max_steps,
+        "stop_reason": result.stop_reason,
+        "stop_summary": result.stop_summary,
+        "cost_report": result.cost_report,
+        "tool_usage": result.tool_usage,
+        "duration_seconds": result.duration_seconds,
+        "artifacts_dir": result.artifacts_dir,
+    }
+
+    generator = AgentReportGenerator()
+    file_path, summary = generator.generate(data, format="html", report_type="team")
+
+    is_partial = result.status not in ("completed",)
+    report_title = f"Agent Report — {result.target}"
+
+    async with async_session_maker() as db:
+        report = Report(
+            scan_id=scan_id,
+            operation_id=operation_id,
+            title=report_title,
+            report_type="team",
+            format="html",
+            file_path=str(file_path),
+            executive_summary=summary[:2000] if summary else None,
+            auto_generated=True,
+            is_partial=is_partial,
+        )
+        db.add(report)
+        await db.commit()
+
+    logger.info(f"Auto-generated agent report for operation {operation_id[:8]}")
 
 
 def _cleanup_stale():
