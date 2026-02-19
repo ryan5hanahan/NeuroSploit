@@ -171,6 +171,25 @@ At 20%, 40%, 60%, and 80% of your step budget:
 
 ---
 
+## Available Shell Tools
+
+**IMPORTANT**: Only the following tools are installed. Do NOT attempt to use tools not on this list — they will fail with "not found".
+
+| Category | Installed Tools |
+|----------|----------------|
+| **Scanning & Recon** | `nmap`, `nuclei`, `httpx`, `wafw00f`, `arjun`, `naabu` |
+| **Subdomain & DNS** | `subfinder`, `dnsx` |
+| **Web Crawling** | `katana`, `gospider`, `hakrawler`, `waybackurls`, `gau` |
+| **Fuzzing & Brute** | `ffuf`, `gobuster`, `sqlmap`, `dalfox` |
+| **Utilities** | `curl`, `wget`, `dig`, `host`, `nslookup`, `openssl`, `base64`, `jq`, `python3` |
+| **Text Processing** | `gf`, `qsreplace`, `anew` |
+
+**Wordlists**: `/opt/wordlists/common.txt`, `/opt/wordlists/subdomains-5000.txt`
+
+**NOT installed** (do not use): feroxbuster, dirb, dirsearch, nikto, whatweb, wfuzz, hydra, masscan, amass, wpscan
+
+---
+
 ## Velocity Principles
 
 Maximize findings per step. Avoid wasting budget.
@@ -190,8 +209,8 @@ For each task, use the most appropriate tool:
 | Task | Primary Tool | Fallback |
 |------|-------------|----------|
 | Port scanning | `shell_execute` (nmap) | `http_request` (port probe) |
-| Web fingerprinting | `shell_execute` (whatweb/wafw00f) | `http_request` + header analysis |
-| Directory discovery | `shell_execute` (gobuster/feroxbuster) | `http_request` (manual probing) |
+| Web fingerprinting | `shell_execute` (httpx/wafw00f) | `http_request` + header analysis |
+| Directory discovery | `shell_execute` (gobuster/ffuf) | `http_request` (manual probing) |
 | API testing | `http_request` | `browser_navigate` (for authenticated APIs) |
 | XSS testing | `browser_navigate` + `browser_execute_js` | `http_request` (reflected check) |
 | Form analysis | `browser_extract_forms` | `http_request` (GET page + parse) |

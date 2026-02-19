@@ -6,12 +6,12 @@
 
 1. **Identify the target surface**
    - Run `nmap -sV -sC -p- {target}` to find open ports and services
-   - Run `whatweb {target}` for technology fingerprinting
+   - Run `httpx -title -tech-detect -status-code -silent -u {target}` for technology fingerprinting
    - Run `wafw00f {target}` to detect WAF/CDN
    - Navigate to the target in the browser to observe the UI
 
 2. **Enumerate endpoints**
-   - Run `feroxbuster -u {target} -w /usr/share/wordlists/dirb/common.txt -t 50`
+   - Run `gobuster dir -u {target} -w /opt/wordlists/common.txt -t 50` or `ffuf -u {target}/FUZZ -w /opt/wordlists/common.txt -mc 200,301,302,403 -t 50`
    - Extract links from the browser: `browser_extract_links`
    - Look for API documentation: `/api`, `/swagger`, `/docs`, `/openapi.json`
    - Check for sitemap.xml and robots.txt

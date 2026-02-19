@@ -5,11 +5,14 @@
 # =============================================================================
 # STAGE 1: Go Tools Builder
 # =============================================================================
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.24-alpine AS go-builder
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git gcc musl-dev libpcap-dev
 
 WORKDIR /build
+
+# Default to static builds (CGO off) — most Go tools don't need CGo
+ENV CGO_ENABLED=0
 
 # Install Go tools in parallel where possible
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest & \
@@ -19,22 +22,25 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/ffuf/ffuf/v2@latest & \
     wait
 
-RUN go install -v github.com/projectdiscovery/katana/cmd/katana@latest & \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest & \
+RUN go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest & \
     go install -v github.com/lc/gau/v2/cmd/gau@latest & \
     go install -v github.com/tomnomnom/gf@latest & \
     go install -v github.com/tomnomnom/qsreplace@latest & \
     wait
 
 RUN go install -v github.com/hahwul/dalfox/v2@latest & \
-    go install -v github.com/OJ/gobuster/v3@latest & \
+    go install -v github.com/OJ/gobuster/v3@v3.6.0 & \
     go install -v github.com/jaeles-project/gospider@latest & \
     go install -v github.com/tomnomnom/anew@latest & \
+    go install -v github.com/hakluke/hakrawler@latest & \
     wait
 
-# Optional tools (less critical)
-RUN go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest 2>/dev/null || true
-RUN go install -v github.com/hakluke/hakrawler@latest 2>/dev/null || true
+# CGo-dependent tools: katana (go-tree-sitter) and naabu (gopacket/pcap)
+# Build with static musl linking so binaries work on Debian runtime
+RUN CGO_ENABLED=1 go install -v -ldflags '-extldflags "-static"' \
+    github.com/projectdiscovery/katana/cmd/katana@latest 2>/dev/null || true
+RUN CGO_ENABLED=1 go install -v -ldflags '-extldflags "-static"' \
+    github.com/projectdiscovery/naabu/v2/cmd/naabu@latest 2>/dev/null || true
 
 # =============================================================================
 # STAGE 2: Python Dependencies
