@@ -8,6 +8,7 @@ import type {
   TradecraftTTP,
   AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse, AgentV2CredentialSet,
   AgentV2FindingsResponse, AgentV2DecisionsResponse, AgentV2OperationSummary,
+  LiveOperation, AttentionFinding, DashboardStatsExtended,
 } from '../types'
 
 const api = axios.create({
@@ -251,6 +252,26 @@ export const dashboardApi = {
 
   getActivityFeed: async (limit = 30): Promise<{ activities: ActivityFeedItem[]; total: number }> => {
     const response = await api.get(`/dashboard/activity-feed?limit=${limit}`)
+    return response.data
+  },
+
+  getLiveOperations: async (limit = 5): Promise<{ operations: LiveOperation[]; total: number }> => {
+    const response = await api.get(`/dashboard/live-operations?limit=${limit}`)
+    return response.data
+  },
+
+  getAttention: async (limit = 10): Promise<{ findings: AttentionFinding[]; total_unreviewed: number }> => {
+    const response = await api.get(`/dashboard/attention?limit=${limit}`)
+    return response.data
+  },
+
+  dismissFinding: async (vulnId: string): Promise<{ id: string; validation_status: string; message: string }> => {
+    const response = await api.post(`/dashboard/attention/${vulnId}/dismiss`)
+    return response.data
+  },
+
+  getStatsExtended: async (): Promise<DashboardStatsExtended> => {
+    const response = await api.get('/dashboard/stats')
     return response.data
   },
 }

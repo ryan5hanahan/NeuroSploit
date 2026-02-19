@@ -603,6 +603,60 @@ export interface ActivityFeedItem {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard v2 types (landing page redesign)
+// ---------------------------------------------------------------------------
+
+export interface LiveOperation {
+  id: string
+  type: 'agent' | 'scan'
+  target: string
+  status: string
+  objective: string
+  progress: number
+  progress_label: string
+  findings_count: number
+  severity_breakdown: {
+    critical: number
+    high: number
+    medium: number
+    low: number
+    info: number
+  }
+  duration_seconds: number
+  started_at: string
+  completed_at: string | null
+  cost_usd: number
+}
+
+export interface AttentionFinding {
+  id: string
+  title: string
+  severity: 'critical' | 'high'
+  vulnerability_type: string
+  target: string
+  endpoint: string
+  scan_id: string
+  validation_status: string
+  created_at: string
+}
+
+export interface DashboardTrend {
+  period_days: number
+  findings_by_day: number[]
+  net_new_findings: number
+  total_cost_usd: number
+}
+
+export interface DashboardStatsExtended extends DashboardStats {
+  operations?: {
+    running: number
+    completed: number
+    stopped: number
+  }
+  trend?: DashboardTrend
+}
+
+// ---------------------------------------------------------------------------
 // V2 LLM Agent types
 // ---------------------------------------------------------------------------
 
