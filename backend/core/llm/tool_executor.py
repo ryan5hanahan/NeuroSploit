@@ -32,6 +32,31 @@ class ToolExecutionRecord:
 
 
 @dataclass
+class DecisionRecord:
+    """Record of a single LLM decision step (reasoning + tool calls + results)."""
+    step: int
+    timestamp: float
+    reasoning_text: str
+    tool_calls: List[Dict[str, Any]]  # [{name, arguments}]
+    results: List[Dict[str, Any]]  # [{tool, preview, is_error}]
+    findings_count_before: int
+    findings_count_after: int
+    cost_usd_cumulative: float
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "step": self.step,
+            "timestamp": self.timestamp,
+            "reasoning_text": self.reasoning_text,
+            "tool_calls": self.tool_calls,
+            "results": self.results,
+            "findings_count_before": self.findings_count_before,
+            "findings_count_after": self.findings_count_after,
+            "cost_usd_cumulative": self.cost_usd_cumulative,
+        }
+
+
+@dataclass
 class ExecutionContext:
     """Shared state for all tool executions within an operation."""
     operation_id: str
@@ -43,6 +68,7 @@ class ExecutionContext:
     plan: Optional[Dict[str, Any]] = None
     tool_records: List[ToolExecutionRecord] = field(default_factory=list)
     tool_call_counts: Dict[str, int] = field(default_factory=dict)
+    decision_records: List[DecisionRecord] = field(default_factory=list)
     _stopped: bool = False
     stop_reason: str = ""
     stop_summary: str = ""

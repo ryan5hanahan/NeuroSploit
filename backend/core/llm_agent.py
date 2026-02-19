@@ -30,6 +30,7 @@ from backend.core.llm import UnifiedLLMClient
 from backend.core.llm.conversation import Conversation
 from backend.core.llm.providers.base import LLMResponse, ModelTier, ToolCall, ToolResult
 from backend.core.llm.tool_executor import (
+    DecisionRecord,
     ExecutionContext,
     ToolExecutor,
     handle_report_finding,
@@ -170,6 +171,7 @@ class LLMDrivenAgent:
         self._cancelled = False
         self._start_time: Optional[float] = None
         self._llm_failures = 0
+        self._conversation_messages: List[Dict[str, Any]] = []
 
     async def run(self) -> AgentResult:
         """Run the LLM-driven assessment.
@@ -263,15 +265,30 @@ class LLMDrivenAgent:
         conv = Conversation(max_turns=self.max_steps * 2)
         conv.add_user(initial_message)
 
+        _summary_generated = False
+
         while not self.context.is_stopped and not self._cancelled:
-            # Budget check
+            # Summary check — reserve budget for final LLM summary
+            if not _summary_generated and self._should_generate_summary():
+                logger.info(f"[Agent {self.operation_id[:8]}] Generating summary before budget exhaustion")
+                summary = await self._generate_summary(conv)
+                self.context.stop_summary = summary
+                self.context.stop_reason = self.context.stop_reason or "budget_exhaustion_with_summary"
+                _summary_generated = True
+                break
+
+            # Hard budget check (fallback if summary already generated or fails)
             if self.context.current_step >= self.max_steps:
                 logger.info(f"[Agent {self.operation_id[:8]}] Budget exhausted")
+                if not self.context.stop_summary:
+                    self.context.stop_summary = self._build_programmatic_summary()
                 break
 
             # Cost budget check
             if self.llm.cost_tracker.over_budget:
                 logger.warning(f"[Agent {self.operation_id[:8]}] Cost budget exceeded")
+                if not self.context.stop_summary:
+                    self.context.stop_summary = self._build_programmatic_summary()
                 break
 
             # Build auth context description for the LLM
@@ -299,6 +316,9 @@ class LLMDrivenAgent:
                 plan_snapshot=self.plan_manager.get_snapshot(),
                 auth_context=auth_context,
             )
+
+            # Snapshot findings count before this step (for decision records)
+            findings_before = len(self.context.findings)
 
             # Generate LLM response
             try:
@@ -348,6 +368,30 @@ class LLMDrivenAgent:
             provider_name = self.llm._active_provider_name or "anthropic"
             conv.add_tool_results(results, provider_name)
 
+            # Build decision record
+            cost_report = self.llm.cost_tracker.report()
+            decision = DecisionRecord(
+                step=self.context.current_step,
+                timestamp=time.time(),
+                reasoning_text=response.text or "",
+                tool_calls=[
+                    {"name": tc.name, "arguments": tc.arguments}
+                    for tc in response.tool_calls
+                ],
+                results=[
+                    {
+                        "tool": r.tool_call_id,
+                        "preview": r.content[:500] if r.content else "",
+                        "is_error": r.is_error,
+                    }
+                    for r in results
+                ],
+                findings_count_before=findings_before,
+                findings_count_after=len(self.context.findings),
+                cost_usd_cumulative=cost_report.get("total_cost_usd", 0),
+            )
+            self.context.decision_records.append(decision)
+
             # Check for checkpoint
             if self.plan_manager.should_checkpoint(
                 self.context.current_step, self.max_steps
@@ -371,6 +415,12 @@ class LLMDrivenAgent:
             # Check if stop was called
             if self.context.is_stopped:
                 break
+
+        # Preserve conversation for persistence
+        try:
+            self._conversation_messages = conv.get_messages()
+        except Exception:
+            self._conversation_messages = []
 
         # Determine final status
         if self.context.is_stopped:
@@ -441,6 +491,120 @@ class LLMDrivenAgent:
 
         return response
 
+    def _should_generate_summary(self) -> bool:
+        """Check if we should reserve budget for a final LLM summary.
+
+        Returns True when within 2 steps of max OR cost >= 90%.
+        """
+        steps_remaining = self.max_steps - self.context.current_step
+        if steps_remaining <= 2:
+            return True
+        cost_pct = self.llm.cost_tracker.report().get("budget_pct_used", 0)
+        if cost_pct >= 90:
+            return True
+        return False
+
+    async def _generate_summary(self, conv: Conversation) -> str:
+        """Generate a structured summary via LLM before budget exhaustion."""
+        try:
+            # Build findings summary for the prompt
+            findings = self.context.findings
+            sev_counts = {}
+            for f in findings:
+                sev = f.get("severity", "info")
+                sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+            findings_text = "\n".join(
+                f"- [{f.get('severity', 'info').upper()}] {f.get('title', 'Untitled')}: "
+                f"{f.get('description', '')[:200]}"
+                for f in findings
+            ) or "No findings reported."
+
+            summary_prompt = (
+                f"Your security assessment of {self.target} is ending (budget exhaustion). "
+                f"Steps used: {self.context.current_step}/{self.max_steps}.\n\n"
+                f"Findings ({len(findings)} total, by severity: {sev_counts}):\n{findings_text}\n\n"
+                f"Write a structured summary covering:\n"
+                f"1. Assessment scope and what was tested\n"
+                f"2. Key findings and their impact\n"
+                f"3. Areas that could not be fully tested due to budget constraints\n"
+                f"4. Recommended next steps\n\n"
+                f"Be concise but thorough."
+            )
+
+            system = (
+                "You are a security assessment agent writing a final operation summary. "
+                "Write a clear, professional summary of your assessment results."
+            )
+
+            summary_text = await self._generate_summary_call(conv, system, summary_prompt)
+            return summary_text
+        except Exception as e:
+            logger.warning(f"[Agent] LLM summary generation failed: {e}")
+            return self._build_programmatic_summary()
+
+    async def _generate_summary_call(
+        self, conv: Conversation, system: str, prompt: str
+    ) -> str:
+        """LLM call with tools=None forcing text-only response."""
+        summary_conv = Conversation(max_turns=2)
+        summary_conv.add_user(prompt)
+
+        provider = self.llm._get_provider()
+        options = self.llm.router.resolve("agent_summary", self.llm._active_provider_name)
+        options.max_tokens = 4096
+        options.tools = None
+        options.tool_choice = None
+
+        start = time.monotonic()
+        response = await provider.generate(summary_conv.get_messages(), system, options)
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        tier = self.llm.router.get_tier("agent_summary")
+        self.llm.cost_tracker.record(response, "agent_summary", tier, elapsed_ms)
+
+        return response.text or self._build_programmatic_summary()
+
+    def _build_programmatic_summary(self) -> str:
+        """Fallback summary built from tool_records and findings when LLM call fails."""
+        findings = self.context.findings
+        sev_counts = {}
+        for f in findings:
+            sev = f.get("severity", "info")
+            sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+        tool_usage = self.context.get_tool_usage_summary()
+        top_tools = sorted(tool_usage.items(), key=lambda x: -x[1])[:5]
+        tools_text = ", ".join(f"{name} ({count}x)" for name, count in top_tools)
+
+        duration = time.monotonic() - (self._start_time or time.monotonic())
+
+        lines = [
+            f"Assessment Summary for {self.target}",
+            f"Objective: {self.objective}",
+            f"Steps: {self.context.current_step}/{self.max_steps}",
+            f"Duration: {duration:.0f}s",
+            f"",
+            f"Findings: {len(findings)} total",
+        ]
+        for sev in ("critical", "high", "medium", "low", "info"):
+            if sev_counts.get(sev, 0) > 0:
+                lines.append(f"  {sev.upper()}: {sev_counts[sev]}")
+
+        if findings:
+            lines.append("")
+            lines.append("Key findings:")
+            for f in findings[:10]:
+                lines.append(
+                    f"  - [{f.get('severity', 'info').upper()}] {f.get('title', 'Untitled')}"
+                )
+
+        if tools_text:
+            lines.append(f"\nTop tools used: {tools_text}")
+
+        lines.append(f"\nStop reason: {self.context.stop_reason or 'budget exhaustion'}")
+        return "\n".join(lines)
+
     def cancel(self) -> None:
         """Cancel the running operation."""
         self._cancelled = True
@@ -501,6 +665,13 @@ class LLMDrivenAgent:
 
     async def _handle_step_event(self, step: int, tool_name: str, record: Any) -> None:
         """Callback fired after each tool execution."""
+        # Include reasoning preview from latest decision record
+        reasoning_preview = ""
+        if self.context.decision_records:
+            latest = self.context.decision_records[-1]
+            if latest.reasoning_text:
+                reasoning_preview = latest.reasoning_text[:200]
+
         await self._emit_event("agent_step", {
             "operation_id": self.operation_id,
             "step": step,
@@ -509,6 +680,7 @@ class LLMDrivenAgent:
             "is_error": record.is_error,
             "duration_ms": record.duration_ms,
             "findings_count": len(self.context.findings),
+            "reasoning_preview": reasoning_preview,
         })
 
     async def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
@@ -524,9 +696,10 @@ class LLMDrivenAgent:
     # ------------------------------------------------------------------
 
     def _save_results(self, result: AgentResult) -> None:
-        """Save operation results to disk."""
+        """Save operation results and artifacts to disk."""
         os.makedirs(self.artifacts_dir, exist_ok=True)
 
+        # Save main results
         results_file = os.path.join(self.artifacts_dir, "results.json")
         with open(results_file, "w") as f:
             json.dump({
@@ -545,7 +718,49 @@ class LLMDrivenAgent:
                 "error": result.error,
             }, f, indent=2)
 
-        logger.info(f"[Agent {self.operation_id[:8]}] Results saved to {results_file}")
+        # Save decision log
+        try:
+            decision_log_file = os.path.join(self.artifacts_dir, "decision_log.json")
+            with open(decision_log_file, "w") as f:
+                json.dump(
+                    [d.to_dict() for d in self.context.decision_records],
+                    f, indent=2, default=str,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to save decision log: {e}")
+
+        # Save conversation history
+        try:
+            if self._conversation_messages:
+                conv_file = os.path.join(self.artifacts_dir, "conversation.json")
+                with open(conv_file, "w") as f:
+                    json.dump(self._conversation_messages, f, indent=2, default=str)
+        except Exception as e:
+            logger.warning(f"Failed to save conversation: {e}")
+
+        # Save tool records
+        try:
+            tool_records_file = os.path.join(self.artifacts_dir, "tool_records.json")
+            with open(tool_records_file, "w") as f:
+                json.dump(
+                    [
+                        {
+                            "tool_name": r.tool_name,
+                            "arguments": r.arguments,
+                            "result_preview": r.result_preview,
+                            "is_error": r.is_error,
+                            "duration_ms": r.duration_ms,
+                            "step_number": r.step_number,
+                            "timestamp": r.timestamp,
+                        }
+                        for r in self.context.tool_records
+                    ],
+                    f, indent=2, default=str,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to save tool records: {e}")
+
+        logger.info(f"[Agent {self.operation_id[:8]}] Results saved to {self.artifacts_dir}")
 
 
 def _sanitize_target(target: str) -> str:

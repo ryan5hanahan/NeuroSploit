@@ -242,6 +242,30 @@ async def _run_migrations(conn):
             if "ctf_agent_count" not in columns:
                 await conn.execute(text("ALTER TABLE vuln_lab_challenges ADD COLUMN ctf_agent_count INTEGER"))
 
+        # Check and add columns to agent_operations table
+        result = await conn.execute(text("PRAGMA table_info(agent_operations)"))
+        columns = [row[1] for row in result.fetchall()]
+        if columns:  # Table exists
+            if "decision_log_json" not in columns:
+                logger.info("Adding 'decision_log_json' column to agent_operations table...")
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN decision_log_json JSON"))
+            if "stop_summary" not in columns:
+                logger.info("Adding 'stop_summary' column to agent_operations table...")
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN stop_summary TEXT"))
+            if "cost_report_json" not in columns:
+                logger.info("Adding 'cost_report_json' column to agent_operations table...")
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN cost_report_json JSON"))
+            if "conversation_path" not in columns:
+                logger.info("Adding 'conversation_path' column to agent_operations table...")
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN conversation_path VARCHAR(500)"))
+
+        # Check and add report_type column to reports table
+        result = await conn.execute(text("PRAGMA table_info(reports)"))
+        columns = [row[1] for row in result.fetchall()]
+        if columns and "report_type" not in columns:
+            logger.info("Adding 'report_type' column to reports table...")
+            await conn.execute(text("ALTER TABLE reports ADD COLUMN report_type VARCHAR(20) DEFAULT 'team'"))
+
         # Check if governance_violations table exists
         result = await conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='governance_violations'")
