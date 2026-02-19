@@ -5,7 +5,9 @@ security assessments.
 """
 
 import asyncio
+import json
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -84,6 +86,7 @@ class AgentV2StatusResponse(BaseModel):
     cost_report: Optional[dict] = None
     quality_evaluation: Optional[dict] = None
     stop_reason: Optional[str] = None
+    stop_summary: Optional[str] = None
     error: Optional[str] = None
     duration_seconds: Optional[float] = None
 
@@ -231,7 +234,7 @@ async def get_agent_status(operation_id: str):
             duration_seconds=duration_seconds,
         )
 
-    # Check completed results
+    # Check completed results (in-memory)
     result = _agent_results.get(operation_id)
     if result:
         return AgentV2StatusResponse(
@@ -249,9 +252,39 @@ async def get_agent_status(operation_id: str):
             cost_report=result.get("cost_report"),
             quality_evaluation=result.get("quality_evaluation"),
             stop_reason=result.get("stop_reason"),
+            stop_summary=result.get("stop_summary"),
             error=result.get("error"),
             duration_seconds=result.get("duration_seconds"),
         )
+
+    # DB fallback — operation may have been from a previous container session
+    try:
+        from backend.models.memory import AgentOperation
+        from sqlalchemy import select
+
+        async with async_session_maker() as db:
+            stmt = select(AgentOperation).where(AgentOperation.id == operation_id)
+            row = await db.execute(stmt)
+            op = row.scalar_one_or_none()
+            if op:
+                return AgentV2StatusResponse(
+                    operation_id=op.id,
+                    status=op.status,
+                    target=op.target,
+                    objective=op.objective,
+                    steps_used=op.steps_used or 0,
+                    max_steps=op.max_steps or 0,
+                    findings_count=op.findings_count or 0,
+                    tool_usage=op.tool_usage_json,
+                    cost_report=op.cost_report_json,
+                    quality_evaluation=None,
+                    stop_reason=op.stop_reason,
+                    stop_summary=op.stop_summary,
+                    error=op.error_message,
+                    duration_seconds=op.duration_seconds,
+                )
+    except Exception as e:
+        logger.error(f"DB fallback failed for status: {e}")
 
     raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found")
 
@@ -267,15 +300,74 @@ async def get_agent_findings(operation_id: str):
     if result:
         return {"operation_id": operation_id, "findings": result.get("findings", [])}
 
+    # DB fallback
+    try:
+        from backend.models.memory import AgentOperation
+        from sqlalchemy import select
+
+        async with async_session_maker() as db:
+            stmt = select(AgentOperation).where(AgentOperation.id == operation_id)
+            row = await db.execute(stmt)
+            op = row.scalar_one_or_none()
+            if op:
+                findings = (op.results_json or {}).get("findings", [])
+                return {"operation_id": operation_id, "findings": findings}
+    except Exception as e:
+        logger.error(f"DB fallback failed for findings: {e}")
+
     raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found")
+
+
+@router.get("/{operation_id}/decisions")
+async def get_agent_decisions(operation_id: str):
+    """Get the decision log for an agent operation.
+
+    Returns step-by-step LLM reasoning and tool call records.
+    Sources: live agent > in-memory cache > DB > artifact file fallback.
+    """
+    # Live agent
+    agent = _running_agents.get(operation_id)
+    if agent:
+        decisions = [d.to_dict() for d in agent.context.decision_records]
+        return {"operation_id": operation_id, "decisions": decisions}
+
+    # In-memory cache
+    result = _agent_results.get(operation_id)
+    if result and result.get("decision_log") is not None:
+        return {"operation_id": operation_id, "decisions": result["decision_log"]}
+
+    # DB fallback
+    try:
+        from backend.models.memory import AgentOperation
+        from sqlalchemy import select
+
+        async with async_session_maker() as db:
+            stmt = select(AgentOperation).where(AgentOperation.id == operation_id)
+            row = await db.execute(stmt)
+            op = row.scalar_one_or_none()
+            if op and op.decision_log_json:
+                return {"operation_id": operation_id, "decisions": op.decision_log_json}
+            if op and op.artifacts_dir:
+                # Artifact file fallback
+                decision_file = os.path.join(op.artifacts_dir, "decision_log.json")
+                if os.path.isfile(decision_file):
+                    with open(decision_file) as f:
+                        decisions = json.load(f)
+                    return {"operation_id": operation_id, "decisions": decisions}
+    except Exception as e:
+        logger.error(f"DB/file fallback failed for decisions: {e}")
+
+    raise HTTPException(status_code=404, detail=f"Operation {operation_id} not found or no decisions recorded")
 
 
 @router.get("/operations")
 async def list_operations():
     """List all agent operations (running and completed)."""
     operations = []
+    seen_ids = set()
 
     for op_id, agent in _running_agents.items():
+        seen_ids.add(op_id)
         operations.append({
             "operation_id": op_id,
             "status": "running",
@@ -287,7 +379,8 @@ async def list_operations():
         })
 
     for op_id, result in _agent_results.items():
-        if op_id not in _running_agents:
+        if op_id not in seen_ids:
+            seen_ids.add(op_id)
             operations.append({
                 "operation_id": op_id,
                 "status": result.get("status", "unknown"),
@@ -297,6 +390,33 @@ async def list_operations():
                 "max_steps": result.get("max_steps", 0),
                 "findings_count": result.get("findings_count", 0),
             })
+
+    # DB fallback — include operations not in memory
+    try:
+        from backend.models.memory import AgentOperation
+        from sqlalchemy import select
+
+        async with async_session_maker() as db:
+            stmt = (
+                select(AgentOperation)
+                .order_by(AgentOperation.created_at.desc())
+                .limit(100)
+            )
+            rows = await db.execute(stmt)
+            for op in rows.scalars().all():
+                if op.id not in seen_ids:
+                    seen_ids.add(op.id)
+                    operations.append({
+                        "operation_id": op.id,
+                        "status": op.status,
+                        "target": op.target,
+                        "objective": op.objective,
+                        "steps_used": op.steps_used or 0,
+                        "max_steps": op.max_steps or 0,
+                        "findings_count": op.findings_count or 0,
+                    })
+    except Exception as e:
+        logger.error(f"DB fallback failed for list_operations: {e}")
 
     return {"operations": operations}
 
@@ -308,6 +428,7 @@ async def list_operations():
 class ReportGenerateRequest(BaseModel):
     format: str = Field(default="html", description="Report format: html or json")
     title: Optional[str] = Field(default=None, description="Optional report title")
+    report_type: str = Field(default="team", description="Report type: client or team")
 
 
 class ReportGenerateResponse(BaseModel):
@@ -343,6 +464,7 @@ async def generate_report(operation_id: str, request: ReportGenerateRequest):
             data,
             format=request.format,
             title=request.title,
+            report_type=request.report_type,
         )
     except Exception as e:
         logger.error(f"Report generation failed: {e}", exc_info=True)
@@ -359,6 +481,7 @@ async def generate_report(operation_id: str, request: ReportGenerateRequest):
             report = Report(
                 operation_id=operation_id,
                 title=report_title,
+                report_type=request.report_type,
                 format=request.format,
                 file_path=str(file_path),
                 executive_summary=summary[:2000] if summary else None,
@@ -382,6 +505,7 @@ async def generate_report(operation_id: str, request: ReportGenerateRequest):
 async def download_report(
     operation_id: str,
     format: str = Query(default="html", description="Report format: html or json"),
+    report_type: str = Query(default="team", description="Report type: client or team"),
 ):
     """Download (or generate on-the-fly) a report for a completed operation."""
     if operation_id in _running_agents:
@@ -399,7 +523,7 @@ async def download_report(
     from backend.core.report_engine.agent_generator import AgentReportGenerator
 
     generator = AgentReportGenerator()
-    file_path, _ = generator.generate(data, format=format)
+    file_path, _ = generator.generate(data, format=format, report_type=report_type)
 
     media = "text/html" if format == "html" else "application/json"
     return FileResponse(
@@ -437,12 +561,15 @@ async def _load_operation_data(operation_id: str) -> Optional[dict]:
                 "max_steps": op.max_steps,
                 "findings": (op.results_json or {}).get("findings", []),
                 "findings_count": op.findings_count,
-                "cost_report": None,
+                "cost_report": op.cost_report_json,
                 "tool_usage": op.tool_usage_json,
                 "duration_seconds": op.duration_seconds,
                 "stop_reason": op.stop_reason,
+                "stop_summary": op.stop_summary,
                 "error": op.error_message,
                 "artifacts_dir": op.artifacts_dir,
+                "quality_score": op.quality_score,
+                "decision_log": op.decision_log_json,
             }
     except Exception as e:
         logger.error(f"Failed to load operation from DB: {e}")
@@ -516,7 +643,51 @@ async def _run_agent(operation_id: str, agent):
             except Exception:
                 pass
 
-        # Store result
+        # Build decision log from agent context
+        decision_log = None
+        try:
+            decision_log = [d.to_dict() for d in agent.context.decision_records]
+        except Exception as e:
+            logger.warning(f"Failed to extract decision log: {e}")
+
+        # Persist conversation history to disk
+        conversation_path = None
+        try:
+            if hasattr(agent, '_conversation_messages') and agent._conversation_messages:
+                conv_file = os.path.join(result.artifacts_dir, "conversation.json")
+                os.makedirs(result.artifacts_dir, exist_ok=True)
+                with open(conv_file, "w") as f:
+                    json.dump(agent._conversation_messages, f, indent=2, default=str)
+                conversation_path = conv_file
+        except Exception as e:
+            logger.warning(f"Failed to persist conversation: {e}")
+
+        # Persist tool records to disk
+        try:
+            tool_records_file = os.path.join(result.artifacts_dir, "tool_records.json")
+            os.makedirs(result.artifacts_dir, exist_ok=True)
+            with open(tool_records_file, "w") as f:
+                json.dump(
+                    [
+                        {
+                            "tool_name": r.tool_name,
+                            "arguments": r.arguments,
+                            "result_preview": r.result_preview,
+                            "is_error": r.is_error,
+                            "duration_ms": r.duration_ms,
+                            "step_number": r.step_number,
+                            "timestamp": r.timestamp,
+                        }
+                        for r in agent.context.tool_records
+                    ],
+                    f, indent=2, default=str,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to persist tool records: {e}")
+
+        # Store result (in-memory)
+        quality_score = quality_evaluation.get("overall_score") if quality_evaluation else None
+
         _agent_results[operation_id] = {
             "status": result.status,
             "target": result.target,
@@ -535,12 +706,19 @@ async def _run_agent(operation_id: str, agent):
             "plan_phases": plan_phases,
             "tool_usage": result.tool_usage,
             "quality_evaluation": quality_evaluation,
+            "decision_log": decision_log,
             "error": result.error,
         }
 
         # Save to database
         try:
-            await _save_operation_to_db(operation_id, result)
+            await _save_operation_to_db(
+                operation_id,
+                result,
+                decision_log=decision_log,
+                conversation_path=conversation_path,
+                quality_score=quality_score,
+            )
         except Exception as e:
             logger.error(f"Failed to save operation to DB: {e}")
 
@@ -562,7 +740,13 @@ async def _run_agent(operation_id: str, agent):
         _agent_tasks.pop(operation_id, None)
 
 
-async def _save_operation_to_db(operation_id: str, result):
+async def _save_operation_to_db(
+    operation_id: str,
+    result,
+    decision_log=None,
+    conversation_path=None,
+    quality_score=None,
+):
     """Save operation results to the database."""
     from backend.models.memory import AgentOperation
 
@@ -581,13 +765,21 @@ async def _save_operation_to_db(operation_id: str, result):
             low_count=sum(1 for f in result.findings if f.get("severity") == "low"),
             info_count=sum(1 for f in result.findings if f.get("severity") == "info"),
             total_cost_usd=result.cost_report.get("total_cost_usd", 0) if result.cost_report else 0,
-            total_tokens=result.cost_report.get("total_tokens", 0) if result.cost_report else 0,
+            total_tokens=(
+                (result.cost_report.get("total_input_tokens", 0) + result.cost_report.get("total_output_tokens", 0))
+                if result.cost_report else 0
+            ),
             duration_seconds=result.duration_seconds,
             stop_reason=result.stop_reason,
+            stop_summary=result.stop_summary or "",
             error_message=result.error,
             artifacts_dir=result.artifacts_dir,
             tool_usage_json=result.tool_usage,
             results_json={"findings": result.findings},
+            quality_score=quality_score,
+            cost_report_json=result.cost_report,
+            decision_log_json=decision_log,
+            conversation_path=conversation_path,
             started_at=datetime.utcnow(),
             completed_at=datetime.utcnow(),
         )

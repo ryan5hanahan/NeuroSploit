@@ -46,6 +46,7 @@ class AgentReportGenerator:
         data: Dict[str, Any],
         format: str = "html",
         title: Optional[str] = None,
+        report_type: str = "team",
     ) -> Tuple[Path, str]:
         """Generate a report from operation data.
 
@@ -53,13 +54,19 @@ class AgentReportGenerator:
             data: Operation result dict (from _agent_results or results.json).
             format: "html" or "json".
             title: Optional report title override.
+            report_type: "client" (findings + remediation only) or "team" (full detail).
 
         Returns:
             Tuple of (file_path, executive_summary_text).
         """
         op_id = data.get("operation_id", data.get("id", "unknown"))
         target = data.get("target", "unknown")
-        title = title or f"Agent Assessment Report — {target}"
+        if title:
+            pass  # use provided title
+        elif report_type == "client":
+            title = f"Security Assessment Report — {target}"
+        else:
+            title = f"Agent Operation Report — Team — {target}"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Build executive summary
@@ -67,11 +74,11 @@ class AgentReportGenerator:
 
         # Generate content
         if format == "json":
-            content = self._generate_json(data, title, summary)
-            filename = f"agent_report_{timestamp}.json"
+            content = self._generate_json(data, title, summary, report_type)
+            filename = f"agent_report_{report_type}_{timestamp}.json"
         else:
-            content = self._generate_html(data, title, summary)
-            filename = f"agent_report_{timestamp}.html"
+            content = self._generate_html(data, title, summary, report_type)
+            filename = f"agent_report_{report_type}_{timestamp}.html"
 
         # Write to disk
         report_dir = self.reports_dir / f"agent_report_{op_id[:8]}_{timestamp}"
@@ -118,34 +125,47 @@ class AgentReportGenerator:
     # JSON format
     # ------------------------------------------------------------------
 
-    def _generate_json(self, data: Dict, title: str, summary: str) -> str:
-        report = {
-            "title": title,
-            "generated_at": datetime.utcnow().isoformat(),
-            "executive_summary": summary,
-            "operation": {
-                "operation_id": data.get("operation_id", data.get("id")),
-                "target": data.get("target"),
-                "objective": data.get("objective"),
-                "status": data.get("status"),
+    def _generate_json(self, data: Dict, title: str, summary: str, report_type: str = "team") -> str:
+        operation = {
+            "operation_id": data.get("operation_id", data.get("id")),
+            "target": data.get("target"),
+            "objective": data.get("objective"),
+            "status": data.get("status"),
+        }
+        # Team report includes operational metrics
+        if report_type == "team":
+            operation.update({
                 "steps_used": data.get("steps_used"),
                 "max_steps": data.get("max_steps"),
                 "duration_seconds": data.get("duration_seconds"),
                 "stop_reason": data.get("stop_reason"),
-            },
+            })
+
+        report = {
+            "title": title,
+            "report_type": report_type,
+            "generated_at": datetime.utcnow().isoformat(),
+            "executive_summary": summary,
+            "operation": operation,
             "findings": data.get("findings", []),
-            "cost_report": data.get("cost_report"),
-            "tool_usage": data.get("tool_usage"),
-            "plan_phases": data.get("plan_phases"),
-            "quality_evaluation": data.get("quality_evaluation"),
+            "assessment_summary": data.get("stop_summary"),
         }
+
+        # Team-only sections
+        if report_type == "team":
+            report["cost_report"] = data.get("cost_report")
+            report["tool_usage"] = data.get("tool_usage")
+            report["plan_phases"] = data.get("plan_phases")
+            report["quality_evaluation"] = data.get("quality_evaluation")
+            report["decision_log"] = data.get("decision_log")
+
         return json.dumps(report, indent=2, default=str)
 
     # ------------------------------------------------------------------
     # HTML format
     # ------------------------------------------------------------------
 
-    def _generate_html(self, data: Dict, title: str, summary: str) -> str:
+    def _generate_html(self, data: Dict, title: str, summary: str, report_type: str = "team") -> str:
         findings = data.get("findings", [])
         sorted_findings = sorted(
             findings,
@@ -153,13 +173,38 @@ class AgentReportGenerator:
         )
         sev_counts = self._severity_counts(findings)
 
+        # Always-rendered sections (both report types)
         findings_html = self._render_finding_cards(sorted_findings, data)
-        plan_html = self._render_plan_timeline(data.get("plan_phases"))
-        cost_html = self._render_cost_breakdown(data.get("cost_report"))
-        quality_html = self._render_quality_assessment(data.get("quality_evaluation"))
-        tools_html = self._render_tool_usage(data.get("tool_usage"))
+        assessment_html = self._render_assessment_summary(data.get("stop_summary"))
         screenshots_html = self._render_screenshots(data.get("artifacts_dir"))
+
+        # Team-only sections
+        plan_html = ""
+        cost_html = ""
+        quality_html = ""
+        tools_html = ""
+        decision_html = ""
+        metrics_html = ""
+        if report_type == "team":
+            plan_html = self._render_plan_timeline(data.get("plan_phases"))
+            cost_html = self._render_cost_breakdown(data.get("cost_report"))
+            quality_html = self._render_quality_assessment(data.get("quality_evaluation"))
+            tools_html = self._render_tool_usage(data.get("tool_usage"))
+            decision_html = self._render_decision_summary(data.get("decision_log"))
+            metrics_html = self._render_operation_metrics(data)
+
         total_cost = (data.get("cost_report") or {}).get("total_cost_usd", 0)
+
+        # Metrics row content differs by report type
+        if report_type == "client":
+            metrics_row = ""
+        else:
+            metrics_row = f"""
+    <div class="metrics-row">
+        <span>Steps: {data.get('steps_used', 0)}/{data.get('max_steps', 0)}</span>
+        <span>Duration: {self._fmt_duration(data.get('duration_seconds', 0) or 0)}</span>
+        <span>Cost: ${total_cost:.4f}</span>
+    </div>"""
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -205,11 +250,7 @@ class AgentReportGenerator:
             <div class="stat-label">Low</div>
         </div>
     </div>
-    <div class="metrics-row">
-        <span>Steps: {data.get('steps_used', 0)}/{data.get('max_steps', 0)}</span>
-        <span>Duration: {self._fmt_duration(data.get('duration_seconds', 0) or 0)}</span>
-        <span>Cost: ${total_cost:.4f}</span>
-    </div>
+    {metrics_row}
     <p class="summary-text">{_esc(summary)}</p>
 </section>
 
@@ -218,10 +259,13 @@ class AgentReportGenerator:
     {findings_html if findings_html else '<p class="empty">No findings reported.</p>'}
 </section>
 
+{assessment_html}
 {plan_html}
-{cost_html}
 {quality_html}
 {tools_html}
+{cost_html}
+{decision_html}
+{metrics_html}
 {screenshots_html}
 
 <footer>
@@ -399,6 +443,94 @@ class AgentReportGenerator:
             <div class="screenshots-grid">{''.join(images)}</div>
         </section>"""
 
+    def _render_assessment_summary(self, stop_summary: Optional[str]) -> str:
+        """Render the LLM-generated assessment summary (both report types)."""
+        if not stop_summary:
+            return ""
+        return f"""
+        <section>
+            <h2>Assessment Summary</h2>
+            <div class="assessment-summary">
+                <p>{_esc(stop_summary)}</p>
+            </div>
+        </section>"""
+
+    def _render_decision_summary(self, decision_log: Optional[List]) -> str:
+        """Render key decision steps (team report only).
+
+        Shows steps where findings were discovered, phase changes, or errors.
+        """
+        if not decision_log:
+            return ""
+
+        # Filter to key decisions: finding discoveries, errors, first/last steps
+        key_decisions = []
+        for d in decision_log:
+            is_key = (
+                d.get("findings_count_after", 0) > d.get("findings_count_before", 0)
+                or any(r.get("is_error") for r in d.get("results", []))
+                or d == decision_log[0]
+                or d == decision_log[-1]
+            )
+            if is_key:
+                key_decisions.append(d)
+
+        if not key_decisions:
+            return ""
+
+        rows = []
+        for d in key_decisions[:20]:  # Cap at 20 entries
+            step = d.get("step", "?")
+            tools = ", ".join(tc.get("name", "?") for tc in d.get("tool_calls", []))
+            reasoning = _esc((d.get("reasoning_text") or "")[:150])
+            findings_delta = d.get("findings_count_after", 0) - d.get("findings_count_before", 0)
+            delta_badge = f'<span class="badge verified">+{findings_delta}</span>' if findings_delta > 0 else ""
+            has_error = any(r.get("is_error") for r in d.get("results", []))
+            error_badge = '<span class="badge hypothesis">error</span>' if has_error else ""
+            cost = d.get("cost_usd_cumulative", 0)
+
+            rows.append(f"""
+            <tr>
+                <td>{step}</td>
+                <td>{_esc(tools)}</td>
+                <td class="reasoning-cell">{reasoning}</td>
+                <td>{delta_badge} {error_badge}</td>
+                <td>${cost:.4f}</td>
+            </tr>""")
+
+        return f"""
+        <section>
+            <h2>Decision Log Summary</h2>
+            <p class="section-note">{len(decision_log)} total steps, {len(key_decisions)} key decisions shown</p>
+            <table>
+                <thead><tr><th>Step</th><th>Tools</th><th>Reasoning</th><th>Events</th><th>Cum. Cost</th></tr></thead>
+                <tbody>{''.join(rows)}</tbody>
+            </table>
+        </section>"""
+
+    def _render_operation_metrics(self, data: Dict) -> str:
+        """Render operation-level metrics (team report only)."""
+        steps_used = data.get("steps_used", 0)
+        max_steps = data.get("max_steps", 0)
+        budget_pct = (steps_used / max_steps * 100) if max_steps > 0 else 0
+        duration = data.get("duration_seconds", 0) or 0
+        total_cost = (data.get("cost_report") or {}).get("total_cost_usd", 0)
+        stop_reason = data.get("stop_reason", "")
+        stop_summary = data.get("stop_summary", "")
+
+        return f"""
+        <section>
+            <h2>Operation Metrics</h2>
+            <table>
+                <tbody>
+                    <tr><td><strong>Steps Used</strong></td><td>{steps_used} / {max_steps} ({budget_pct:.0f}%)</td></tr>
+                    <tr><td><strong>Duration</strong></td><td>{self._fmt_duration(duration)}</td></tr>
+                    <tr><td><strong>Total Cost</strong></td><td>${total_cost:.4f}</td></tr>
+                    <tr><td><strong>Stop Reason</strong></td><td>{_esc(stop_reason) or 'N/A'}</td></tr>
+                </tbody>
+            </table>
+        </section>"""
+
     # ------------------------------------------------------------------
     # CSS
     # ------------------------------------------------------------------
@@ -456,6 +588,9 @@ tfoot td { border-top: 2px solid var(--border); }
 .screenshot img { width: 100%; border-radius: 4px; }
 .screenshot p { font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; font-family: monospace; }
 .empty { color: var(--muted); text-align: center; padding: 24px; }
+.assessment-summary { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; white-space: pre-wrap; line-height: 1.7; }
+.section-note { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; }
+.reasoning-cell { max-width: 300px; font-size: 0.8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); }
 @media print { body { background: #fff; color: #000; } .container { max-width: 100%; } }
 </style>"""

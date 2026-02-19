@@ -19,6 +19,7 @@ class Report(Base):
 
     # Report details
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    report_type: Mapped[Optional[str]] = mapped_column(String(20), default="team")  # client or team
     format: Mapped[str] = mapped_column(String(20), default="html")  # html, pdf, json
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -42,6 +43,7 @@ class Report(Base):
             "scan_id": self.scan_id,
             "operation_id": self.operation_id,
             "title": self.title,
+            "report_type": self.report_type,
             "format": self.format,
             "file_path": self.file_path,
             "executive_summary": self.executive_summary,

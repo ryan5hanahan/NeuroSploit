@@ -166,6 +166,10 @@ class AgentOperation(Base):
     results_json = Column(JSON, nullable=True)
     tool_usage_json = Column(JSON, nullable=True)
     quality_score = Column(Float, nullable=True)
+    decision_log_json = Column(JSON, nullable=True)
+    stop_summary = Column(Text, nullable=True)
+    cost_report_json = Column(JSON, nullable=True)
+    conversation_path = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
@@ -188,9 +192,13 @@ class AgentOperation(Base):
             "total_tokens": self.total_tokens,
             "duration_seconds": self.duration_seconds,
             "stop_reason": self.stop_reason,
+            "stop_summary": self.stop_summary,
             "error_message": self.error_message,
             "artifacts_dir": self.artifacts_dir,
             "quality_score": self.quality_score,
+            "cost_report": self.cost_report_json,
+            "decision_log": self.decision_log_json,
+            "conversation_path": self.conversation_path,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
