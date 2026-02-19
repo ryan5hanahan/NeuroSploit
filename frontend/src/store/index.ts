@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Scan, Vulnerability, Endpoint, DashboardStats, ScanAgentTask } from '../types'
+import type {
+  Scan, Vulnerability, Endpoint, DashboardStats, ScanAgentTask,
+  AgentV2StatusResponse, AgentV2Finding, AgentV2WSStep, AgentV2OperationSummary
+} from '../types'
 
 interface LogEntry {
   level: string
@@ -206,4 +209,59 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setRecentScans: (recentScans) => set({ recentScans }),
   setRecentVulnerabilities: (recentVulnerabilities) => set({ recentVulnerabilities }),
   setLoading: (isLoading) => set({ isLoading }),
+}))
+
+// ---------------------------------------------------------------------------
+// V2 LLM Agent Operation Store
+// ---------------------------------------------------------------------------
+
+interface OperationState {
+  operations: AgentV2OperationSummary[]
+  currentOperation: AgentV2StatusResponse | null
+  currentFindings: AgentV2Finding[]
+  steps: AgentV2WSStep[]
+
+  setOperations: (operations: AgentV2OperationSummary[]) => void
+  setCurrentOperation: (op: AgentV2StatusResponse | null) => void
+  setCurrentFindings: (findings: AgentV2Finding[]) => void
+  updateFromStep: (step: AgentV2WSStep) => void
+  addStep: (step: AgentV2WSStep) => void
+  reset: () => void
+}
+
+export const useOperationStore = create<OperationState>((set) => ({
+  operations: [],
+  currentOperation: null,
+  currentFindings: [],
+  steps: [],
+
+  setOperations: (operations) => set({ operations }),
+  setCurrentOperation: (currentOperation) => set({ currentOperation }),
+  setCurrentFindings: (currentFindings) => set({ currentFindings }),
+
+  updateFromStep: (step) =>
+    set((state) => {
+      if (!state.currentOperation) return state
+      return {
+        currentOperation: {
+          ...state.currentOperation,
+          steps_used: step.step,
+          findings_count: step.findings_count,
+        },
+      }
+    }),
+
+  addStep: (step) =>
+    set((state) => {
+      const next = [...state.steps, step]
+      return { steps: next.length > 500 ? next.slice(-500) : next }
+    }),
+
+  reset: () =>
+    set({
+      operations: [],
+      currentOperation: null,
+      currentFindings: [],
+      steps: [],
+    }),
 }))

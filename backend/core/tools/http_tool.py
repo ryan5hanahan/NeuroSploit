@@ -30,6 +30,12 @@ async def handle_http_request(args: Dict[str, Any], context: Any) -> str:
     body = args.get("body")
     follow_redirects = args.get("follow_redirects", True)
 
+    # Merge auth headers from context (tool args override)
+    if hasattr(context, 'get_auth_headers'):
+        auth_headers = context.get_auth_headers()
+        if auth_headers:
+            headers = {**auth_headers, **headers}
+
     if not url:
         return "Error: URL is required"
 

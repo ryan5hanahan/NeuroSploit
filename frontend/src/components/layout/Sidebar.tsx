@@ -14,12 +14,14 @@ import {
   Terminal,
   Container,
   MessageSquare,
-  Crosshair
+  Crosshair,
+  BrainCircuit
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
   { path: '/auto', icon: Rocket, label: 'Auto Pentest' },
+  { path: '/operations', icon: BrainCircuit, label: 'LLM Agent' },
   { path: '/vuln-lab', icon: FlaskConical, label: 'Vuln Lab' },
   { path: '/terminal', icon: Terminal, label: 'Terminal Agent' },
   { path: '/sandboxes', icon: Container, label: 'Sandboxes' },

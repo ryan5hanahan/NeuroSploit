@@ -5,7 +5,9 @@ import type {
   ScanAgentTask, ActivityFeedItem, ScheduleJob, ScheduleJobRequest, AgentRole,
   VulnLabChallenge, VulnLabRunRequest, VulnLabRunResponse, VulnLabRealtimeStatus,
   VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
-  TradecraftTTP
+  TradecraftTTP,
+  AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse,
+  AgentV2FindingsResponse, AgentV2OperationSummary
 } from '../types'
 
 const api = axios.create({
@@ -706,6 +708,48 @@ export const tradecraftApi = {
   getForScan: async (scanId: string): Promise<TradecraftTTP[]> => {
     const response = await api.get(`/tradecraft/for-scan/${scanId}`)
     return response.data
+  },
+}
+
+// V2 LLM Agent API
+const agentV2Instance = axios.create({
+  baseURL: '/api/v2/agent',
+  headers: { 'Content-Type': 'application/json' },
+})
+
+export const agentV2Api = {
+  start: async (request: AgentV2StartRequest): Promise<AgentV2StartResponse> => {
+    const response = await agentV2Instance.post('/start', request)
+    return response.data
+  },
+
+  getStatus: async (operationId: string): Promise<AgentV2StatusResponse> => {
+    const response = await agentV2Instance.get(`/${operationId}/status`)
+    return response.data
+  },
+
+  getFindings: async (operationId: string): Promise<AgentV2FindingsResponse> => {
+    const response = await agentV2Instance.get(`/${operationId}/findings`)
+    return response.data
+  },
+
+  stop: async (operationId: string): Promise<{ operation_id: string; status: string; message: string }> => {
+    const response = await agentV2Instance.post(`/${operationId}/stop`)
+    return response.data
+  },
+
+  listOperations: async (): Promise<{ operations: AgentV2OperationSummary[] }> => {
+    const response = await agentV2Instance.get('/operations')
+    return response.data
+  },
+
+  generateReport: async (operationId: string, format: string = 'html', title?: string): Promise<{ operation_id: string; format: string; file_path: string; message: string }> => {
+    const response = await agentV2Instance.post(`/${operationId}/report`, { format, title })
+    return response.data
+  },
+
+  getReportDownloadUrl: (operationId: string, format: string = 'html'): string => {
+    return `/api/v2/agent/${operationId}/report/download?format=${format}`
   },
 }
 

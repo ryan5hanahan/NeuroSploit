@@ -17,6 +17,8 @@ import SandboxDashboardPage from './pages/SandboxDashboardPage'
 import CompareScanPage from './pages/CompareScanPage'
 import PromptsPage from './pages/PromptsPage'
 import TradecraftPage from './pages/TradecraftPage'
+import OperationsPage from './pages/OperationsPage'
+import OperationDetailPage from './pages/OperationDetailPage'
 
 function App() {
   return (
@@ -24,6 +26,8 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/auto" element={<AutoPentestPage />} />
+        <Route path="/operations" element={<OperationsPage />} />
+        <Route path="/operations/:operationId" element={<OperationDetailPage />} />
         <Route path="/vuln-lab" element={<VulnLabPage />} />
         <Route path="/terminal" element={<TerminalAgentPage />} />
         <Route path="/scan/new" element={<NewScanPage />} />

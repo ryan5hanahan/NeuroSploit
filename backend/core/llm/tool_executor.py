@@ -47,6 +47,48 @@ class ExecutionContext:
     stop_reason: str = ""
     stop_summary: str = ""
 
+    # Authentication (in-memory only, not persisted)
+    auth_type: Optional[str] = None  # "cookie", "bearer", "basic", "header"
+    auth_credentials: Optional[Dict[str, str]] = None
+    custom_headers: Optional[Dict[str, str]] = None
+
+    def get_auth_headers(self) -> Dict[str, str]:
+        """Build HTTP headers from auth configuration.
+
+        Returns headers dict. Tool args override these (LLM may
+        intentionally test without auth).
+        """
+        headers: Dict[str, str] = {}
+
+        # Custom headers first (lowest priority)
+        if self.custom_headers:
+            headers.update(self.custom_headers)
+
+        # Auth-type-specific headers
+        if self.auth_type and self.auth_credentials:
+            creds = self.auth_credentials
+            if self.auth_type == "bearer":
+                token = creds.get("token", "")
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+            elif self.auth_type == "cookie":
+                cookie = creds.get("cookie", "")
+                if cookie:
+                    headers["Cookie"] = cookie
+            elif self.auth_type == "basic":
+                import base64 as b64
+                username = creds.get("username", "")
+                password = creds.get("password", "")
+                encoded = b64.b64encode(f"{username}:{password}".encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
+            elif self.auth_type == "header":
+                name = creds.get("header_name", "")
+                value = creds.get("header_value", "")
+                if name:
+                    headers[name] = value
+
+        return headers
+
     # Stuck detection: track consecutive failures per method/approach
     method_attempts: Dict[str, int] = field(default_factory=dict)
     approach_attempts: Dict[str, int] = field(default_factory=dict)

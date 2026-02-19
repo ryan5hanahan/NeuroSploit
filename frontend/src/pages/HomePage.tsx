@@ -1,28 +1,31 @@
 import { useEffect, useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Shield, AlertTriangle, Plus, ArrowRight, CheckCircle, StopCircle, Clock, FileText, Cpu } from 'lucide-react'
+import { Activity, Shield, AlertTriangle, Plus, ArrowRight, CheckCircle, StopCircle, Clock, FileText, Cpu, BrainCircuit, RefreshCw, XCircle } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import { SeverityBadge } from '../components/common/Badge'
-import { dashboardApi } from '../services/api'
+import { dashboardApi, agentV2Api } from '../services/api'
 import { useDashboardStore } from '../store'
-import type { ActivityFeedItem } from '../types'
+import type { ActivityFeedItem, AgentV2OperationSummary } from '../types'
 
 export default function HomePage() {
   const { stats, recentScans, recentVulnerabilities, setStats, setRecentScans, setRecentVulnerabilities, setLoading } = useDashboardStore()
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([])
+  const [recentOperations, setRecentOperations] = useState<AgentV2OperationSummary[]>([])
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsData, recentData, activityData] = await Promise.all([
+      const [statsData, recentData, activityData, opsData] = await Promise.all([
         dashboardApi.getStats(),
         dashboardApi.getRecent(5),
-        dashboardApi.getActivityFeed(15)
+        dashboardApi.getActivityFeed(15),
+        agentV2Api.listOperations().catch(() => ({ operations: [] })),
       ])
       setStats(statsData)
       setRecentScans(recentData.recent_scans)
       setRecentVulnerabilities(recentData.recent_vulnerabilities)
       setActivityFeed(activityData.activities)
+      setRecentOperations(opsData.operations.slice(0, 3))
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
     }
@@ -193,6 +196,58 @@ export default function HomePage() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500" /> High</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-500" /> Medium</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500" /> Low</span>
+          </div>
+        </Card>
+      )}
+
+      {/* Recent LLM Agent Operations */}
+      {recentOperations.length > 0 && (
+        <Card
+          title="Recent LLM Agent Operations"
+          action={
+            <Link to="/operations" className="text-sm text-primary-500 hover:text-primary-400 flex items-center gap-1">
+              View All <ArrowRight className="w-4 h-4" />
+            </Link>
+          }
+        >
+          <div className="space-y-2">
+            {recentOperations.map((op) => (
+              <Link
+                key={op.operation_id}
+                to={`/operations/${op.operation_id}`}
+                className="flex items-center gap-4 p-3 bg-dark-900/50 rounded-lg hover:bg-dark-900 transition-colors"
+              >
+                <div className="flex-shrink-0">
+                  {op.status === 'running' ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                  ) : op.status === 'completed' ? (
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                  ) : op.status === 'error' ? (
+                    <XCircle className="w-4 h-4 text-red-400" />
+                  ) : (
+                    <BrainCircuit className="w-4 h-4 text-dark-400" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-white truncate">{op.target}</p>
+                  <p className="text-xs text-dark-400 truncate">{op.objective}</p>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                  op.status === 'running' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                  op.status === 'completed' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                  op.status === 'error' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                  'bg-dark-700 text-dark-300 border-dark-600'
+                }`}>
+                  {op.status}
+                </span>
+                <span className="text-xs text-dark-500">
+                  {op.steps_used}/{op.max_steps} steps
+                </span>
+                <span className="text-sm text-white font-medium">
+                  {op.findings_count} findings
+                </span>
+              </Link>
+            ))}
           </div>
         </Card>
       )}

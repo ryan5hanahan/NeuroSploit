@@ -22,8 +22,9 @@ class BrowserSession:
     within a single operation. Handles lifecycle (start/stop) automatically.
     """
 
-    def __init__(self, artifacts_dir: str):
+    def __init__(self, artifacts_dir: str, auth_headers: Optional[Dict[str, str]] = None):
         self.artifacts_dir = artifacts_dir
+        self._auth_headers = auth_headers or {}
         self._playwright = None
         self._browser = None
         self._context = None
@@ -49,15 +50,36 @@ class BrowserSession:
                     "--disable-gpu",
                 ],
             )
-            self._context = await self._browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                user_agent=(
+
+            # Separate cookie headers from extra HTTP headers
+            extra_headers = {}
+            cookie_str = ""
+            for key, value in self._auth_headers.items():
+                if key.lower() == "cookie":
+                    cookie_str = value
+                else:
+                    extra_headers[key] = value
+
+            context_kwargs: Dict[str, Any] = {
+                "viewport": {"width": 1280, "height": 720},
+                "user_agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/120.0.0.0 Safari/537.36"
                 ),
-                ignore_https_errors=True,
-            )
+                "ignore_https_errors": True,
+            }
+            if extra_headers:
+                context_kwargs["extra_http_headers"] = extra_headers
+
+            self._context = await self._browser.new_context(**context_kwargs)
+
+            # Add cookies if provided
+            if cookie_str:
+                cookies = _parse_cookies(cookie_str, "")
+                if cookies:
+                    await self._context.add_cookies(cookies)
+
             self._page = await self._context.new_page()
             self._started = True
             logger.info("[Browser] Session started")
@@ -204,10 +226,31 @@ class BrowserSession:
 _sessions: Dict[str, BrowserSession] = {}
 
 
-def get_browser_session(operation_id: str, artifacts_dir: str) -> BrowserSession:
+def _parse_cookies(cookie_str: str, domain: str) -> List[Dict[str, Any]]:
+    """Parse a Cookie header string into Playwright cookie objects."""
+    cookies = []
+    for part in cookie_str.split(";"):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        cookies.append({
+            "name": name.strip(),
+            "value": value.strip(),
+            "domain": domain or "localhost",
+            "path": "/",
+        })
+    return cookies
+
+
+def get_browser_session(
+    operation_id: str,
+    artifacts_dir: str,
+    auth_headers: Optional[Dict[str, str]] = None,
+) -> BrowserSession:
     """Get or create a browser session for an operation."""
     if operation_id not in _sessions:
-        _sessions[operation_id] = BrowserSession(artifacts_dir)
+        _sessions[operation_id] = BrowserSession(artifacts_dir, auth_headers=auth_headers)
     return _sessions[operation_id]
 
 
@@ -222,9 +265,20 @@ async def close_browser_session(operation_id: str) -> None:
 # Tool handler functions (match ToolExecutor handler signature)
 # ---------------------------------------------------------------------------
 
+def _get_context_auth_headers(context: Any) -> Optional[Dict[str, str]]:
+    """Extract auth headers from ExecutionContext if available."""
+    if hasattr(context, 'get_auth_headers'):
+        headers = context.get_auth_headers()
+        return headers if headers else None
+    return None
+
+
 async def handle_browser_navigate(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_navigate tool call."""
-    session = get_browser_session(context.operation_id, context.artifacts_dir)
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context),
+    )
     result = await session.navigate(args["url"])
 
     if "error" in result:
@@ -240,7 +294,10 @@ async def handle_browser_navigate(args: Dict[str, Any], context: Any) -> str:
 
 async def handle_browser_extract_links(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_extract_links tool call."""
-    session = get_browser_session(context.operation_id, context.artifacts_dir)
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context),
+    )
     links = await session.extract_links()
 
     if not links:
@@ -263,7 +320,10 @@ async def handle_browser_extract_links(args: Dict[str, Any], context: Any) -> st
 
 async def handle_browser_extract_forms(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_extract_forms tool call."""
-    session = get_browser_session(context.operation_id, context.artifacts_dir)
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context),
+    )
     forms = await session.extract_forms()
 
     if not forms:
@@ -289,7 +349,10 @@ async def handle_browser_extract_forms(args: Dict[str, Any], context: Any) -> st
 
 async def handle_browser_screenshot(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_screenshot tool call."""
-    session = get_browser_session(context.operation_id, context.artifacts_dir)
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context),
+    )
     label = args.get("label", "screenshot")
     filepath = await session.screenshot(label)
     return f"Screenshot saved: {filepath}"
@@ -297,6 +360,9 @@ async def handle_browser_screenshot(args: Dict[str, Any], context: Any) -> str:
 
 async def handle_browser_execute_js(args: Dict[str, Any], context: Any) -> str:
     """Handle browser_execute_js tool call."""
-    session = get_browser_session(context.operation_id, context.artifacts_dir)
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context),
+    )
     result = await session.execute_js(args["script"])
     return result

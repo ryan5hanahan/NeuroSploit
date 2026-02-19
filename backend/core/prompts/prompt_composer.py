@@ -28,6 +28,7 @@ def compose_agent_system_prompt(
     max_steps: int,
     memory_overview: str = "",
     plan_snapshot: str = "",
+    auth_context: str = "",
 ) -> str:
     """Compose the full system prompt for the LLM-driven agent.
 
@@ -90,8 +91,13 @@ def compose_agent_system_prompt(
         plan_snapshot=plan_section,
     )
 
-    # Append execution guidance and budget warning
-    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{budget_warning}"
+    # Append auth context if credentials are configured
+    auth_section = ""
+    if auth_context:
+        auth_section = f"\n\n### Authentication\n{auth_context}"
+
+    # Append execution guidance, auth context, and budget warning
+    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{budget_warning}"
 
     return full_prompt
 

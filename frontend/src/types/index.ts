@@ -594,3 +594,123 @@ export interface ActivityFeedItem {
   scan_id: string
   link: string
 }
+
+// ---------------------------------------------------------------------------
+// V2 LLM Agent types
+// ---------------------------------------------------------------------------
+
+export interface AgentV2StartRequest {
+  target: string
+  objective?: string
+  max_steps?: number
+  scope_profile?: string
+  auth_type?: 'cookie' | 'bearer' | 'basic' | 'header'
+  auth_credentials?: Record<string, string>
+  custom_headers?: Record<string, string>
+}
+
+export interface AgentV2StartResponse {
+  operation_id: string
+  status: string
+  target: string
+  objective: string
+  max_steps: number
+  message: string
+}
+
+export interface AgentV2CostTierBreakdown {
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+
+export interface AgentV2CostReport {
+  total_calls: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cost_usd: number
+  budget_usd: number
+  budget_remaining_usd: number
+  budget_pct_used: number
+  tiers: Record<string, AgentV2CostTierBreakdown>
+}
+
+export interface AgentV2PlanPhase {
+  name: string
+  status: string
+  objectives: string[]
+  completed_objectives: string[]
+}
+
+export interface AgentV2QualityEvaluation {
+  overall_score: number
+  dimensions: {
+    coverage: number
+    efficiency: number
+    evidence_quality: number
+    methodology: number
+    reporting: number
+  }
+  notes: string[]
+}
+
+export interface AgentV2StatusResponse {
+  operation_id: string
+  status: string
+  target: string
+  objective: string
+  steps_used: number
+  max_steps: number
+  findings_count: number
+  confidence?: number | null
+  plan_snapshot?: string | null
+  plan_phases?: AgentV2PlanPhase[] | null
+  tool_usage?: Record<string, number> | null
+  cost_report?: AgentV2CostReport | null
+  quality_evaluation?: AgentV2QualityEvaluation | null
+  stop_reason?: string | null
+  error?: string | null
+  duration_seconds?: number | null
+}
+
+export interface AgentV2Finding {
+  title: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
+  vuln_type: string
+  description: string
+  endpoint: string
+  evidence: string
+  reproduction_steps?: string
+  remediation?: string
+  validation_status?: string
+  artifact_paths?: string[]
+  step_number?: number
+  timestamp?: number
+}
+
+export interface AgentV2FindingsResponse {
+  operation_id: string
+  findings: AgentV2Finding[]
+}
+
+export interface AgentV2OperationSummary {
+  operation_id: string
+  status: string
+  target: string
+  objective: string
+  steps_used: number
+  max_steps: number
+  findings_count: number
+}
+
+export interface AgentV2WSStep {
+  type: string
+  operation_id: string
+  step: number
+  max_steps: number
+  tool: string
+  is_error: boolean
+  duration_ms: number
+  findings_count: number
+}

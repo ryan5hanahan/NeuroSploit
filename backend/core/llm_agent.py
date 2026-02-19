@@ -102,6 +102,9 @@ class LLMDrivenAgent:
         operation_id: Optional[str] = None,
         data_dir: str = "data",
         on_event: Optional[Callable] = None,
+        auth_type: Optional[str] = None,
+        auth_credentials: Optional[Dict[str, str]] = None,
+        custom_headers: Optional[Dict[str, str]] = None,
     ):
         self.target = target
         self.objective = objective
@@ -134,6 +137,9 @@ class LLMDrivenAgent:
             target=target,
             artifacts_dir=self.artifacts_dir,
             max_steps=max_steps,
+            auth_type=auth_type,
+            auth_credentials=auth_credentials,
+            custom_headers=custom_headers,
         )
 
         # Tool executor with governance
@@ -268,6 +274,20 @@ class LLMDrivenAgent:
                 logger.warning(f"[Agent {self.operation_id[:8]}] Cost budget exceeded")
                 break
 
+            # Build auth context description for the LLM
+            auth_context = ""
+            if self.context.auth_type:
+                auth_context = (
+                    f"Authentication is configured: **{self.context.auth_type}** credentials "
+                    f"are automatically injected into `http_request` and `browser_*` tools. "
+                    f"You do not need to manually set auth headers — they are merged "
+                    f"automatically. If you need to test without auth, explicitly pass "
+                    f"empty headers in the tool call."
+                )
+                if self.context.custom_headers:
+                    header_names = ", ".join(self.context.custom_headers.keys())
+                    auth_context += f"\nCustom headers also injected: {header_names}"
+
             # Compose fresh system prompt with current state
             system_prompt = compose_agent_system_prompt(
                 target=self.target,
@@ -277,6 +297,7 @@ class LLMDrivenAgent:
                 max_steps=self.max_steps,
                 memory_overview=self.memory.get_overview(),
                 plan_snapshot=self.plan_manager.get_snapshot(),
+                auth_context=auth_context,
             )
 
             # Generate LLM response
