@@ -1,17 +1,16 @@
 """
-Tests for AIPentestAgent → AutonomousAgent consolidation.
+Tests for AutonomousAgent consolidation (AIPentestAgent fully retired).
 
 Covers:
   - _map_aa_finding_to_vulnerability() field mapping
   - Handling of empty/None fields
   - AutonomousAgent Finding dataclass field completeness
   - AutonomousAgent report format (summary.endpoints_tested)
-  - AIPentestAgent deprecation warning
+  - AIPentestAgent module deletion verification
   - Import correctness
 """
 
 import os
-import warnings
 import pytest
 from dataclasses import fields as dataclass_fields
 
@@ -194,11 +193,11 @@ class TestAutonomousAgentCompat:
 
 
 # ---------------------------------------------------------------------------
-# 5c: Import and deprecation tests
+# 5c: Import and deletion tests
 # ---------------------------------------------------------------------------
 
-class TestImportsAndDeprecation:
-    """Verify import paths and deprecation warning."""
+class TestImportsAndDeletion:
+    """Verify import paths and AIPentestAgent module removal."""
 
     def test_autonomous_agent_import(self):
         """AutonomousAgent + OperationMode import works."""
@@ -206,29 +205,19 @@ class TestImportsAndDeprecation:
         assert AutonomousAgent is not None
         assert OperationMode is not None
 
-    def test_ai_pentest_agent_raises_deprecation_warning(self):
-        """Importing AIPentestAgent must raise DeprecationWarning."""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            # Force reimport by removing from cache
-            import sys
-            mod_name = "backend.core.ai_pentest_agent"
-            saved = sys.modules.pop(mod_name, None)
-            try:
-                import importlib
-                mod = importlib.import_module(mod_name)
-                assert hasattr(mod, "AIPentestAgent")
-
-                # Check that a DeprecationWarning was raised
-                deprecation_warnings = [
-                    x for x in w if issubclass(x.category, DeprecationWarning)
-                ]
-                assert len(deprecation_warnings) >= 1
-                assert "deprecated" in str(deprecation_warnings[0].message).lower()
-            finally:
-                # Restore module cache
-                if saved is not None:
-                    sys.modules[mod_name] = saved
+    def test_ai_pentest_agent_module_removed(self):
+        """Importing backend.core.ai_pentest_agent must raise ModuleNotFoundError."""
+        import sys
+        mod_name = "backend.core.ai_pentest_agent"
+        # Ensure it's not cached from a previous test run
+        saved = sys.modules.pop(mod_name, None)
+        try:
+            import importlib
+            with pytest.raises(ModuleNotFoundError):
+                importlib.import_module(mod_name)
+        finally:
+            if saved is not None:
+                sys.modules[mod_name] = saved
 
     def test_scan_service_adapter_importable(self):
         """_map_aa_finding_to_vulnerability is importable from scan_service."""
