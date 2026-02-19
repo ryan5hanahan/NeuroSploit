@@ -160,9 +160,9 @@
                 "extended_thinking": true,
                 "thinking_budget_tokens": 16000,
                 "models": {
-                    "anthropic": "claude-opus-4-5-20250929",
+                    "anthropic": "claude-opus-4-6",
                     "openai": "gpt-4o",
-                    "bedrock": "us.anthropic.claude-opus-4-5-20250929-v1:0",
+                    "bedrock": "us.anthropic.claude-opus-4-6-v1:0",
                     "gemini": "gemini-2.0-pro",
                     "ollama": "llama3.2",
                     "lmstudio": "default"
