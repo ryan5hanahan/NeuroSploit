@@ -8,10 +8,11 @@
 ![Vuln Types](https://img.shields.io/badge/Vuln%20Types-119-red)
 ![Payloads](https://img.shields.io/badge/Payloads-34K+-orange)
 ![Docker](https://img.shields.io/badge/Docker-Kali%20Sandbox-informational)
+![LLM Agent](https://img.shields.io/badge/LLM%20Agent-13%20Tools-purple)
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
+NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with an LLM-driven agent (13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory), 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), governance scope enforcement (5 profiles), NVD & ExploitDB vulnerability enrichment, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
 
 ---
 
@@ -23,7 +24,11 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
 - **Opsec Profiles** - Stealth/balanced/aggressive profiles controlling rate limits, jitter, proxy routing, and DNS-over-HTTPS per tool
 - **Full ProjectDiscovery Suite** - 20 Go tools pre-compiled (nuclei, httpx, katana, subfinder, tlsx, asnmap, cvemap, and more)
-- **28 MCP Tools** - Scanning, reconnaissance, proxy control, and ProjectDiscovery tool handlers via MCP protocol
+- **LLM-Driven Agent** - Autonomous reasoning agent with 13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory, plan lifecycle, and quality scoring
+- **Governance Scoping** - 5 scope profiles (full_auto/vuln_lab/ctf/recon_only/custom) with immutable enforcement across 4 layers
+- **NVD & ExploitDB Enrichment** - Automated CVE lookup and exploit cross-reference for findings via rate-limited queue processing
+- **Quality Scoring** - 5-dimension post-operation quality evaluation (coverage, efficiency, evidence, methodology, reporting)
+- **34+ MCP Tools** - Scanning, reconnaissance, proxy control, and ProjectDiscovery tool handlers via MCP protocol
 - **Per-Scan Kali Containers** - Each scan runs in its own isolated Docker container
 - **mitmproxy Integration** - Opt-in HTTP/HTTPS traffic interception, flow capture, replay, and export
 - **Self-Hosted OOB Server** - Optional interactsh-server for out-of-band vulnerability testing
@@ -44,6 +49,8 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Autonomous Agent](#autonomous-agent)
+- [LLM-Driven Agent](#llm-driven-agent)
+- [Governance](#governance)
 - [Opsec Profiles](#opsec-profiles)
 - [MCP Server & Tools](#mcp-server--tools)
 - [Prompt & Task Library](#prompt--task-library)
@@ -54,6 +61,7 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 - [interactsh OOB Server](#interactsh-oob-server)
 - [Anti-Hallucination & Validation](#anti-hallucination--validation)
 - [Unified LLM Layer](#unified-llm-layer)
+- [Vulnerability Enrichment](#vulnerability-enrichment)
 - [Tradecraft Library](#tradecraft-library)
 - [Web GUI](#web-gui)
 - [API Reference](#api-reference)
@@ -137,11 +145,14 @@ Access the web interface at **http://localhost:8000** (production build) or **ht
 ```
 NeuroSploit/
 ├── backend/                         # FastAPI Backend
-│   ├── api/v1/                      # REST API (16 routers)
+│   ├── api/v1/                      # REST API (19 routers)
 │   │   ├── scans.py                 # Scan CRUD + pause/resume/stop
-│   │   ├── agent.py                 # AI Agent control
+│   │   ├── agent.py                 # AI Agent control (V1)
+│   │   ├── agent_v2.py              # LLM-Driven Agent (13 endpoints + WebSocket)
 │   │   ├── agent_tasks.py           # Scan task tracking
 │   │   ├── dashboard.py             # Stats + activity feed
+│   │   ├── enrichment.py            # NVD/ExploitDB vulnerability enrichment
+│   │   ├── governance.py            # Governance scope violations + stats
 │   │   ├── reports.py               # Report generation (HTML/PDF/JSON)
 │   │   ├── scheduler.py             # Cron/interval scheduling
 │   │   ├── vuln_lab.py              # Per-type vulnerability lab
@@ -156,6 +167,9 @@ NeuroSploit/
 │   │   └── settings.py              # Runtime settings
 │   ├── core/
 │   │   ├── autonomous_agent.py      # Main AI agent (~7600 lines)
+│   │   ├── llm_agent.py             # LLM-Driven Agent (full LLM execution control)
+│   │   ├── llm_agent_tools.py       # 13 tool schemas for LLM agent
+│   │   ├── governance.py            # Governance scope enforcement (5 profiles)
 │   │   ├── llm/                     # Unified LLM layer (3-tier routing)
 │   │   │   ├── client.py            # UnifiedLLMClient (generate, generate_json, generate_with_tools)
 │   │   │   ├── router.py            # 3-tier ModelRouter (fast/balanced/deep)
@@ -164,7 +178,23 @@ NeuroSploit/
 │   │   │   ├── tool_adapter.py      # MCP-to-provider tool format conversion
 │   │   │   ├── conversation.py      # Multi-turn message history
 │   │   │   ├── cost_tracker.py      # Per-tier token/cost tracking with budget enforcement
-│   │   │   └── meta_tools.py        # 5 structured decision schemas
+│   │   │   ├── meta_tools.py        # 7 structured decision schemas
+│   │   │   └── tool_executor.py     # Tool dispatch for LLM agent with governance
+│   │   ├── tools/                   # LLM agent tool implementations
+│   │   │   ├── shell_tool.py        # Docker sandbox shell execution
+│   │   │   ├── browser_tool.py      # Playwright browser automation
+│   │   │   ├── http_tool.py         # HTTP request handler
+│   │   │   └── parallel_executor.py # Parallel tool execution (asyncio.gather)
+│   │   ├── memory/                  # Persistent memory system
+│   │   │   ├── vector_memory.py     # TF-IDF semantic search, per-target persistence
+│   │   │   └── plan_manager.py      # Plan lifecycle with checkpoints
+│   │   ├── prompts/                 # Cognitive prompt framework
+│   │   │   ├── agent_system_prompt.md # KNOW/THINK/TEST/VALIDATE cognitive framework
+│   │   │   ├── execution_prompt_general.md # Web pentest execution guidance
+│   │   │   └── prompt_composer.py   # Dynamic prompt assembly with plan/memory injection
+│   │   ├── observability/           # Operation metrics
+│   │   │   ├── operation_tracker.py # Token/cost/tool metrics tracking
+│   │   │   └── quality_evaluator.py # Post-op quality scoring (5 dimensions)
 │   │   ├── vuln_engine/             # 119-type vulnerability engine
 │   │   │   ├── registry.py          # 119 VULNERABILITY_INFO entries (100 base + 19 PATT)
 │   │   │   ├── payload_generator.py # 34K+ payloads (665 curated + PATT merge)
@@ -209,7 +239,7 @@ NeuroSploit/
 │   ├── container_pool.py            # Global container pool coordinator
 │   ├── opsec_manager.py             # Opsec profile system (stealth/balanced/aggressive)
 │   ├── tool_registry.py             # 56 tool install recipes for Kali
-│   ├── mcp_server.py                # MCP server (28 tools, stdio)
+│   ├── mcp_server.py                # MCP server (34+ tools, stdio)
 │   ├── mcp_tools_pd.py              # 9 ProjectDiscovery MCP tool handlers
 │   ├── mcp_tools_proxy.py           # 7 mitmproxy MCP tool handlers
 │   ├── scheduler.py                 # APScheduler scan scheduling
@@ -348,6 +378,149 @@ When an LLM is configured, recon-only scans include an AI analysis phase that pr
 
 ---
 
+## LLM-Driven Agent
+
+The LLM-Driven Agent (`llm_agent.py`) is a second-generation autonomous agent where the LLM has full execution control. Unlike the code-driven pipeline of `AutonomousAgent`, the LLM decides what to do at every step — choosing tools, forming hypotheses, and pivoting based on results.
+
+### AutonomousAgent vs LLM-Driven Agent
+
+| | AutonomousAgent | LLM-Driven Agent |
+|--|----------------|------------------|
+| **Control** | Code-driven pipeline with LLM advisory | LLM controls execution end-to-end |
+| **Tools** | MCP tools (34+) via sandbox | 13 purpose-built tools with governance |
+| **Reasoning** | Anti-hallucination prompts | KNOW/THINK/TEST/VALIDATE cognitive cycle |
+| **Memory** | Bounded dedup memory | TF-IDF vector search, per-target persistence |
+| **Planning** | Fixed phase progression | Dynamic plan lifecycle with checkpoints |
+| **API** | `/api/v1/agent/*` | `/api/v1/agent-v2/*` |
+
+### 13 Tools
+
+| Tool | Description |
+|------|-------------|
+| `shell_execute` | Execute shell commands in Docker sandbox (nmap, sqlmap, nuclei, httpx, etc.) |
+| `http_request` | Send HTTP requests with full method/header/body control |
+| `browser_navigate` | Navigate headless browser to URL with JS rendering |
+| `browser_extract_links` | Extract all links from current browser page |
+| `browser_extract_forms` | Extract forms with actions, methods, fields, hidden inputs |
+| `browser_screenshot` | Capture full-page screenshot with label |
+| `browser_execute_js` | Execute JavaScript in browser context |
+| `memory_store` | Store observations in persistent memory (6 categories) |
+| `memory_search` | Search stored memories by keyword/semantic similarity |
+| `save_artifact` | Save evidence/data to operation artifacts directory |
+| `report_finding` | Report confirmed vulnerability with evidence, CVSS, CWE, PoC |
+| `update_plan` | Update operation plan at start and checkpoints |
+| `stop` | Terminate operation with reason and summary |
+
+### Cognitive Framework
+
+The agent follows a KNOW/THINK/TEST/VALIDATE cycle:
+
+```
+┌─────────┐     ┌─────────┐     ┌─────────┐     ┌──────────┐
+│  KNOW   │────▶│  THINK  │────▶│  TEST   │────▶│ VALIDATE │
+│         │     │         │     │         │     │          │
+│ What do │     │ Form    │     │ Run the │     │ Assess   │
+│ I know? │     │ explicit│     │ highest │     │ outcome, │
+│ Recon,  │     │ hypo-   │     │ value   │     │ update   │
+│ tech,   │     │ thesis  │     │ action  │     │ confi-   │
+│ prior   │     │ with %  │     │ to con- │     │ dence,   │
+│ results │     │ confi-  │     │ firm or │     │ decide   │
+│         │     │ dence   │     │ refute  │     │ next     │
+└─────────┘     └─────────┘     └─────────┘     └──────────┘
+                                                      │
+                                          ┌───────────┤
+                                          ▼           ▼
+                                     >70%: Escalate  <50%: Pivot
+```
+
+### Confidence-Driven Actions
+
+| Confidence | Action |
+|-----------|--------|
+| **>75%** | Attempt direct exploitation |
+| **40–75%** | Run targeted tests to confirm |
+| **<40%** | Gather more information before testing |
+
+### Stuck Detection
+
+- 3 method failures → switch method within class
+- 5 approach failures → switch vulnerability class
+- >40% budget with zero findings → advance phase
+- 60% budget with no findings → focus top 3 targets
+- 80% budget → stop testing, begin reporting
+- 90% budget → emergency stop
+
+### Plan Lifecycle
+
+4 phases with checkpoint updates at 20%, 40%, 60%, and 80% of step budget:
+
+| Phase | Budget | Focus |
+|-------|--------|-------|
+| **Discovery** | 0–25% | Port scan, service detection, tech fingerprinting, endpoint enumeration, auth mapping |
+| **Hypothesis** | 25–50% | Identify high-value targets, form vulnerability hypotheses, prioritize by likelihood/impact |
+| **Validation** | 50–80% | Test hypotheses with crafted requests, collect evidence, verify with negative controls |
+| **Reporting** | 80–100% | Document confirmed findings, save artifacts, generate final summary |
+
+### Persistent Memory
+
+- **TF-IDF vector search** with recency boosting (no external dependencies)
+- **Per-target persistence** across operations — cross-engagement learning
+- **6 categories**: recon, finding, credential, observation, hypothesis, evidence
+- Stores to SQLite, loads prior knowledge for repeat targets
+
+### Quality Evaluation
+
+Post-operation quality scoring across 5 dimensions:
+
+| Dimension | Weight | Measures |
+|-----------|--------|----------|
+| **Coverage** | 20% | Tool diversity (6 categories), finding diversity, recon depth |
+| **Efficiency** | 15% | Finding rate per step, budget utilization (50–90% ideal) |
+| **Evidence** | 30% | Evidence substance (>100 chars), reproduction steps, HTTP details |
+| **Methodology** | 15% | Plan updates (3+), memory usage, recon-first, evidence capture |
+| **Reporting** | 20% | Title, severity, description, endpoint, remediation completeness |
+
+### Context Management
+
+- **Sliding-window trimming** — older messages compressed when conversation exceeds 200K tokens
+- **Tool result truncation** — large outputs capped to fit context budget
+- **Parallel tool execution** — multiple tool_use blocks dispatched via `asyncio.gather` (max 8 concurrent)
+
+---
+
+## Governance
+
+Governance scope enforcement (`governance.py`) restricts what agents can do based on configurable scope profiles. Enforcement is immutable — scope cannot be widened after scan creation.
+
+### Scope Profiles
+
+| Profile | Use Case | Restrictions |
+|---------|----------|-------------|
+| **full_auto** | Comprehensive autonomous scanning | All phases, all vuln types, full recon |
+| **vuln_lab** | Single-vulnerability testing | Tight scope, single vuln type, no subdomain enum |
+| **ctf** | Capture-the-flag challenges | All phases, all vuln types, full recon |
+| **recon_only** | Reconnaissance without exploitation | Recon phases only, no active testing |
+| **custom** | User-defined | Configurable per-field |
+
+### ScanScope Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `profile` | ScopeProfile | Baseline restrictiveness level |
+| `allowed_domains` | FrozenSet | Permitted target domains (empty = all) |
+| `allowed_vuln_types` | FrozenSet | Permitted vulnerability types (empty = all) |
+| `allowed_phases` | FrozenSet | Permitted scan phases (empty = all) |
+| `skip_subdomain_enum` | bool | Skip subdomain enumeration |
+| `skip_port_scan` | bool | Skip port scanning |
+| `max_recon_depth` | str | "quick" / "medium" / "full" |
+| `nuclei_template_tags` | Optional[str] | Nuclei template tags for scoping |
+
+### Enforcement Layers
+
+Governance is enforced at multiple levels — tool execution, API requests, scan orchestration, and agent decision-making — ensuring scope constraints cannot be bypassed.
+
+---
+
 ## Opsec Profiles
 
 Configurable operational security postures that control scan behavior per tool. Set via the `opsec_profile` parameter on any MCP tool call or scan.
@@ -379,7 +552,7 @@ Profiles are defined in `config/opsec_profiles.json`. User-supplied flags always
 
 ## MCP Server & Tools
 
-The MCP server (`core/mcp_server.py`) exposes 28 tools over stdio for AI agent integration.
+The MCP server (`core/mcp_server.py`) exposes 34+ tools over stdio for AI agent integration.
 
 ### Tool Categories
 
@@ -729,6 +902,31 @@ Per-session budget enforcement with configurable limits (default $5.00/scan). Tr
 
 ---
 
+## Vulnerability Enrichment
+
+Automated CVE and exploit cross-referencing for discovered vulnerabilities via NVD and ExploitDB.
+
+### NVD API Integration
+
+- Queries the NIST National Vulnerability Database for CVE details
+- Retrieves CVSS scores, affected products (CPE), and reference links
+- Rate-limited with configurable API key for higher throughput
+
+### ExploitDB CSV Lookup
+
+- Cross-references findings against the ExploitDB CSV database
+- Matches by CVE ID, vulnerability type, and keyword
+- Returns exploit IDs, descriptions, and proof-of-concept availability
+
+### Processing
+
+- **Queue-based** — enrichment jobs processed asynchronously to avoid blocking scans
+- **Rate-limited** — respects NVD API rate limits (configurable delay between requests)
+- **Batch support** — enrich all findings for a scan in one call (`POST /enrichment/scans/{scan_id}/enrich`)
+- **On-demand** — manually trigger enrichment for individual vulnerabilities
+
+---
+
 ## Tradecraft Library
 
 35 built-in TTP entries accessible via the `/api/v1/tradecraft` endpoint, including 23 LOLBin techniques for red team operations.
@@ -752,14 +950,17 @@ Each entry includes MITRE ATT&CK technique IDs and detection probability profile
 | Page | Route | Description |
 |------|-------|-------------|
 | **Dashboard** | `/` | Stats overview, severity distribution, recent activity feed |
+| **Agent** | `/agent` | Unified agent dashboard — start operations, view status, re-run |
+| **Agent Detail** | `/agent/:id` | Operation detail with decision log, findings, re-run & compare |
 | **Auto Pentest** | `/auto` | One-click autonomous pentest with 3-stream live display |
 | **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (119 types, 11 categories + PATT Extended) |
 | **Terminal Agent** | `/terminal` | AI-powered interactive security chat + tool execution |
 | **Sandboxes** | `/sandboxes` | Real-time Docker container monitoring + management |
-| **AI Agent** | `/scan/new` | Scan creation with mode selector, recon depth, prompt/task selection |
+| **Compare Scans** | `/compare` | Side-by-side scan comparison |
 | **Scan Details** | `/scan/:id` | Findings with confidence badges, pause/resume/stop |
 | **Scheduler** | `/scheduler` | Cron/interval automated scan scheduling |
 | **Reports** | `/reports` | HTML/PDF/JSON report generation and viewing |
+| **Tradecraft** | `/tradecraft` | TTP tradecraft library browser |
 | **Settings** | `/settings` | LLM providers, model routing, feature toggles |
 
 ### Sandbox Dashboard
@@ -796,7 +997,7 @@ http://localhost:8000/api/v1
 | `POST` | `/scans/{id}/resume` | Resume scan |
 | `DELETE` | `/scans/{id}` | Delete scan |
 
-#### AI Agent
+#### AI Agent (V1)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -808,6 +1009,56 @@ http://localhost:8000/api/v1
 | `POST` | `/agent/resume/{id}` | Resume agent |
 | `GET` | `/agent/findings/{id}` | Get findings with details |
 | `GET` | `/agent/logs/{id}` | Get agent logs |
+
+#### LLM-Driven Agent (V2)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/agent-v2/start` | Start LLM-driven autonomous assessment |
+| `POST` | `/agent-v2/{id}/stop` | Stop running agent |
+| `POST` | `/agent-v2/{id}/pause` | Pause running agent |
+| `POST` | `/agent-v2/{id}/resume` | Resume paused agent |
+| `POST` | `/agent-v2/{id}/prompt` | Inject custom prompt into running agent |
+| `GET` | `/agent-v2/by-scan/{scan_id}` | Reverse-lookup operation by scan ID |
+| `GET` | `/agent-v2/{id}/status` | Get agent operation status |
+| `GET` | `/agent-v2/{id}/findings` | Get findings from operation |
+| `GET` | `/agent-v2/{id}/decisions` | Get decision log (LLM reasoning + tool calls) |
+| `GET` | `/agent-v2/operations` | List all agent operations |
+| `POST` | `/agent-v2/{id}/report` | Generate HTML/JSON report |
+| `GET` | `/agent-v2/{id}/report/download` | Download report |
+
+#### Enrichment
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/enrichment/vulnerabilities/{vuln_id}/enrich` | Trigger enrichment for single vulnerability |
+| `POST` | `/enrichment/scans/{scan_id}/enrich` | Batch enrich all vulnerabilities in scan |
+| `GET` | `/enrichment/vulnerabilities/{vuln_id}/enrichment` | Get enrichment data for vulnerability |
+
+#### Governance
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/governance/scans/{scan_id}/governance/violations` | List governance violations for scan |
+| `GET` | `/governance/scans/{scan_id}/governance/stats` | Get governance stats for scan |
+
+#### Memory
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/memory/stats` | Get persistent memory statistics |
+| `GET` | `/memory/target/{domain}` | Get cumulative knowledge about a target |
+| `GET` | `/memory/payloads` | Get highest-success payloads by vuln type |
+| `GET` | `/memory/vuln-types` | Get vuln types ranked by historical success |
+| `DELETE` | `/memory/clear` | Clear all persistent memory |
+
+#### Traces
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/traces/scan/{scan_id}` | Get all trace spans for a scan |
+| `GET` | `/traces/span/{span_id}` | Get detailed span info |
+| `GET` | `/traces/stats` | Get global tracing statistics |
 
 #### Sandbox
 
@@ -858,10 +1109,13 @@ http://localhost:8000/api/v1
 ### WebSocket
 
 ```
-ws://localhost:8000/ws/scan/{scan_id}
+ws://localhost:8000/ws/scan/{scan_id}              # Scan events
+ws://localhost:8000/api/v1/agent-v2/{id}/ws        # LLM agent real-time events
 ```
 
-Events: `scan_started`, `progress_update`, `finding_discovered`, `scan_completed`, `scan_error`
+Scan events: `scan_started`, `progress_update`, `finding_discovered`, `scan_completed`, `scan_error`
+
+Agent events: `status`, `tool_call`, `tool_result`, `finding`, `plan_update`, `decision`, `error`, `complete`
 
 ### API Docs
 
@@ -980,7 +1234,7 @@ npm run build      # Production build
 ### MCP Server
 
 ```bash
-python3 -m core.mcp_server        # Starts stdio MCP server (28 tools)
+python3 -m core.mcp_server        # Starts stdio MCP server (34+ tools)
 ```
 
 ### PATT Payload Library
@@ -1026,8 +1280,9 @@ MIT License - See [LICENSE](LICENSE) for details.
 | **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh, FFuf, Dalfox |
 | **Proxy** | mitmproxy (opt-in traffic interception, replay, TLS inspection) |
 | **OOB** | interactsh-server (self-hosted out-of-band interaction server) |
+| **OSINT** | NVD API (CVE lookup, CVSS scores), ExploitDB (exploit cross-reference, PoC availability) |
 | **Payloads** | PayloadsAllTheThings (33,500+ community payloads via git submodule, 61 mapped categories) |
-| **Infra** | Docker Compose, MCP Protocol (28 tools), Playwright, APScheduler |
+| **Infra** | Docker Compose, MCP Protocol (34+ tools), Playwright, APScheduler |
 
 ---
 
