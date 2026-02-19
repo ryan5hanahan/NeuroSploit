@@ -30,7 +30,7 @@ from backend.core.ai_prompt_processor import AIPromptProcessor, AIVulnerabilityA
 from backend.core.vuln_engine.engine import DynamicVulnerabilityEngine
 from backend.core.vuln_engine.payload_generator import PayloadGenerator, normalize_vuln_type
 from backend.core.autonomous_scanner import AutonomousScanner
-from backend.core.ai_pentest_agent import AIPentestAgent
+from backend.core.autonomous_agent import AutonomousAgent, OperationMode
 from backend.core.ai_prompt_processor import TestingPlan
 from backend.core.llm_agent import LLMDrivenAgent
 from backend.core import scan_registry
@@ -110,6 +110,37 @@ async def run_scan_task(scan_id: str):
     finally:
         scan_registry.unregister(scan_id)
         _scan_phase_control.pop(scan_id, None)
+
+
+def _map_aa_finding_to_vulnerability(finding, scan_id: str) -> "Vulnerability":
+    """Map an AutonomousAgent Finding dataclass to a Vulnerability model."""
+    return Vulnerability(
+        scan_id=scan_id,
+        title=f"{finding.vulnerability_type.upper()} - {finding.affected_endpoint[:50]}",
+        vulnerability_type=finding.vulnerability_type,
+        severity=finding.severity,
+        cvss_score=finding.cvss_score if finding.cvss_score else None,
+        cvss_vector=finding.cvss_vector or None,
+        cwe_id=finding.cwe_id or None,
+        description=finding.evidence,
+        affected_endpoint=finding.affected_endpoint,
+        poc_payload=finding.payload,
+        poc_request=finding.request[:5000] if finding.request else "",
+        poc_response=finding.response[:5000] if finding.response else "",
+        poc_parameter=finding.parameter or None,
+        poc_evidence=finding.proof_of_execution or None,
+        impact=finding.impact or None,
+        remediation=finding.remediation or finding.impact,
+        ai_analysis=finding.poc_code or "",
+        poc_code=finding.poc_code or None,
+        screenshots=finding.screenshots or [],
+        url=finding.affected_endpoint,
+        parameter=finding.parameter or None,
+        credential_label=finding.credential_label or None,
+        auth_context=finding.auth_context if finding.auth_context else None,
+        validation_status=finding.ai_status if finding.ai_status != "confirmed" else "ai_confirmed",
+        ai_rejection_reason=finding.rejection_reason or None,
+    )
 
 
 class ScanService:
@@ -692,80 +723,67 @@ class ScanService:
                         await self.db.commit()
 
                 else:
-                    await ws_manager.broadcast_log(scan_id, "info", "PHASE 3: AI OFFENSIVE AGENT")
+                    await ws_manager.broadcast_log(scan_id, "info", "PHASE 3: AUTONOMOUS SECURITY AGENT")
                     await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
 
-                    # Run the AI Offensive Agent for each target
+                    # Run the AutonomousAgent for each target
                     for target in targets:
                         if self._stop_requested:
                             break
 
                         await ws_manager.broadcast_log(scan_id, "info", f"Deploying AI Agent on: {target.url}")
 
-                        # Create AI pentest agent task
                         agent_task = await self._create_agent_task(
                             scan_id=scan_id,
                             task_type="testing",
-                            task_name=f"AI Pentest Agent: {target.hostname or target.url[:30]}",
-                            description=f"AI-powered penetration testing on {target.url}",
-                            tool_name="ai_pentest_agent",
+                            task_name=f"Autonomous Agent: {target.hostname or target.url[:30]}",
+                            description=f"Autonomous penetration testing on {target.url}",
+                            tool_name="autonomous_agent",
                             tool_category="ai"
                         )
 
                         try:
-                            # Create log callback for the agent
                             async def agent_log(level: str, message: str):
                                 await ws_manager.broadcast_log(scan_id, level, message)
 
-                            # Build auth headers
                             auth_headers = self._build_auth_headers(scan)
 
                             findings_count = 0
                             endpoints_tested = 0
 
-                            async with AIPentestAgent(
+                            async with AutonomousAgent(
                                 target=target.url,
+                                mode=OperationMode.AUTO_PENTEST,
                                 log_callback=agent_log,
                                 auth_headers=auth_headers,
-                                max_depth=5,
+                                recon_context={"data": recon_data},
                                 governance=governance,
-                                recon_context={"data": recon_data}
+                                scan_id=scan_id,
+                                credential_sets=self._build_credential_sets(scan),
                             ) as agent:
                                 agent_report = await agent.run()
 
-                                # Save agent findings as vulnerabilities
-                                for finding in agent_report.get("findings", []):
-                                    finding_severity = finding["severity"]
-                                    vuln = Vulnerability(
-                                        scan_id=scan_id,
-                                        title=f"{finding['type'].upper()} - {finding['endpoint'][:50]}",
-                                        vulnerability_type=finding["type"],
-                                        severity=finding_severity,
-                                        description=finding["evidence"],
-                                        affected_endpoint=finding["endpoint"],
-                                        poc_payload=finding["payload"],
-                                        poc_request=finding.get("raw_request", "")[:5000],
-                                        poc_response=finding.get("raw_response", "")[:5000],
-                                        remediation=finding.get("impact", ""),
-                                        ai_analysis="\n".join(finding.get("exploitation_steps", []))
-                                    )
+                                # Access raw Finding dataclass instances for full field mapping
+                                for finding in agent.findings:
+                                    if finding.ai_status == "rejected":
+                                        continue
+                                    vuln = _map_aa_finding_to_vulnerability(finding, scan_id)
                                     self.db.add(vuln)
-                                    await self.db.flush()  # Ensure ID is assigned
+                                    await self.db.flush()
                                     findings_count += 1
 
-                                    # Increment vulnerability count
-                                    await self._increment_vulnerability_count(scan, finding_severity)
+                                    await self._increment_vulnerability_count(scan, finding.severity)
 
                                     await ws_manager.broadcast_vulnerability_found(scan_id, {
                                         "id": vuln.id,
                                         "title": vuln.title,
                                         "severity": vuln.severity,
-                                        "type": finding["type"],
-                                        "endpoint": finding["endpoint"]
+                                        "type": finding.vulnerability_type,
+                                        "endpoint": finding.affected_endpoint
                                     })
 
-                                # Update endpoint count
-                                endpoints_tested = agent_report.get("summary", {}).get("total_endpoints", 0)
+                                # Update endpoint count from report
+                                endpoints_tested = agent_report.get("summary", {}).get("endpoints_tested", 0)
                                 scan.total_endpoints += endpoints_tested
 
                             await self._complete_agent_task(
