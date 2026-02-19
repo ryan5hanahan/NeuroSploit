@@ -534,9 +534,12 @@ async def get_agent_status(operation_id: str):
                     steps_used=op.steps_used or 0,
                     max_steps=op.max_steps or 0,
                     findings_count=op.findings_count or 0,
+                    confidence=op.confidence,
+                    plan_snapshot=op.plan_snapshot,
+                    plan_phases=op.plan_phases_json,
                     tool_usage=op.tool_usage_json,
                     cost_report=op.cost_report_json,
-                    quality_evaluation=None,
+                    quality_evaluation=op.quality_evaluation_json,
                     stop_reason=op.stop_reason,
                     stop_summary=op.stop_summary,
                     error=op.error_message,
@@ -820,14 +823,18 @@ async def _load_operation_data(operation_id: str) -> Optional[dict]:
                 "max_steps": op.max_steps,
                 "findings": (op.results_json or {}).get("findings", []),
                 "findings_count": op.findings_count,
+                "confidence": op.confidence,
+                "plan_snapshot": op.plan_snapshot,
+                "plan_phases": op.plan_phases_json,
                 "cost_report": op.cost_report_json,
                 "tool_usage": op.tool_usage_json,
+                "quality_evaluation": op.quality_evaluation_json,
+                "quality_score": op.quality_score,
                 "duration_seconds": op.duration_seconds,
                 "stop_reason": op.stop_reason,
                 "stop_summary": op.stop_summary,
                 "error": op.error_message,
                 "artifacts_dir": op.artifacts_dir,
-                "quality_score": op.quality_score,
                 "decision_log": op.decision_log_json,
             }
     except Exception as e:
@@ -977,6 +984,10 @@ async def _run_agent(operation_id: str, agent):
                 decision_log=decision_log,
                 conversation_path=conversation_path,
                 quality_score=quality_score,
+                quality_evaluation=quality_evaluation,
+                plan_phases=plan_phases,
+                plan_snapshot=result.plan_snapshot,
+                confidence=confidence,
             )
         except Exception as e:
             logger.error(f"Failed to save operation to DB: {e}")
@@ -1019,6 +1030,10 @@ async def _save_operation_to_db(
     decision_log=None,
     conversation_path=None,
     quality_score=None,
+    quality_evaluation=None,
+    plan_phases=None,
+    plan_snapshot=None,
+    confidence=None,
 ):
     """Save operation results to the database."""
     from backend.models.memory import AgentOperation
@@ -1050,6 +1065,10 @@ async def _save_operation_to_db(
             tool_usage_json=result.tool_usage,
             results_json={"findings": result.findings},
             quality_score=quality_score,
+            quality_evaluation_json=quality_evaluation,
+            plan_phases_json=plan_phases,
+            plan_snapshot=plan_snapshot,
+            confidence=confidence,
             cost_report_json=result.cost_report,
             decision_log_json=decision_log,
             conversation_path=conversation_path,

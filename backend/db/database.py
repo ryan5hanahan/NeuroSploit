@@ -278,6 +278,12 @@ async def _run_migrations(conn):
             if "conversation_path" not in columns:
                 logger.info("Adding 'conversation_path' column to agent_operations table...")
                 await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN conversation_path VARCHAR(500)"))
+            if "quality_evaluation_json" not in columns:
+                logger.info("Adding plan/quality persistence columns to agent_operations table...")
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN quality_evaluation_json JSON"))
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN plan_phases_json JSON"))
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN plan_snapshot TEXT"))
+                await conn.execute(text("ALTER TABLE agent_operations ADD COLUMN confidence FLOAT"))
 
         # Check and add report_type column to reports table
         result = await conn.execute(text("PRAGMA table_info(reports)"))
