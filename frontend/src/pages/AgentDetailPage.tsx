@@ -707,6 +707,16 @@ export default function AgentDetailPage() {
                           <CheckCircle className="w-3 h-3" /> Verified
                         </span>
                       )}
+                      {finding.cve_ids && finding.cve_ids.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> {finding.cve_ids.length} CVE{finding.cve_ids.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {finding.known_exploits && finding.known_exploits.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> {finding.known_exploits.length} Exploit{finding.known_exploits.length > 1 ? 's' : ''}
+                        </span>
+                      )}
                       {finding.step_number != null && (
                         <span className="text-xs text-dark-500">
                           Step #{finding.step_number}
@@ -878,6 +888,54 @@ export default function AgentDetailPage() {
                       <div>
                         <p className="text-sm font-medium text-green-400 mb-1">Remediation</p>
                         <p className="text-sm text-dark-400 whitespace-pre-wrap">{finding.remediation}</p>
+                      </div>
+                    )}
+
+                    {/* CVE & Exploit Intelligence */}
+                    {((finding.cve_ids?.length ?? 0) > 0 || (finding.known_exploits?.length ?? 0) > 0) && (
+                      <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700">
+                        <p className="text-sm font-medium text-cyan-400 flex items-center gap-1.5 mb-2">
+                          <Shield className="w-4 h-4" /> CVE & Exploit Intelligence
+                        </p>
+                        {finding.cve_ids && finding.cve_ids.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-xs text-dark-400 mb-1">Matched CVEs</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {finding.cve_ids.map((cve) => (
+                                <a
+                                  key={cve}
+                                  href={`https://nvd.nist.gov/vuln/detail/${cve}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition-colors flex items-center gap-1"
+                                >
+                                  {cve} <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {finding.known_exploits && finding.known_exploits.length > 0 && (
+                          <div>
+                            <p className="text-xs text-dark-400 mb-1">Known Exploits</p>
+                            <div className="space-y-1">
+                              {finding.known_exploits.map((exploit) => (
+                                <a
+                                  key={exploit.edb_id}
+                                  href={`https://www.exploit-db.com/exploits/${exploit.edb_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-xs text-red-400 hover:text-red-300 transition-colors"
+                                >
+                                  <span className="font-mono bg-red-500/15 px-1.5 py-0.5 rounded">EDB-{exploit.edb_id}</span>
+                                  <span className="text-dark-300 truncate">{exploit.title}</span>
+                                  <span className="text-dark-500">{exploit.platform}</span>
+                                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

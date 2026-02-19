@@ -934,11 +934,14 @@ async def _save_findings_to_scan(scan_id: str, result):
     """Save agent findings to the vulnerabilities table and update the Scan record."""
     from backend.models.scan import Scan
     from backend.models.vulnerability import Vulnerability
+    from backend.services.vuln_enrichment_utils import backfill_vulnerability_metadata
+    from backend.services.vuln_enrichment import VulnEnrichmentService
     from sqlalchemy import select
 
     async with async_session_maker() as db:
         # Save each finding as a Vulnerability
         severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        vuln_ids = []
         for finding in result.findings:
             sev = finding.get("severity", "info")
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
@@ -964,7 +967,10 @@ async def _save_findings_to_scan(scan_id: str, result):
                 remediation=finding.get("remediation", ""),
                 ai_analysis=finding.get("evidence", ""),
             )
+            backfill_vulnerability_metadata(vuln)
             db.add(vuln)
+            await db.flush()
+            vuln_ids.append(vuln.id)
 
         # Update Scan record
         stmt = select(Scan).where(Scan.id == scan_id)
@@ -984,6 +990,11 @@ async def _save_findings_to_scan(scan_id: str, result):
             scan.duration = int(result.duration_seconds) if result.duration_seconds else None
 
         await db.commit()
+
+    # Enqueue enrichment after commit (IDs are now stable)
+    enrichment_svc = VulnEnrichmentService.get_instance()
+    for vid in vuln_ids:
+        await enrichment_svc.enqueue(vid, scan_id)
 
     logger.info(f"Saved {len(result.findings)} findings to scan {scan_id}")
 

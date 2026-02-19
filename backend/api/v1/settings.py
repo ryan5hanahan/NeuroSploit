@@ -133,6 +133,9 @@ class SettingsUpdate(BaseModel):
     # Scan tuning
     default_timeout: Optional[int] = None
     max_requests_per_second: Optional[int] = None
+    # Vulnerability enrichment
+    nvd_api_key: Optional[str] = None
+    enable_vuln_enrichment: Optional[bool] = None
 
 
 class SettingsResponse(BaseModel):
@@ -181,6 +184,9 @@ class SettingsResponse(BaseModel):
     # Scan tuning
     default_timeout: int = 30
     max_requests_per_second: int = 10
+    # Vulnerability enrichment
+    has_nvd_key: bool = False
+    enable_vuln_enrichment: bool = True
 
 
 def _load_settings_from_env() -> dict:
@@ -281,6 +287,9 @@ def _load_settings_from_env() -> dict:
         # Scan tuning
         "default_timeout": _env_int("DEFAULT_TIMEOUT", 30),
         "max_requests_per_second": _env_int("MAX_REQUESTS_PER_SECOND", 10),
+        # Vulnerability enrichment
+        "nvd_api_key": os.getenv("NVD_API_KEY", ""),
+        "enable_vuln_enrichment": _env_bool("ENABLE_VULN_ENRICHMENT", True),
     }
 
 
@@ -341,6 +350,9 @@ async def get_settings():
         # Scan tuning
         default_timeout=_settings["default_timeout"],
         max_requests_per_second=_settings["max_requests_per_second"],
+        # Vulnerability enrichment
+        has_nvd_key=bool(_settings.get("nvd_api_key") or os.getenv("NVD_API_KEY")),
+        enable_vuln_enrichment=_settings.get("enable_vuln_enrichment", True),
     )
 
 
@@ -470,11 +482,12 @@ async def update_settings(settings_data: SettingsUpdate):
             os.environ["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
             env_updates["MAX_OUTPUT_TOKENS"] = str(settings_data.max_output_tokens)
 
-    # Tracing, memory, bug bounty toggles
+    # Tracing, memory, bug bounty, enrichment toggles
     for field_name, env_key in [
         ("enable_tracing", "ENABLE_TRACING"),
         ("enable_persistent_memory", "ENABLE_PERSISTENT_MEMORY"),
         ("enable_bugbounty_integration", "ENABLE_BUGBOUNTY_INTEGRATION"),
+        ("enable_vuln_enrichment", "ENABLE_VULN_ENRICHMENT"),
     ]:
         val = getattr(settings_data, field_name, None)
         if val is not None:
@@ -492,6 +505,7 @@ async def update_settings(settings_data: SettingsUpdate):
         ("builtwith_api_key", "BUILTWITH_API_KEY"),
         ("hackerone_api_token", "HACKERONE_API_TOKEN"),
         ("hackerone_username", "HACKERONE_USERNAME"),
+        ("nvd_api_key", "NVD_API_KEY"),
     ]:
         val = getattr(settings_data, field_name, None)
         if val is not None:

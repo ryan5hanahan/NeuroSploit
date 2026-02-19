@@ -8,7 +8,7 @@ import {
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import { SeverityBadge } from '../components/common/Badge'
-import { scansApi, reportsApi, agentTasksApi, agentApi, vulnerabilitiesApi } from '../services/api'
+import { scansApi, reportsApi, agentTasksApi, agentApi, vulnerabilitiesApi, enrichmentApi } from '../services/api'
 import { wsService } from '../services/websocket'
 import { useScanStore } from '../store'
 import type { Endpoint, Vulnerability, WSMessage, ScanAgentTask, Report, AgentStatus, AgentFinding } from '../types'
@@ -271,6 +271,19 @@ export default function ScanDetailsPage() {
           addVulnerability(message.vulnerability as Vulnerability)
           addLog('warning', `Found: ${(message.vulnerability as Vulnerability).title}`)
           break
+        case 'vuln_enriched': {
+          const enrichedId = message.vulnerability_id as string
+          const currentVulns = useScanStore.getState().vulnerabilities
+          setVulnerabilities(currentVulns.map(v =>
+            v.id === enrichedId ? {
+              ...v,
+              cve_ids: (message.cve_ids as string[]) || [],
+              known_exploits: (message.known_exploits as Vulnerability['known_exploits']) || [],
+              enrichment_status: (message.enrichment_status as Vulnerability['enrichment_status']) || 'complete',
+            } : v
+          ))
+          break
+        }
         case 'stats_update':
           // Real-time stats update from backend
           if (message.stats) {
@@ -930,6 +943,22 @@ export default function ScanDetailsPage() {
                           AI Confirmed
                         </span>
                       )}
+                      {/* CVE & Exploit badges */}
+                      {vuln.cve_ids && vuln.cve_ids.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> {vuln.cve_ids.length} CVE{vuln.cve_ids.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {vuln.known_exploits && vuln.known_exploits.length > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" /> {vuln.known_exploits.length} Exploit{vuln.known_exploits.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {vuln.enrichment_status === 'in_progress' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse">
+                          Enriching…
+                        </span>
+                      )}
                       {/* Credential & Access Control badges */}
                       {(vuln as any).credential_label && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center gap-1">
@@ -1230,6 +1259,77 @@ export default function ScanDetailsPage() {
                         >
                           Undo
                         </Button>
+                      </div>
+                    )}
+
+                    {/* CVE & Exploit Intelligence */}
+                    {((vuln.cve_ids?.length ?? 0) > 0 || (vuln.known_exploits?.length ?? 0) > 0 || vuln.enrichment_status === 'pending') && (
+                      <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium text-cyan-400 flex items-center gap-1.5">
+                            <Shield className="w-4 h-4" /> CVE & Exploit Intelligence
+                          </p>
+                          {vuln.enrichment_status === 'pending' && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation()
+                                try {
+                                  await enrichmentApi.enrich(vuln.id)
+                                } catch {}
+                              }}
+                              className="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                            >
+                              Enrich Now
+                            </button>
+                          )}
+                          {vuln.enrichment_status === 'in_progress' && (
+                            <span className="text-xs text-blue-400 animate-pulse">Enriching…</span>
+                          )}
+                          {vuln.enriched_at && (
+                            <span className="text-xs text-dark-400">
+                              Enriched {new Date(vuln.enriched_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                        {vuln.cve_ids && vuln.cve_ids.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-xs text-dark-400 mb-1">Matched CVEs</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {vuln.cve_ids.map((cve) => (
+                                <a
+                                  key={cve}
+                                  href={`https://nvd.nist.gov/vuln/detail/${cve}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition-colors flex items-center gap-1"
+                                >
+                                  {cve} <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {vuln.known_exploits && vuln.known_exploits.length > 0 && (
+                          <div>
+                            <p className="text-xs text-dark-400 mb-1">Known Exploits</p>
+                            <div className="space-y-1">
+                              {vuln.known_exploits.map((exploit) => (
+                                <a
+                                  key={exploit.edb_id}
+                                  href={`https://www.exploit-db.com/exploits/${exploit.edb_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-xs text-red-400 hover:text-red-300 transition-colors"
+                                >
+                                  <span className="font-mono bg-red-500/15 px-1.5 py-0.5 rounded">EDB-{exploit.edb_id}</span>
+                                  <span className="text-dark-300 truncate">{exploit.title}</span>
+                                  <span className="text-dark-500">{exploit.platform}</span>
+                                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

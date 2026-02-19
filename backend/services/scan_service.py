@@ -35,6 +35,8 @@ from backend.core.ai_prompt_processor import TestingPlan
 from backend.core.llm_agent import LLMDrivenAgent
 from backend.core import scan_registry
 from backend.core.governance_facade import create_governance
+from backend.services.vuln_enrichment_utils import backfill_vulnerability_metadata
+from backend.services.vuln_enrichment import VulnEnrichmentService
 
 
 # Phase control: signaling between API and running background tasks
@@ -509,8 +511,10 @@ class ScanService:
                                     poc_request=str(vuln.get("request", {}))[:5000],
                                     poc_response=str(vuln.get("response", {}))[:5000]
                                 )
+                                backfill_vulnerability_metadata(db_vuln)
                                 self.db.add(db_vuln)
                                 await self.db.flush()  # Ensure ID is assigned
+                                await VulnEnrichmentService.get_instance().enqueue(db_vuln.id, scan_id)
                                 vulns_discovered += 1
 
                                 # Increment vulnerability count
@@ -706,8 +710,10 @@ class ScanService:
                                     remediation=finding.get("remediation", ""),
                                     ai_analysis=finding.get("evidence", "")
                                 )
+                                backfill_vulnerability_metadata(vuln)
                                 self.db.add(vuln)
                                 await self.db.flush()
+                                await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan_id)
                                 findings_count += 1
 
                                 await self._increment_vulnerability_count(scan, finding_severity)
@@ -777,8 +783,10 @@ class ScanService:
                                     if finding.ai_status == "rejected":
                                         continue
                                     vuln = _map_aa_finding_to_vulnerability(finding, scan_id)
+                                    backfill_vulnerability_metadata(vuln)
                                     self.db.add(vuln)
                                     await self.db.flush()
+                                    await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan_id)
                                     findings_count += 1
 
                                     await self._increment_vulnerability_count(scan, finding.severity)
@@ -1117,8 +1125,10 @@ Be thorough and test all discovered endpoints aggressively.
                                     remediation=ai_analysis.get("remediation", ""),
                                     ai_analysis=ai_analysis.get("exploitation_path", "")
                                 )
+                                backfill_vulnerability_metadata(vuln)
                                 self.db.add(vuln)
                                 await self.db.flush()  # Ensure ID is assigned
+                                await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan.id)
 
                                 # Increment vulnerability count
                                 await self._increment_vulnerability_count(scan, vuln_severity)

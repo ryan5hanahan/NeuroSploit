@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.db.database import init_db, close_db
-from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance, agent_v2
+from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance, agent_v2, enrichment
 from backend.api.websocket import manager as ws_manager
 
 
@@ -60,9 +60,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Sandbox pool init skipped: {e}")
 
+    # Start vulnerability enrichment worker
+    try:
+        from backend.services.vuln_enrichment import VulnEnrichmentService
+        enrichment_svc = VulnEnrichmentService.get_instance()
+        await enrichment_svc.start()
+        print("Vulnerability enrichment worker started")
+    except Exception as e:
+        print(f"Vulnerability enrichment worker skipped: {e}")
+
     yield
 
     # Shutdown
+    # Stop enrichment worker
+    try:
+        from backend.services.vuln_enrichment import VulnEnrichmentService
+        await VulnEnrichmentService.get_instance().stop()
+    except Exception:
+        pass
     # Destroy all per-scan sandbox containers
     try:
         from core.container_pool import get_pool
@@ -115,6 +130,7 @@ app.include_router(memory.router, prefix="/api/v1/memory", tags=["Persistent Mem
 app.include_router(traces.router, prefix="/api/v1/traces", tags=["Traces"])
 app.include_router(governance.router, prefix="/api/v1/governance", tags=["Governance"])
 app.include_router(agent_v2.router, prefix="/api/v2/agent", tags=["LLM-Driven Agent"])
+app.include_router(enrichment.router, prefix="/api/v1/enrichment", tags=["Enrichment"])
 
 
 @app.get("/api/health")
