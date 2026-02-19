@@ -15,7 +15,8 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.llm_manager import LLMManager
+from backend.core.llm import UnifiedLLMClient, LLMConnectionError
+from backend.core.autonomous_agent import AutonomousAgent
 from core.sandbox_manager import get_sandbox
 
 router = APIRouter()
@@ -382,9 +383,11 @@ async def send_message(session_id: str, req: MessageRequest):
 
     # Call LLM
     try:
-        llm = LLMManager()
+        llm = UnifiedLLMClient(AutonomousAgent._load_config())
         prompt = f"{context}\n\nUser: {user_message}"
-        response = await llm.generate(prompt, system_prompt)
+        response = await llm.generate(prompt, system=system_prompt, task_type="custom_prompt")
+    except LLMConnectionError as exc:
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
 
