@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Target, Globe, BookOpen, ChevronDown, ChevronUp, Shield,
-  Settings2, Sliders,
+  Sliders,
 } from 'lucide-react'
 import Button from '../common/Button'
 import Input from '../common/Input'

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Search, ArrowUpDown } from 'lucide-react'
 
 const STATUS_FILTERS = [

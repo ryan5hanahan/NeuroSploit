@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ChevronRight, RefreshCw, StopCircle, CheckCircle, XCircle,
   DollarSign, AlertTriangle, Clock, Footprints, ExternalLink,
-  Pause, Play, Square, Shield,
+  Pause, Play, Square,
 } from 'lucide-react'
 import Button from '../common/Button'
 import MiniLogViewer from './MiniLogViewer'

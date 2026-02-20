@@ -28,23 +28,14 @@ export default function MiniLogViewer({ operationId, maxLines = 20 }: Props) {
   const logLines = steps
     .filter((s) => s.operation_id === operationId || !s.operation_id)
     .slice(-50)
-    .flatMap((step) => {
-      const lines: { level: string; text: string; time?: string }[] = []
-      if (step.reasoning_text) {
-        lines.push({ level: 'reasoning', text: step.reasoning_text, time: step.timestamp })
+    .map((step) => {
+      if (step.is_error) {
+        return { level: 'error', text: `Step ${step.step}: ${step.tool} failed (${step.duration_ms}ms)` }
       }
-      if (step.tool_calls?.length) {
-        step.tool_calls.forEach((tc: any) => {
-          lines.push({ level: 'tool', text: `${tc.tool}(${JSON.stringify(tc.args || {}).slice(0, 120)})`, time: step.timestamp })
-        })
+      if (step.findings_count > 0) {
+        return { level: 'finding', text: `Step ${step.step}: ${step.tool} — ${step.findings_count} finding(s) (${step.duration_ms}ms)` }
       }
-      if (step.findings_count_after > (step.findings_count_before ?? 0)) {
-        lines.push({ level: 'finding', text: `+${step.findings_count_after - (step.findings_count_before ?? 0)} finding(s)`, time: step.timestamp })
-      }
-      if (step.error) {
-        lines.push({ level: 'error', text: step.error, time: step.timestamp })
-      }
-      return lines
+      return { level: 'tool', text: `Step ${step.step}: ${step.tool} (${step.duration_ms}ms)` }
     })
 
   const filtered = levelFilter === 'all'
