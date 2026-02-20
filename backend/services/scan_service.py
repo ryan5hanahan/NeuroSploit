@@ -278,13 +278,35 @@ class ScanService:
 
             await ws_manager.broadcast_log(scan_id, "info", f"Targets: {', '.join([t.url for t in targets])}")
 
+            # Map scan type to governance scope profile and task category
+            _SCAN_TYPE_SCOPE = {
+                "recon": "recon_only",
+                "recon_only": "recon_only",
+                "full_auto": "full_auto",
+                "full": "full_auto",
+                "vuln_lab": "vuln_lab",
+                "ctf": "ctf",
+            }
+            _SCAN_TYPE_TASK = {
+                "recon": "recon",
+                "recon_only": "recon",
+                "full_auto": "full_auto",
+                "full": "full_auto",
+                "vuln_lab": "vulnerability",
+                "ctf": "full_auto",
+            }
+            scan_type_str = getattr(scan, "scan_type", "full_auto") or "full_auto"
+            scope_profile = _SCAN_TYPE_SCOPE.get(scan_type_str, "full_auto")
+            task_category = _SCAN_TYPE_TASK.get(scan_type_str, "full_auto")
+
             # Create governance facade for phase tracking
             primary_target = targets[0].url if targets else ""
             governance = create_governance(
                 scan_id=scan_id,
                 target_url=primary_target,
-                scope_profile="full_auto",
-                governance_mode="warn",
+                scope_profile=scope_profile,
+                governance_mode="strict" if scope_profile == "recon_only" else "warn",
+                task_category=task_category,
                 scan_config=scan.config if hasattr(scan, "config") and scan.config else None,
             )
             governance.set_phase("initializing")

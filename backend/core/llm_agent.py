@@ -439,6 +439,9 @@ class LLMDrivenAgent:
             if self.bugbounty_context and hasattr(self.bugbounty_context, "testing_instructions"):
                 bugbounty_instructions = self.bugbounty_context.testing_instructions
 
+            # Build governance context for prompt injection
+            governance_context = self._build_governance_context()
+
             # Compose fresh system prompt with current state
             system_prompt = compose_agent_system_prompt(
                 target=self.target,
@@ -452,6 +455,7 @@ class LLMDrivenAgent:
                 additional_targets=self.additional_targets,
                 subdomain_discovery=self.subdomain_discovery,
                 bugbounty_instructions=bugbounty_instructions,
+                governance_context=governance_context,
             )
 
             # Snapshot findings count before this step (for decision records)
@@ -881,6 +885,43 @@ class LLMDrivenAgent:
 
         # Also delegate to the built-in handler for artifact persistence
         return await handle_update_plan(args, context)
+
+    # ------------------------------------------------------------------
+    # Governance context for prompt injection
+    # ------------------------------------------------------------------
+
+    def _build_governance_context(self) -> Optional[Dict[str, Any]]:
+        """Build governance context dict for system prompt injection.
+
+        Returns None if no governance restrictions apply (full_auto).
+        """
+        gov = self.executor.governance
+        if not gov:
+            return None
+
+        # Extract scope profile
+        scope_profile = "full_auto"
+        allowed_phases = []
+        governance_mode = "off"
+
+        if hasattr(gov, 'scope'):
+            scope = gov.scope
+            scope_profile = scope.profile.value if hasattr(scope.profile, 'value') else str(scope.profile)
+            if scope.allowed_phases:
+                allowed_phases = sorted(scope.allowed_phases)
+
+        if hasattr(gov, 'governance_mode'):
+            governance_mode = gov.governance_mode
+
+        # Only inject governance section for restricted scopes
+        if scope_profile == "full_auto" and governance_mode != "strict":
+            return None
+
+        return {
+            "scope_profile": scope_profile,
+            "governance_mode": governance_mode,
+            "allowed_phases": allowed_phases,
+        }
 
     # ------------------------------------------------------------------
     # Event emission

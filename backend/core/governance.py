@@ -84,7 +84,7 @@ class ScanScope:
     """Immutable scope definition — once created, cannot be altered by agent code."""
     profile: ScopeProfile
     allowed_domains: FrozenSet[str]
-    allowed_vuln_types: FrozenSet[str]   # Empty = all allowed
+    allowed_vuln_types: Optional[FrozenSet[str]]  # None = all allowed, empty = NONE allowed
     allowed_phases: FrozenSet[str]       # Empty = all allowed
     skip_subdomain_enum: bool = False
     skip_port_scan: bool = False
@@ -140,9 +140,21 @@ class GovernanceAgent:
         """Whitelist filter on vulnerability type list.
 
         Called at _test_all_vulnerabilities() as the critical backstop.
+
+        None  → no restriction (all types allowed)
+        empty → NOTHING allowed (recon_only scope)
+        non-empty → only listed types allowed
         """
+        # None means "no restriction" (backward compat / full_auto)
+        if self.scope.allowed_vuln_types is None:
+            return vuln_types
+
+        # Empty frozenset means NOTHING is allowed (recon_only)
         if not self.scope.allowed_vuln_types:
-            return vuln_types  # No restriction
+            self._record("filter_vuln_types",
+                         f"Blocked ALL {len(vuln_types)} types "
+                         f"(scope has no allowed vuln types)")
+            return []
 
         original_count = len(vuln_types)
         filtered = [vt for vt in vuln_types if vt in self.scope.allowed_vuln_types]
@@ -161,7 +173,19 @@ class GovernanceAgent:
         Ensures the allowed types are always present in the plan even if
         the AI omitted them.
         """
+        # None = no restriction
+        if self.scope.allowed_vuln_types is None:
+            return plan
+
+        # Empty = nothing allowed (recon_only) — strip all vuln types
         if not self.scope.allowed_vuln_types:
+            plan = dict(plan)
+            original = plan.get("priority_vulns", [])
+            if original:
+                self._record("scope_attack_plan",
+                             f"Blocked ALL {len(original)} priority vulns "
+                             f"(scope has no allowed vuln types)")
+            plan["priority_vulns"] = []
             return plan
 
         original = plan.get("priority_vulns", [])
@@ -186,8 +210,18 @@ class GovernanceAgent:
 
         Called in _ai_analyze_attack_surface() before sending to LLM.
         """
-        if not self.scope.allowed_vuln_types:
+        # None = no restriction
+        if self.scope.allowed_vuln_types is None:
             return prompt
+
+        # Empty = nothing allowed (recon_only)
+        if not self.scope.allowed_vuln_types:
+            constraint = (
+                "\n\n## SCOPE CONSTRAINT (MANDATORY)\n"
+                "This is a RECON-ONLY scan. NO vulnerability testing is permitted.\n"
+                "Your priority_vulns list MUST be EMPTY. Do NOT include any vulnerability types."
+            )
+            return prompt + constraint
 
         types_str = ", ".join(sorted(self.scope.allowed_vuln_types))
         constraint = (
@@ -286,7 +320,7 @@ class GovernanceAgent:
         """Summary dict for inclusion in the final report."""
         return {
             "scope_profile": self.scope.profile.value,
-            "allowed_vuln_types": sorted(self.scope.allowed_vuln_types) if self.scope.allowed_vuln_types else "all",
+            "allowed_vuln_types": sorted(self.scope.allowed_vuln_types) if self.scope.allowed_vuln_types else ("all" if self.scope.allowed_vuln_types is None else "none"),
             "allowed_domains": sorted(self.scope.allowed_domains) if self.scope.allowed_domains else "all",
             "skip_subdomain_enum": self.scope.skip_subdomain_enum,
             "skip_port_scan": self.scope.skip_port_scan,
@@ -373,7 +407,7 @@ def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
     return ScanScope(
         profile=ScopeProfile.FULL_AUTO,
         allowed_domains=frozenset(all_domains),
-        allowed_vuln_types=frozenset(),  # all allowed
+        allowed_vuln_types=None,         # None = all allowed
         allowed_phases=frozenset(),      # all allowed
         skip_subdomain_enum=any_explicit_port,
         skip_port_scan=any_explicit_port,
@@ -391,7 +425,7 @@ def create_ctf_scope(target_url: "str | list[str]") -> ScanScope:
     return ScanScope(
         profile=ScopeProfile.CTF,
         allowed_domains=frozenset(all_domains),
-        allowed_vuln_types=frozenset(),   # empty = ALL types allowed
+        allowed_vuln_types=None,          # None = ALL types allowed
         allowed_phases=frozenset(),       # all phases allowed
         skip_subdomain_enum=True,
         skip_port_scan=True,

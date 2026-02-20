@@ -206,19 +206,23 @@ class TestGovernanceGatePolicy:
 
     def test_testing_allows_vuln_scan(self):
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
-        gate.set_phase("testing")
+        gate.set_phase("recon")      # initializing → recon (valid)
+        gate.set_phase("testing")    # recon → testing (valid)
         decision = gate.check("nuclei")  # vulnerability_scan
         assert decision.allowed is True
 
     def test_testing_blocks_exploitation(self):
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
-        gate.set_phase("testing")
+        gate.set_phase("recon")      # initializing → recon (valid)
+        gate.set_phase("testing")    # recon → testing (valid)
         decision = gate.check("sqlmap")  # exploitation
         assert decision.allowed is False
 
     def test_exploitation_allows_exploitation(self):
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
-        gate.set_phase("exploitation")
+        gate.set_phase("recon")      # initializing → recon (valid)
+        gate.set_phase("analyzing")  # recon → analyzing (valid)
+        gate.set_phase("exploitation")  # analyzing → exploitation (valid)
         decision = gate.check("sqlmap")
         assert decision.allowed is True
 
@@ -290,7 +294,8 @@ class TestGovernanceGateCeiling:
 
     def test_ceiling_clamps_phase(self):
         gate = GovernanceGate(scan_id="t1", governance_mode="strict", phase_ceiling="testing")
-        gate.set_phase("exploitation")  # above ceiling
+        gate.set_phase("recon")         # initializing → recon (valid)
+        gate.set_phase("exploitation")  # ceiling clamps to testing; recon → testing (valid)
         assert gate.current_phase == "testing"  # clamped
 
     def test_ceiling_allows_lower_phase(self):
@@ -300,7 +305,9 @@ class TestGovernanceGateCeiling:
 
     def test_no_ceiling_allows_any_phase(self):
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
-        gate.set_phase("exploitation")
+        gate.set_phase("recon")         # initializing → recon (valid)
+        gate.set_phase("analyzing")     # recon → analyzing (valid)
+        gate.set_phase("exploitation")  # analyzing → exploitation (valid)
         assert gate.current_phase == "exploitation"
 
 
