@@ -441,7 +441,11 @@ export default function SettingsPage() {
     setPreviousResult(null)
 
     try {
-      const response = await fetch('/api/v1/settings/test-llm', { method: 'POST' })
+      const response = await fetch('/api/v1/settings/test-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: llmProvider, model: llmModel || undefined }),
+      })
       const data: LlmTestResponse = await response.json()
       setTestResult(data.current)
       setPreviousResult(data.previous)

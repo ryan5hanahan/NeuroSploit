@@ -7,7 +7,7 @@ import re
 import time
 from pathlib import Path
 from typing import Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, text
 from pydantic import BaseModel
@@ -252,6 +252,7 @@ def _load_settings_from_env() -> dict:
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
         "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
         "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
+        "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
         "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID", ""),
         "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
         "aws_session_token": os.getenv("AWS_SESSION_TOKEN", ""),
@@ -599,10 +600,13 @@ async def update_settings(settings_data: SettingsUpdate):
 # Provider name mapping: settings UI name -> LLMManager provider name
 _PROVIDER_MAP = {
     "claude": "claude",
+    "anthropic": "claude",
     "openai": "gpt",
     "openrouter": "openrouter",
     "ollama": "ollama",
     "bedrock": "bedrock",
+    "gemini": "gemini",
+    "lmstudio": "lmstudio",
 }
 
 # Default models per provider (used when no model is configured)
@@ -612,13 +616,17 @@ _DEFAULT_MODELS = {
     "openrouter": "anthropic/claude-sonnet-4-6",
     "ollama": "llama3.2",
     "bedrock": "us.anthropic.claude-sonnet-4-6-v1:0",
+    "gemini": "gemini-2.0-flash",
+    "lmstudio": "default",
 }
 
 # Which env var holds the API key for each settings provider
 _API_KEY_ENV = {
     "claude": "ANTHROPIC_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "gemini": "GEMINI_API_KEY",
 }
 
 
@@ -644,9 +652,27 @@ async def _save_and_return(db: AsyncSession, result_data: dict) -> dict:
 
 
 @router.post("/test-llm")
-async def test_llm_connection(db: AsyncSession = Depends(get_db)):
-    """Test the current LLM configuration by sending a simple prompt."""
-    provider_ui = _settings.get("llm_provider", "claude")
+async def test_llm_connection(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Test LLM provider connectivity.
+
+    Accepts optional JSON body ``{"provider": "...", "model": "..."}`` so the
+    frontend can test the *currently-selected* provider/model even before saving.
+    Falls back to saved settings when no body is provided.
+    """
+    # Parse optional body overrides
+    body_provider: str | None = None
+    body_model: str | None = None
+    try:
+        body = await request.json()
+        body_provider = body.get("provider")
+        body_model = body.get("model")
+    except Exception:
+        pass  # No body or invalid JSON — use saved settings
+
+    provider_ui = body_provider or _settings.get("llm_provider", "claude")
     llm_provider = _PROVIDER_MAP.get(provider_ui, provider_ui)
     default_model = _DEFAULT_MODELS.get(llm_provider, "")
 
@@ -656,8 +682,10 @@ async def test_llm_connection(db: AsyncSession = Depends(get_db)):
         env_var = _API_KEY_ENV[provider_ui]
         key_map = {
             "claude": "anthropic_api_key",
+            "anthropic": "anthropic_api_key",
             "openai": "openai_api_key",
             "openrouter": "openrouter_api_key",
+            "gemini": "gemini_api_key",
         }
         api_key = _settings.get(key_map.get(provider_ui, ""), "") or os.getenv(env_var, "")
         if not api_key:
@@ -686,8 +714,8 @@ async def test_llm_connection(db: AsyncSession = Depends(get_db)):
                 "error": "No AWS credentials configured. Set AWS_ACCESS_KEY_ID or AWS_PROFILE.",
             })
 
-    # Build model name: llm_model takes precedence, then provider-specific fallbacks
-    model = _settings.get("llm_model") or ""
+    # Build model name: body override > llm_model setting > provider default
+    model = body_model or _settings.get("llm_model") or ""
     if not model:
         if provider_ui == "bedrock":
             model = _settings.get("aws_bedrock_model") or os.getenv("AWS_BEDROCK_MODEL", "") or default_model
