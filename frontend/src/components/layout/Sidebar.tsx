@@ -6,7 +6,6 @@ import {
   FileText,
   Settings,
   Activity,
-  Shield,
   Zap,
   Clock,
   FlaskConical,
@@ -17,6 +16,8 @@ import {
   Bug,
   ShieldCheck,
 } from 'lucide-react'
+import { useThemeStore, type Theme } from '../../store/theme'
+import SploitLogo from './SploitLogo'
 
 const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
@@ -35,21 +36,22 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]
 
+const themes: { id: Theme; label: string; color: string }[] = [
+  { id: 'midnight', label: 'Midnight', color: 'bg-[#e94560]' },
+  { id: 'cyber', label: 'Cyber', color: 'bg-[#00D1FF]' },
+  { id: 'terminal', label: 'Terminal', color: 'bg-[#00FF88]' },
+]
+
 export default function Sidebar() {
   const location = useLocation()
+  const { theme, setTheme } = useThemeStore()
 
   return (
     <aside className="w-64 bg-dark-800 border-r border-dark-900/50 flex flex-col">
       {/* Logo */}
-      <div className="p-6 border-b border-dark-900/50">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
-            <Shield className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-white">sploit.ai</h1>
-            <p className="text-xs text-dark-400">v3.0 AI Pentest</p>
-          </div>
+      <div className="px-5 py-4 border-b border-dark-900/50">
+        <Link to="/">
+          <SploitLogo className="h-10 w-auto" />
         </Link>
       </div>
 
@@ -80,11 +82,27 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* Status */}
+      {/* Status + Theme */}
       <div className="p-4 border-t border-dark-900/50">
-        <div className="flex items-center gap-2 text-sm">
-          <Activity className="w-4 h-4 text-green-500" />
-          <span className="text-dark-400">System Online</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <Activity className="w-4 h-4 text-green-500" />
+            <span className="text-dark-400">System Online</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {themes.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTheme(t.id)}
+                title={t.label}
+                className={`w-3.5 h-3.5 rounded-full ${t.color} transition-all ${
+                  theme === t.id
+                    ? 'ring-2 ring-white/60 ring-offset-1 ring-offset-dark-800 scale-110'
+                    : 'opacity-50 hover:opacity-80'
+                }`}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </aside>

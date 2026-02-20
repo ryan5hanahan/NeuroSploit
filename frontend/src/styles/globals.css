@@ -2,7 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Midnight Theme (default) ─────────────────────────────── */
 :root {
+  --primary-50: 254 242 242;
+  --primary-100: 254 226 226;
+  --primary-200: 254 202 202;
+  --primary-300: 252 165 165;
+  --primary-400: 248 113 113;
+  --primary-500: 233 69 96;
+  --primary-600: 220 38 38;
+  --primary-700: 185 28 28;
+  --primary-800: 153 27 27;
+  --primary-900: 127 29 29;
+
+  --dark-50: 248 250 252;
+  --dark-100: 241 245 249;
+  --dark-200: 226 232 240;
+  --dark-300: 203 213 225;
+  --dark-400: 148 163 184;
+  --dark-500: 100 116 139;
+  --dark-600: 71 85 105;
+  --dark-700: 26 26 46;
+  --dark-800: 22 33 62;
+  --dark-900: 15 52 96;
+  --dark-950: 10 10 21;
+
   --bg-primary: #1a1a2e;
   --bg-secondary: #16213e;
   --bg-card: #0f3460;
@@ -10,6 +34,74 @@
   --text-secondary: #aaa;
   --accent: #e94560;
   --border: #333;
+}
+
+/* ── Cyber Theme ──────────────────────────────────────────── */
+[data-theme="cyber"] {
+  --primary-50: 230 248 255;
+  --primary-100: 204 241 255;
+  --primary-200: 153 228 255;
+  --primary-300: 102 215 255;
+  --primary-400: 51 218 255;
+  --primary-500: 0 209 255;
+  --primary-600: 0 168 204;
+  --primary-700: 0 126 153;
+  --primary-800: 0 84 102;
+  --primary-900: 0 42 51;
+
+  --dark-50: 248 250 252;
+  --dark-100: 241 245 249;
+  --dark-200: 230 237 243;
+  --dark-300: 201 213 227;
+  --dark-400: 139 155 175;
+  --dark-500: 110 125 148;
+  --dark-600: 72 85 106;
+  --dark-700: 13 17 23;
+  --dark-800: 11 15 20;
+  --dark-900: 22 27 34;
+  --dark-950: 1 4 9;
+
+  --bg-primary: #0d1117;
+  --bg-secondary: #0B0F14;
+  --bg-card: #161b22;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b9bb0;
+  --accent: #00D1FF;
+  --border: #30363d;
+}
+
+/* ── Terminal Theme ───────────────────────────────────────── */
+[data-theme="terminal"] {
+  --primary-50: 230 255 243;
+  --primary-100: 204 255 230;
+  --primary-200: 153 255 204;
+  --primary-300: 102 255 179;
+  --primary-400: 51 255 159;
+  --primary-500: 0 255 136;
+  --primary-600: 0 204 110;
+  --primary-700: 0 153 82;
+  --primary-800: 0 102 55;
+  --primary-900: 0 51 27;
+
+  --dark-50: 245 245 245;
+  --dark-100: 235 235 235;
+  --dark-200: 200 200 200;
+  --dark-300: 170 170 170;
+  --dark-400: 120 120 120;
+  --dark-500: 80 80 80;
+  --dark-600: 50 50 50;
+  --dark-700: 15 15 15;
+  --dark-800: 8 8 8;
+  --dark-900: 18 18 18;
+  --dark-950: 0 0 0;
+
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #080808;
+  --bg-card: #121212;
+  --text-primary: #e0e0e0;
+  --text-secondary: #787878;
+  --accent: #00FF88;
+  --border: #2a2a2a;
 }
 
 body {
