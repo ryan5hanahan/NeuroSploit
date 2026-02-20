@@ -477,12 +477,12 @@ class LLMDrivenAgent:
 
             # Truncate large tool results to bound per-message token usage
             for r in results:
-                if r.content and len(r.content) > 8000:
+                if r.content and len(r.content) > 5000:
                     original_len = len(r.content)
                     r.content = (
-                        r.content[:3500]
-                        + f"\n\n[... truncated {original_len - 7000} chars ...]\n\n"
-                        + r.content[-3500:]
+                        r.content[:2000]
+                        + f"\n\n[... truncated {original_len - 4000} chars ...]\n\n"
+                        + r.content[-2000:]
                     )
 
             # Feed results back to conversation
@@ -611,8 +611,18 @@ class LLMDrivenAgent:
         task_type = self._resolve_step_task_type()
         options = self.llm.router.resolve(task_type, self.llm._active_provider_name)
 
+        # Resolve tier for per-tier logic below
+        tier = self.llm.router.get_tier(task_type)
+
+        # Enable prompt caching for Claude on non-fast tiers (90% discount on cached prefix)
+        provider_name = self.llm._active_provider_name or "anthropic"
+        if provider_name in ("anthropic", "bedrock") and tier != ModelTier.FAST:
+            options.cache_system_prompt = True
+
         # Override max_tokens — tier default may be too small for tool-use steps
-        options.max_tokens = max(options.max_tokens, 8192)
+        # Only for BALANCED/DEEP; FAST tier stays at configured 1024 to keep responses short
+        if tier != ModelTier.FAST:
+            options.max_tokens = max(options.max_tokens, 8192)
 
         if provider.supports_tools():
             native_tools = ToolAdapter.for_provider(provider.name, tools)
@@ -632,7 +642,6 @@ class LLMDrivenAgent:
         elapsed_ms = (time.monotonic() - start) * 1000
 
         # Track cost under the resolved task type and tier
-        tier = self.llm.router.get_tier(task_type)
         self.llm.cost_tracker.record(response, task_type, tier, elapsed_ms)
 
         # Handle fallback tool parsing for non-native providers

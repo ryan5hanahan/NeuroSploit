@@ -37,7 +37,7 @@ TASK_TIER_MAP: Dict[str, ModelTier] = {
     "agent_plan": ModelTier.DEEP,             # Initial planning (one-time, no plan yet)
     "agent_step_recon": ModelTier.FAST,       # Discovery phase — recon tool dispatch
     "agent_step": ModelTier.BALANCED,         # Hypothesis phase — standard testing
-    "agent_step_analysis": ModelTier.DEEP,    # Validation/Reporting — finding confirmation
+    "agent_step_analysis": ModelTier.BALANCED, # Validation/Reporting — Sonnet handles confirmation fine
     "agent_summary": ModelTier.DEEP,          # Final summary before budget exhaustion
 }
 
@@ -72,7 +72,7 @@ DEFAULT_TIER_CONFIG: Dict[str, Dict[str, Any]] = {
         "temperature": 0.7,
         "max_tokens": 8192,
         "extended_thinking": True,
-        "thinking_budget_tokens": 16000,
+        "thinking_budget_tokens": 10000,
         "models": {
             "anthropic": "claude-opus-4-6",
             "openai": "gpt-4o",
