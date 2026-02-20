@@ -1681,11 +1681,11 @@ class TestExecutionContextProperties:
 class TestToolSchemas:
     """Tests validating the tool schema definitions."""
 
-    def test_all_16_tools_defined(self):
-        """get_agent_tools returns exactly 16 tools."""
+    def test_all_18_tools_defined(self):
+        """get_agent_tools returns exactly 18 tools."""
         from backend.core.llm_agent_tools import get_agent_tools
         tools = get_agent_tools()
-        assert len(tools) == 16
+        assert len(tools) == 18
 
     def test_all_tools_have_required_fields(self):
         """Every tool has name, description, and inputSchema."""
@@ -1716,7 +1716,8 @@ class TestToolSchemas:
             "memory_store", "memory_search",
             "save_artifact", "report_finding",
             "update_plan", "get_payloads",
-            "get_vuln_info", "stop",
+            "get_vuln_info", "spawn_subagent",
+            "create_tool", "stop",
         }
         assert names == expected
 
@@ -1738,6 +1739,8 @@ class TestToolSchemas:
             "update_plan": ["current_phase", "next_steps", "confidence"],
             "get_payloads": ["vuln_type"],
             "get_vuln_info": ["vuln_type"],
+            "spawn_subagent": ["objective"],
+            "create_tool": ["tool_name", "description", "code"],
             "stop": ["reason", "summary"],
         }
         tool_map = {t["name"]: t for t in tools}

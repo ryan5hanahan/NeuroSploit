@@ -577,6 +577,77 @@ GET_VULN_INFO = {
     },
 }
 
+SPAWN_SUBAGENT = {
+    "name": "spawn_subagent",
+    "description": (
+        "Spawn a lightweight sub-agent to perform a focused recon task in parallel. "
+        "The sub-agent runs on the FAST tier with a limited tool set "
+        "(shell_execute, http_request, browser_navigate, memory_store, save_artifact). "
+        "Results are stored in shared memory and returned as text. "
+        "Use this to parallelize independent discovery tasks like port scanning "
+        "different targets, checking multiple endpoints, or running multiple tools. "
+        "Max 3 concurrent sub-agents. Each step deducts from your budget."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "objective": {
+                "type": "string",
+                "description": (
+                    "Clear, specific objective for the sub-agent "
+                    "(e.g., 'Enumerate subdomains of target.com using subfinder')"
+                ),
+            },
+            "max_steps": {
+                "type": "integer",
+                "description": "Max steps for the sub-agent (default 15, max 15)",
+                "default": 15,
+            },
+        },
+        "required": ["objective"],
+    },
+}
+
+CREATE_TOOL = {
+    "name": "create_tool",
+    "description": (
+        "Create a custom tool at runtime by providing Python code. "
+        "The code must define `async def handler(args: dict, context) -> str`. "
+        "Only safe imports are allowed (json, re, base64, urllib, hashlib, html, "
+        "math, collections, itertools, string, binascii, hmac). "
+        "System imports (os, subprocess, sys, etc.) and dangerous builtins "
+        "(eval, exec, open, __import__) are blocked. "
+        "Use this when you need a specialized helper that isn't covered by "
+        "existing tools — e.g., a custom decoder, protocol parser, or data transformer."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "tool_name": {
+                "type": "string",
+                "description": "Name for the new tool (must be a valid Python identifier, not a reserved name)",
+            },
+            "description": {
+                "type": "string",
+                "description": "Description of what the tool does",
+            },
+            "code": {
+                "type": "string",
+                "description": (
+                    "Python source code defining `async def handler(args: dict, context) -> str`. "
+                    "Must return a string result."
+                ),
+            },
+            "parameters": {
+                "type": "object",
+                "description": "JSON Schema properties for the tool's input parameters",
+                "additionalProperties": True,
+            },
+        },
+        "required": ["tool_name", "description", "code"],
+    },
+}
+
 STOP = {
     "name": "stop",
     "description": (
@@ -604,7 +675,7 @@ STOP = {
 
 
 def get_agent_tools() -> List[Dict[str, Any]]:
-    """Return all tool definitions for the LLM-driven agent."""
+    """Return all tool definitions for the LLM-driven agent (18 tools)."""
     return [
         SHELL_EXECUTE,
         HTTP_REQUEST,
@@ -621,5 +692,7 @@ def get_agent_tools() -> List[Dict[str, Any]]:
         UPDATE_PLAN,
         GET_PAYLOADS,
         GET_VULN_INFO,
+        SPAWN_SUBAGENT,
+        CREATE_TOOL,
         STOP,
     ]
