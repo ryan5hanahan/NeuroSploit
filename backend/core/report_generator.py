@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Professional HTML Report Generator
+sploit.ai - Professional HTML Report Generator
 Generates beautiful, comprehensive security assessment reports
 """
 
@@ -15,7 +15,7 @@ import html
 @dataclass
 class ReportConfig:
     """Report generation configuration"""
-    company_name: str = "NeuroSploit Security"
+    company_name: str = "sploit.ai Security"
     logo_base64: Optional[str] = None
     include_executive_summary: bool = True
     include_methodology: bool = True
@@ -618,7 +618,7 @@ class HTMLReportGenerator:
                 </div>
                 <div class="meta-item">
                     <span>🔬</span>
-                    <span>NeuroSploit AI Scanner</span>
+                    <span>sploit.ai AI Scanner</span>
                 </div>
             </div>
         </header>"""
@@ -1362,7 +1362,7 @@ class HTMLReportGenerator:
         """Generate report footer"""
         return f"""
         <footer class="report-footer">
-            <div class="logo">⚡ NeuroSploit</div>
+            <div class="logo">⚡ sploit.ai</div>
             <p>AI-Powered Security Assessment Platform</p>
             <p style="margin-top: 16px; font-size: 0.75rem;">
                 Report generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}

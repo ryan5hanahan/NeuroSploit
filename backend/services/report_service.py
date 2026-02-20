@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Report Service
+sploit.ai - Report Service
 
 Handles automatic report generation on scan completion/stop.
 """

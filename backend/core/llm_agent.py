@@ -89,7 +89,7 @@ class LLMDrivenAgent:
     4. Repeats until stop() called or budget exhausted
 
     This is the architectural equivalent of CAA's Strands-based agent,
-    but built on NeuroSploit's existing UnifiedLLMClient infrastructure.
+    but built on sploit.ai's existing UnifiedLLMClient infrastructure.
     """
 
     def __init__(

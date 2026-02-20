@@ -359,7 +359,7 @@ export default function RealtimeTaskPage() {
               ) : (
                 <Bot className="w-3 h-3" />
               )}
-              <span>{isToolExecution ? 'Tool Execution' : 'NeuroSploit AI'}</span>
+              <span>{isToolExecution ? 'Tool Execution' : 'sploit.ai AI'}</span>
               {isApiError && (
                 <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[10px]">
                   API Error

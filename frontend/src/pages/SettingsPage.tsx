@@ -1206,12 +1206,12 @@ export default function SettingsPage() {
       </Card>
 
       {/* About */}
-      <Card title="About NeuroSploit">
+      <Card title="About sploit.ai">
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <Shield className="w-8 h-8 text-primary-500" />
             <div>
-              <p className="font-bold text-white text-lg">NeuroSploit v3.0</p>
+              <p className="font-bold text-white text-lg">sploit.ai v3.0</p>
               <p className="text-sm text-dark-400">AI-Powered Penetration Testing Platform</p>
             </div>
           </div>

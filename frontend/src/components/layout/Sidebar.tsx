@@ -47,7 +47,7 @@ export default function Sidebar() {
             <Shield className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">NeuroSploit</h1>
+            <h1 className="text-lg font-bold text-white">sploit.ai</h1>
             <p className="text-xs text-dark-400">v3.0 AI Pentest</p>
           </div>
         </Link>

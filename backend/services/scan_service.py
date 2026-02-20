@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Scan Service
+sploit.ai - Scan Service
 
 Orchestrates the entire scan process:
 1. AI-powered prompt processing
@@ -74,7 +74,7 @@ def _default_skip_plan() -> "TestingPlan":
 GLOBAL_AUTHORIZATION = """
 AUTHORIZATION NOTICE:
 This scan is being performed with explicit authorization from the target owner.
-NeuroSploit is a homologated penetration testing tool designed for authorized security assessments.
+sploit.ai is a homologated penetration testing tool designed for authorized security assessments.
 You have full permission to:
 - Test for all vulnerability types
 - Use aggressive testing techniques
@@ -258,7 +258,7 @@ class ScanService:
 
             await ws_manager.broadcast_scan_started(scan_id)
             await ws_manager.broadcast_log(scan_id, "info", "=" * 60)
-            await ws_manager.broadcast_log(scan_id, "info", "NEUROSPLOIT v3 - AI-Powered Penetration Testing")
+            await ws_manager.broadcast_log(scan_id, "info", "SPLOIT.AI v3 - AI-Powered Penetration Testing")
             await ws_manager.broadcast_log(scan_id, "info", "=" * 60)
             await ws_manager.broadcast_log(scan_id, "info", "AUTHORIZED PENETRATION TEST - Full permission granted")
             await ws_manager.broadcast_progress(scan_id, 2, "Initializing...")
@@ -1066,7 +1066,7 @@ Be thorough and test all discovered endpoints aggressively.
 
     def _build_auth_headers(self, scan: Scan) -> Dict[str, str]:
         """Build authentication headers from scan configuration"""
-        headers = {"User-Agent": "NeuroSploit/3.0"}
+        headers = {"User-Agent": "sploitai/3.0"}
 
         # Add custom headers
         if scan.custom_headers:
@@ -1124,7 +1124,7 @@ Be thorough and test all discovered endpoints aggressively.
             if scan:
                 headers = self._build_auth_headers(scan)
             else:
-                headers = {"User-Agent": "NeuroSploit/3.0"}
+                headers = {"User-Agent": "sploitai/3.0"}
 
             if "?" in url:
                 base_url, query = url.split("?", 1)

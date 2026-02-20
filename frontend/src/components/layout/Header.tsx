@@ -9,7 +9,7 @@ const pageTitles: Record<string, string> = {
 
 export default function Header() {
   const location = useLocation()
-  const title = pageTitles[location.pathname] || 'NeuroSploit'
+  const title = pageTitles[location.pathname] || 'sploit.ai'
 
   return (
     <header className="h-16 bg-dark-800 border-b border-dark-900/50 flex items-center justify-between px-6">

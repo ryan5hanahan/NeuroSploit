@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Base Vulnerability Tester
+sploit.ai - Base Vulnerability Tester
 
 Base class for all vulnerability testers.
 """
@@ -26,7 +26,7 @@ class BaseTester:
         """
         url = endpoint.url
         params = {}
-        headers = {"User-Agent": "NeuroSploit/3.0"}
+        headers = {"User-Agent": "sploitai/3.0"}
         body = None
 
         # Inject payload into parameters if endpoint has them

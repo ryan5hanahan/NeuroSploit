@@ -114,7 +114,7 @@ def main():
     p_parse.add_argument("category", help="PATT category directory name")
 
     p_dump = sub.add_parser("dump", help="Dump all payloads for a vuln type")
-    p_dump.add_argument("vuln_type", help="NeuroSploit vuln_type key")
+    p_dump.add_argument("vuln_type", help="sploit.ai vuln_type key")
 
     sub.add_parser("update", help="Update PATT submodule to latest")
 

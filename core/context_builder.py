@@ -240,7 +240,7 @@ class ReconContextBuilder:
         context = {
             "metadata": {
                 "generated_at": datetime.now().isoformat(),
-                "generator": "NeuroSploit Recon",
+                "generator": "sploit.ai Recon",
                 "version": "2.0.0"
             },
             "target": self.target_info,
@@ -279,7 +279,7 @@ class ReconContextBuilder:
 
         lines = [
             "=" * 80,
-            "NEUROSPLOIT - CONSOLIDATED RECONNAISSANCE CONTEXT",
+            "SPLOIT.AI - CONSOLIDATED RECONNAISSANCE CONTEXT",
             "=" * 80,
             "",
             f"Primary Target: {ctx['target'].get('primary_target', 'N/A')}",

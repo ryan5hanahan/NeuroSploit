@@ -1,4 +1,4 @@
-"""NeuroSploit Unified LLM Layer.
+"""sploit.ai Unified LLM Layer.
 
 Unified LLM client providing 3-tier model routing, native tool calling,
 structured JSON output, and per-scan cost tracking.
