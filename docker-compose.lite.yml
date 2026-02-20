@@ -1,4 +1,4 @@
-# NeuroSploit v3 - LITE Docker Compose
+# sploit.ai - LITE Docker Compose
 # Fast builds without external security tools
 # Usage: docker compose -f docker-compose.lite.yml up --build
 
@@ -7,16 +7,16 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend.lite
-    container_name: neurosploit-backend
+    container_name: sploitai-backend
     env_file:
       - .env
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - DATABASE_URL=sqlite+aiosqlite:///./data/neurosploit.db
+      - DATABASE_URL=sqlite+aiosqlite:///./data/sploitai.db
       - ENABLE_BROWSER_VALIDATION=${ENABLE_BROWSER_VALIDATION:-false}
     volumes:
-      - neurosploit-data:/app/data
+      - sploitai-data:/app/data
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
-    container_name: neurosploit-frontend
+    container_name: sploitai-frontend
     ports:
       - "3000:80"
     depends_on:
@@ -39,8 +39,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  neurosploit-data:
+  sploitai-data:
 
 networks:
   default:
-    name: neurosploit-network
+    name: sploitai-network

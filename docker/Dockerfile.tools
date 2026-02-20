@@ -1,4 +1,4 @@
-# NeuroSploit v3 - Security Tools Runner Container
+# sploit.ai - Security Tools Runner Container
 # Ephemeral container for running security tools in isolation
 
 FROM golang:1.25-alpine AS go-builder

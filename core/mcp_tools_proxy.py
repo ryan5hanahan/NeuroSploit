@@ -1,7 +1,7 @@
 """
-NeuroSploit v3 - mitmproxy MCP Tool Handlers
+sploit.ai - mitmproxy MCP Tool Handlers
 
-Communicates with mitmproxy's REST API at http://neurosploit-mitmproxy:8082.
+Communicates with mitmproxy's REST API at http://sploitai-mitmproxy:8082.
 Provides flow inspection, capture control, replay, and export.
 
 Start mitmproxy with: docker compose --profile proxy up -d
@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-MITMPROXY_API = "http://neurosploit-mitmproxy:8082"
+MITMPROXY_API = "http://sploitai-mitmproxy:8082"
 MITMPROXY_LOCAL = "http://localhost:8082"
 
 
@@ -72,7 +72,7 @@ async def _proxy_status() -> Dict:
         return {
             "status": "offline",
             "error": flows["error"],
-            "proxy_address": "http://neurosploit-mitmproxy:8081",
+            "proxy_address": "http://sploitai-mitmproxy:8081",
             "web_ui": "http://localhost:8082",
             "start_command": "docker compose --profile proxy up -d",
         }
@@ -81,7 +81,7 @@ async def _proxy_status() -> Dict:
     return {
         "status": "online",
         "flow_count": flow_count,
-        "proxy_address": "http://neurosploit-mitmproxy:8081",
+        "proxy_address": "http://sploitai-mitmproxy:8081",
         "web_ui": "http://localhost:8082",
     }
 

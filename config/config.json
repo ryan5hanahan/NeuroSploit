@@ -83,10 +83,10 @@
     "mcp_servers": {
         "enabled": true,
         "servers": {
-            "neurosploit_tools": {
+            "sploitai_tools": {
                 "transport": "direct",
                 "args": ["-m", "core.mcp_server"],
-                "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
+                "description": "sploit.ai pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite (nuclei, naabu, httpx, cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns, cloudlist, interactsh, notify), mitmproxy integration, opsec profiles"
             }
         }
     },
@@ -97,7 +97,7 @@
     "sandbox": {
         "kali": {
             "enabled": true,
-            "image": "neurosploit-kali:latest",
+            "image": "sploitai-kali:latest",
             "max_concurrent": 5,
             "container_ttl_minutes": 60,
             "auto_cleanup_orphans": true

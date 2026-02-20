@@ -1,4 +1,4 @@
-# NeuroSploit v3 - Security Sandbox
+# sploit.ai - Security Sandbox
 # Isolated container for running real penetration testing tools
 #
 # Usage:
@@ -11,8 +11,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sandbox
-    image: neurosploit-sandbox:latest
-    container_name: neurosploit-sandbox
+    image: sploitai-sandbox:latest
+    container_name: sploitai-sandbox
     command: ["sleep infinity"]
     restart: unless-stopped
     networks:

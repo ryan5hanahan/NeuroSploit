@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scan Scheduler - Recurring task orchestration for NeuroSploit.
+Scan Scheduler - Recurring task orchestration for sploit.ai.
 
 Supports cron expressions and interval-based scheduling for:
 - Reconnaissance scans
@@ -50,7 +50,7 @@ async def _run_scheduled_scan(job_id: str, target: str, scan_type: str,
 class ScanScheduler:
     """Manages recurring scan jobs via APScheduler."""
 
-    def __init__(self, config: Dict, database_url: str = "sqlite:///./data/neurosploit_scheduler.db"):
+    def __init__(self, config: Dict, database_url: str = "sqlite:///./data/sploitai_scheduler.db"):
         global _scheduler_instance
         _scheduler_instance = self
 

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Configuration
+sploit.ai - Configuration
 """
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Application settings"""
 
     # Application
-    APP_NAME: str = "NeuroSploit v3"
+    APP_NAME: str = "sploit.ai v3"
     APP_VERSION: str = "3.0.0"
     DEBUG: bool = True
 
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./data/neurosploit.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./data/sploitai.db"
 
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent

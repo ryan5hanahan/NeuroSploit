@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - FastAPI Main Application
+sploit.ai - FastAPI Main Application
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -19,6 +19,10 @@ from backend.api.websocket import manager as ws_manager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     # Startup
+    # Auto-rename legacy neurosploit.db if needed
+    from backend.migrations.rename_db import rename_legacy_db
+    rename_legacy_db()
+
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     await init_db()
     print("Database initialized")

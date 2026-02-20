@@ -1,4 +1,4 @@
-# NeuroSploit v3 - Optimized Multi-Stage Dockerfile
+# sploit.ai - Optimized Multi-Stage Dockerfile
 # Dramatically reduces build time and image size
 # Supports ARM64 (Apple Silicon) and AMD64
 

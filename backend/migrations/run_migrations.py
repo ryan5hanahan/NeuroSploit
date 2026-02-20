@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run database migrations for NeuroSploit v3
+Run database migrations for sploit.ai
 
 Usage:
     python -m backend.migrations.run_migrations
@@ -17,10 +17,13 @@ def get_db_path():
     """Get the database file path"""
     # Try common locations
     possible_paths = [
+        Path("./data/sploitai.db"),
+        Path("../data/sploitai.db"),
+        Path("/opt/sploitai/data/sploitai.db"),
+        Path("/opt/sploitai/backend/data/sploitai.db"),
+        # Legacy paths for migration
         Path("./data/neurosploit.db"),
         Path("../data/neurosploit.db"),
-        Path("/opt/NeuroSploitv2/data/neurosploit.db"),
-        Path("/opt/NeuroSploitv2/backend/data/neurosploit.db"),
     ]
 
     for path in possible_paths:
@@ -28,7 +31,7 @@ def get_db_path():
             return str(path.resolve())
 
     # Default path
-    return "./data/neurosploit.db"
+    return "./data/sploitai.db"
 
 
 def column_exists(cursor, table_name, column_name):

@@ -1,5 +1,5 @@
 # ============================================================================
-# NeuroSploit v3 - Project Configuration
+# sploit.ai - Project Configuration
 # ============================================================================
 # This file is for tool configuration (pytest, linters, etc.) and dependency
 # documentation. Dependencies are installed via requirements.txt files.
@@ -7,7 +7,7 @@
 # ============================================================================
 
 [project]
-name = "neurosploitv2"
+name = "sploitai"
 version = "3.0.0"
 description = "AI-Powered Penetration Testing Framework"
 requires-python = ">=3.8"

@@ -1,7 +1,7 @@
 {
-  "name": "neurosploit-frontend",
+  "name": "sploitai-frontend",
   "version": "3.0.0",
-  "description": "NeuroSploit v3 - AI-Powered Penetration Testing Platform",
+  "description": "sploit.ai v3 - AI-Powered Penetration Testing Platform",
   "type": "module",
   "scripts": {
     "dev": "vite",
