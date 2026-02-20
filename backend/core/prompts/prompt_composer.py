@@ -92,43 +92,55 @@ def compose_agent_system_prompt(
     else:
         target_display = target
 
-    # Inject variables into system template
+    # Inject variables into system template (static mission header only)
     system_prompt = system_template.format(
         target=target_display,
         objective=objective,
         operation_id=operation_id,
         current_step=current_step,
         max_steps=max_steps,
-        memory_overview=memory_section,
-        plan_snapshot=plan_section,
     )
 
-    # Append auth context if credentials are configured
-    auth_section = ""
-    if auth_context:
-        auth_section = f"\n\n### Authentication\n{auth_context}"
+    # Build static portion: system prompt + execution guidance
+    # These don't change between steps and benefit from Anthropic's prefix caching
+    static_portion = f"{system_prompt}\n\n---\n\n{execution_template}"
 
-    # Append subdomain discovery section
-    subdomain_section = ""
+    # --- Dynamic sections below (appended AFTER static content for cache coherence) ---
+
+    dynamic_sections = []
+
+    # Auth context
+    if auth_context:
+        dynamic_sections.append(f"### Authentication\n{auth_context}")
+
+    # Subdomain discovery
     if subdomain_discovery:
-        subdomain_section = (
-            "\n\n### Subdomain Discovery (ENABLED)\n"
+        dynamic_sections.append(
+            "### Subdomain Discovery (ENABLED)\n"
             "Run `subfinder -d <domain> -silent` via shell_execute during Discovery phase. "
             "Add discovered subdomains to your target list."
         )
 
-    # Bug bounty program rules section
-    bugbounty_section = ""
+    # Bug bounty program rules
     if bugbounty_instructions:
-        bugbounty_section = (
-            "\n\n### Bug Bounty Program Rules\n"
+        dynamic_sections.append(
+            "### Bug Bounty Program Rules\n"
             "**MANDATORY**: You are testing under a bug bounty program. "
             "Follow these rules strictly — violations may result in account ban.\n\n"
             f"{bugbounty_instructions}"
         )
 
-    # Append execution guidance, auth context, subdomain section, bug bounty, and budget warning
-    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{subdomain_section}{bugbounty_section}{budget_warning}"
+    # Plan snapshot (changes every step)
+    dynamic_sections.append(plan_section)
+
+    # Memory overview (changes every step)
+    dynamic_sections.append(memory_section)
+
+    # Budget warning (changes at thresholds)
+    if budget_warning:
+        dynamic_sections.append(budget_warning.strip())
+
+    full_prompt = static_portion + "\n\n---\n\n" + "\n\n".join(dynamic_sections)
 
     return full_prompt
 
