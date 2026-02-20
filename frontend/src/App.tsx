@@ -18,6 +18,7 @@ import TradecraftPage from './pages/TradecraftPage'
 import AgentPage from './pages/AgentPage'
 import AgentDetailPage from './pages/AgentDetailPage'
 import BugBountyPage from './pages/BugBountyPage'
+import GovernancePage from './pages/GovernancePage'
 
 function App() {
   return (
@@ -44,6 +45,7 @@ function App() {
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/tradecraft" element={<TradecraftPage />} />
         <Route path="/bugbounty" element={<BugBountyPage />} />
+        <Route path="/governance" element={<GovernancePage />} />
         <Route path="/realtime" element={<RealtimeTaskPage />} />
         <Route path="/scheduler" element={<SchedulerPage />} />
         <Route path="/sandboxes" element={<SandboxDashboardPage />} />

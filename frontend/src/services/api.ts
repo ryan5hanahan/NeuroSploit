@@ -10,6 +10,7 @@ import type {
   AgentV2FindingsResponse, AgentV2DecisionsResponse, AgentV2OperationSummary,
   LiveOperation, AttentionFinding, DashboardStatsExtended,
   BugBountyProgram, BugBountyScope, BugBountyDraft, BugBountySubmission,
+  GovernanceViolation, GovernanceScanStats, GovernanceOverview, GovernanceProfile,
 } from '../types'
 
 const api = axios.create({
@@ -780,6 +781,60 @@ export const bugBountyApi = {
     const params = limit ? `?limit=${limit}` : ''
     const response = await api.get(`/bugbounty/submissions${params}`)
     return response.data
+  },
+}
+
+export const governanceApi = {
+  overview: async (): Promise<GovernanceOverview> => {
+    const response = await api.get('/governance/overview')
+    return response.data
+  },
+
+  scanViolations: async (
+    scanId: string,
+    params?: { layer?: string; disposition?: string; action_category?: string; page?: number; per_page?: number }
+  ): Promise<{ scan_id: string; total: number; page: number; per_page: number; violations: GovernanceViolation[] }> => {
+    const response = await api.get(`/governance/violations/${scanId}`, { params })
+    return response.data
+  },
+
+  scanStats: async (scanId: string): Promise<GovernanceScanStats> => {
+    const response = await api.get(`/governance/stats/${scanId}`)
+    return response.data
+  },
+
+  exportAudit: async (scanId: string, format: string = 'json'): Promise<Blob | { scan_id: string; total: number; violations: GovernanceViolation[] }> => {
+    if (format === 'csv') {
+      const response = await api.get(`/governance/export/${scanId}`, { params: { format: 'csv' }, responseType: 'blob' })
+      return response.data
+    }
+    const response = await api.get(`/governance/export/${scanId}`, { params: { format } })
+    return response.data
+  },
+
+  // Governance profiles CRUD
+  listProfiles: async (): Promise<{ profiles: GovernanceProfile[] }> => {
+    const response = await api.get('/governance/profiles')
+    return response.data
+  },
+
+  getProfile: async (id: string): Promise<GovernanceProfile> => {
+    const response = await api.get(`/governance/profiles/${id}`)
+    return response.data
+  },
+
+  createProfile: async (data: Partial<GovernanceProfile>): Promise<GovernanceProfile> => {
+    const response = await api.post('/governance/profiles', data)
+    return response.data
+  },
+
+  updateProfile: async (id: string, data: Partial<GovernanceProfile>): Promise<GovernanceProfile> => {
+    const response = await api.put(`/governance/profiles/${id}`, data)
+    return response.data
+  },
+
+  deleteProfile: async (id: string): Promise<void> => {
+    await api.delete(`/governance/profiles/${id}`)
   },
 }
 

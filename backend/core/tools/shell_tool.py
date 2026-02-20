@@ -6,12 +6,14 @@ timeout enforcement, output capture, and security constraints.
 Fallback chain:
   1. Per-operation KaliSandbox via ContainerPool (if kali image exists)
   2. Shared SandboxManager container (if sandbox image exists)
-  3. Local subprocess execution (always works — backend container has
-     nmap, curl, sqlmap, python3 and other tools pre-installed)
+  3. Local subprocess execution — governed by sandbox_fallback_policy:
+     "allow" = execute silently (legacy), "warn" = execute + record
+     violation, "deny" = block execution entirely.
 """
 
 import asyncio
 import logging
+import resource
 import time
 from typing import Any, Dict, Optional
 
@@ -21,6 +23,21 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_BYTES = 30 * 1024  # 30KB
 DEFAULT_TIMEOUT = 120
 MAX_TIMEOUT = 600
+
+# Subprocess resource limits
+SUBPROCESS_MAX_MEM_MB = 512       # 512MB max memory
+SUBPROCESS_MAX_CPU_SECONDS = 300  # 5 min CPU time
+SUBPROCESS_MAX_FILE_SIZE_MB = 50  # 50MB max file writes
+
+# Sandbox fallback policy (configurable via governance config)
+_sandbox_fallback_policy: str = "warn"  # "allow" | "warn" | "deny"
+
+
+def set_sandbox_fallback_policy(policy: str):
+    """Set the sandbox fallback policy. Called from governance config."""
+    global _sandbox_fallback_policy
+    if policy in ("allow", "warn", "deny"):
+        _sandbox_fallback_policy = policy
 
 
 async def handle_shell_execute(args: Dict[str, Any], context: Any) -> str:
@@ -83,12 +100,79 @@ async def _execute_in_sandbox(command: str, timeout: int, context: Any) -> str:
     except Exception as e:
         logger.debug(f"SandboxManager unavailable: {e}")
 
-    # --- Attempt 3: Local subprocess (backend container has tools) ---
+    # --- Attempt 3: Local subprocess — governed by fallback policy ---
+    policy = _sandbox_fallback_policy
+
+    if policy == "deny":
+        logger.warning(
+            f"[Shell] Sandbox unavailable and fallback policy is 'deny'. "
+            f"Blocking command: {command[:80]}"
+        )
+        return (
+            "Error: No sandbox container available and sandbox_fallback_policy='deny'. "
+            "Command execution blocked. Start a sandbox container or change the fallback policy."
+        )
+
+    if policy == "warn":
+        logger.warning(
+            f"[Shell] Falling back to local subprocess (no sandbox). "
+            f"Command: {command[:80]}"
+        )
+        # Record a governance violation if context has a governance reference
+        _record_sandbox_fallback_violation(context, command)
+
     return await _execute_subprocess(command, timeout)
 
 
+def _record_sandbox_fallback_violation(context: Any, command: str):
+    """Record a governance violation for sandbox fallback."""
+    try:
+        from ..governance_gate import GovernanceViolation
+        from datetime import datetime
+
+        violation = GovernanceViolation(
+            scan_id=getattr(context, "operation_id", "unknown"),
+            phase="unknown",
+            action="shell_execute",
+            action_category="sandbox_fallback",
+            allowed_categories=[],
+            context={"command": command[:200], "fallback": "local_subprocess"},
+            disposition="warned",
+            layer="scope",
+            detail="No sandbox available — executing in local subprocess",
+        )
+
+        # Try to persist via governance facade if available
+        governance = getattr(context, "_governance", None)
+        if governance and hasattr(governance, "_on_violation"):
+            governance._on_violation(violation)
+    except Exception as e:
+        logger.debug(f"Failed to record sandbox fallback violation: {e}")
+
+
+def _set_subprocess_limits():
+    """Pre-exec function to set resource limits on child processes."""
+    try:
+        # Max virtual memory
+        mem_bytes = SUBPROCESS_MAX_MEM_MB * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+    except (ValueError, resource.error):
+        pass  # Not supported on all platforms
+    try:
+        # Max CPU time
+        resource.setrlimit(resource.RLIMIT_CPU, (SUBPROCESS_MAX_CPU_SECONDS, SUBPROCESS_MAX_CPU_SECONDS))
+    except (ValueError, resource.error):
+        pass
+    try:
+        # Max file size
+        file_bytes = SUBPROCESS_MAX_FILE_SIZE_MB * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_FSIZE, (file_bytes, file_bytes))
+    except (ValueError, resource.error):
+        pass
+
+
 async def _execute_subprocess(command: str, timeout: int) -> str:
-    """Execute command via local subprocess.
+    """Execute command via local subprocess with resource limits.
 
     The backend container has nmap, curl, sqlmap, python3, and other
     tools pre-installed, so this works as a reliable fallback when
@@ -103,6 +187,7 @@ async def _execute_subprocess(command: str, timeout: int) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env={**os.environ, "TERM": "dumb"},
+            preexec_fn=_set_subprocess_limits,
         )
 
         try:
