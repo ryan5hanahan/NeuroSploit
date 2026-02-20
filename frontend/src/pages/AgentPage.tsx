@@ -2,16 +2,18 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, Plus, ChevronUp, ChevronDown, Target, AlertTriangle,
-  RefreshCw, StopCircle, CheckCircle, XCircle, DollarSign, Lock, Globe,
-  BookOpen, Trash2, UserPlus, Loader2,
+  RefreshCw, StopCircle, CheckCircle, XCircle, DollarSign, Globe,
+  BookOpen,
 } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
 import Textarea from '../components/common/Textarea'
+import AuthInputSection, { AuthState } from '../components/AuthInputSection'
+import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
 import { agentV2Api } from '../services/api'
 import { useOperationStore } from '../store'
-import type { AgentV2OperationSummary, AgentTask, AgentV2CredentialSet } from '../types'
+import type { AgentV2OperationSummary, AgentTask } from '../types'
 
 const STATUS_STYLES: Record<string, string> = {
   running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
@@ -57,49 +59,9 @@ export default function AgentPage() {
   const [additionalTargets, setAdditionalTargets] = useState('')
   const [subdomainDiscovery, setSubdomainDiscovery] = useState(false)
 
-  // Multi-credential state
-  const [showAuth, setShowAuth] = useState(false)
-  const [credentialSets, setCredentialSets] = useState<AgentV2CredentialSet[]>([])
-  const [testingIndex, setTestingIndex] = useState<number | null>(null)
-  const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string }>>({})
-
-  const addCredentialSet = () => {
-    setCredentialSets(prev => [
-      ...prev,
-      { label: '', role: 'user', auth_type: 'bearer', cookie: '', token: '', username: '', password: '', header_name: '', header_value: '' },
-    ])
-  }
-
-  const updateCredentialSet = (index: number, updates: Partial<AgentV2CredentialSet>) => {
-    setCredentialSets(prev => prev.map((cs, i) => (i === index ? { ...cs, ...updates } : cs)))
-  }
-
-  const removeCredentialSet = (index: number) => {
-    setCredentialSets(prev => prev.filter((_, i) => i !== index))
-    setTestResults(prev => {
-      const next = { ...prev }
-      delete next[index]
-      return next
-    })
-  }
-
-  const handleTestCredentials = async (index: number) => {
-    const cs = credentialSets[index]
-    if (!target.trim() || !cs.auth_type) return
-    setTestingIndex(index)
-    setTestResults(prev => { const next = { ...prev }; delete next[index]; return next })
-    try {
-      const result = await agentV2Api.testCredentials(target.trim(), cs)
-      setTestResults(prev => ({ ...prev, [index]: { success: result.success, message: result.message } }))
-    } catch (err: any) {
-      setTestResults(prev => ({
-        ...prev,
-        [index]: { success: false, message: err?.response?.data?.detail || 'Request failed' },
-      }))
-    } finally {
-      setTestingIndex(null)
-    }
-  }
+  // Auth state (matches VulnLab style)
+  const [auth, setAuth] = useState<AuthState>({ authType: 'none', authValue: '', username: '', password: '' })
+  const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
 
   // Task library state
   const [showTaskLibrary, setShowTaskLibrary] = useState(false)
@@ -156,26 +118,35 @@ export default function AgentPage() {
     if (!target.trim()) return
     setIsStarting(true)
     try {
-      // Build credential_sets for the API
-      const validCreds = credentialSets.filter(cs => cs.label.trim() && cs.auth_type)
-      const credential_sets = validCreds.length > 0 ? validCreds : undefined
-
-      // Backward compat: set auth_type/auth_credentials from first set
-      let auth_type: string | undefined
+      // Build auth_type + auth_credentials from AuthInputSection state
+      const effectiveAuthType = auth.authType && auth.authType !== 'none' ? auth.authType : undefined
       let auth_credentials: Record<string, string> | undefined
-      if (validCreds.length > 0) {
-        const first = validCreds[0]
-        auth_type = first.auth_type
-        if (first.auth_type === 'cookie' && first.cookie) {
-          auth_credentials = { cookie: first.cookie }
-        } else if (first.auth_type === 'bearer' && first.token) {
-          auth_credentials = { token: first.token }
-        } else if (first.auth_type === 'basic' && first.username) {
-          auth_credentials = { username: first.username, password: first.password || '' }
-        } else if (first.auth_type === 'header' && first.header_name) {
-          auth_credentials = { header_name: first.header_name, header_value: first.header_value || '' }
+      if (effectiveAuthType === 'cookie' && auth.authValue) {
+        auth_credentials = { cookie: auth.authValue }
+      } else if (effectiveAuthType === 'bearer' && auth.authValue) {
+        auth_credentials = { token: auth.authValue }
+      } else if ((effectiveAuthType === 'basic' || effectiveAuthType === 'login') && auth.username) {
+        auth_credentials = { username: auth.username, password: auth.password || '' }
+      } else if (effectiveAuthType === 'header' && auth.authValue) {
+        const colonIdx = auth.authValue.indexOf(':')
+        if (colonIdx > 0) {
+          auth_credentials = { header_name: auth.authValue.slice(0, colonIdx).trim(), header_value: auth.authValue.slice(colonIdx + 1).trim() }
         }
       }
+
+      // Build credential_sets from CredentialSetsPanel
+      const validCreds = credentialSets.filter(cs => cs.label.trim() && cs.auth_type)
+      const credential_sets = validCreds.length > 0 ? validCreds.map(cs => ({
+        label: cs.label,
+        role: cs.role,
+        auth_type: cs.auth_type as any,
+        cookie: cs.cookie,
+        token: cs.bearer_token,
+        username: cs.username,
+        password: cs.password,
+        header_name: cs.header_name,
+        header_value: cs.header_value,
+      })) : undefined
 
       const resp = await agentV2Api.start({
         target: target.trim(),
@@ -186,7 +157,7 @@ export default function AgentPage() {
         objective: objective.trim() || undefined,
         max_steps: maxSteps,
         scope_profile: scopeProfile,
-        auth_type: auth_type as any,
+        auth_type: effectiveAuthType as any,
         auth_credentials,
         credential_sets,
         task_id: selectedTask?.id,
@@ -437,179 +408,11 @@ export default function AgentPage() {
               </div>
             </div>
 
-            {/* Credentials section */}
-            <div className="border border-dark-700 rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setShowAuth(!showAuth)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 hover:bg-dark-900 transition-colors text-left"
-              >
-                <span className="flex items-center gap-2 text-sm font-medium text-dark-200">
-                  <Lock className="w-4 h-4" />
-                  Credentials
-                  {credentialSets.length > 0 && (
-                    <span className="text-xs bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full">
-                      {credentialSets.length}
-                    </span>
-                  )}
-                </span>
-                {showAuth ? (
-                  <ChevronUp className="w-4 h-4 text-dark-400" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-dark-400" />
-                )}
-              </button>
+            {/* Authentication */}
+            <AuthInputSection value={auth} onChange={setAuth} />
 
-              {showAuth && (
-                <div className="p-4 space-y-3 border-t border-dark-700">
-                  <p className="text-xs text-dark-400">
-                    Add multiple credential sets for differential access testing (BOLA, BFLA, IDOR, privilege escalation).
-                  </p>
-
-                  {credentialSets.map((cs, idx) => (
-                    <div key={idx} className="p-3 bg-dark-900/50 rounded-lg border border-dark-700 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-dark-300">Credential #{idx + 1}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeCredentialSet(idx)}
-                          className="text-dark-500 hover:text-red-400 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        <Input
-                          label="Label"
-                          placeholder="e.g. admin"
-                          value={cs.label}
-                          onChange={(e) => updateCredentialSet(idx, { label: e.target.value })}
-                        />
-                        <div>
-                          <label className="block text-sm font-medium text-dark-200 mb-1.5">Role</label>
-                          <select
-                            value={cs.role}
-                            onChange={(e) => updateCredentialSet(idx, { role: e.target.value })}
-                            className="w-full px-4 py-2.5 bg-dark-900 border border-dark-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                          >
-                            <option value="admin">Admin</option>
-                            <option value="user">User</option>
-                            <option value="guest">Guest</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-dark-200 mb-1.5">Auth Type</label>
-                          <select
-                            value={cs.auth_type}
-                            onChange={(e) => updateCredentialSet(idx, { auth_type: e.target.value as any })}
-                            className="w-full px-4 py-2.5 bg-dark-900 border border-dark-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                          >
-                            <option value="cookie">Cookie</option>
-                            <option value="bearer">Bearer Token</option>
-                            <option value="basic">Basic Auth</option>
-                            <option value="header">Custom Header</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {cs.auth_type === 'cookie' && (
-                        <Input
-                          label="Cookie Value"
-                          placeholder="session=abc123; token=xyz"
-                          value={cs.cookie || ''}
-                          onChange={(e) => updateCredentialSet(idx, { cookie: e.target.value })}
-                        />
-                      )}
-
-                      {cs.auth_type === 'bearer' && (
-                        <Input
-                          label="Bearer Token"
-                          placeholder="eyJhbGciOiJIUzI1NiIs..."
-                          value={cs.token || ''}
-                          onChange={(e) => updateCredentialSet(idx, { token: e.target.value })}
-                        />
-                      )}
-
-                      {cs.auth_type === 'basic' && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label="Username"
-                            placeholder="admin"
-                            value={cs.username || ''}
-                            onChange={(e) => updateCredentialSet(idx, { username: e.target.value })}
-                          />
-                          <Input
-                            label="Password"
-                            placeholder="password"
-                            value={cs.password || ''}
-                            onChange={(e) => updateCredentialSet(idx, { password: e.target.value })}
-                          />
-                        </div>
-                      )}
-
-                      {cs.auth_type === 'header' && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label="Header Name"
-                            placeholder="X-API-Key"
-                            value={cs.header_name || ''}
-                            onChange={(e) => updateCredentialSet(idx, { header_name: e.target.value })}
-                          />
-                          <Input
-                            label="Header Value"
-                            placeholder="your-api-key-here"
-                            value={cs.header_value || ''}
-                            onChange={(e) => updateCredentialSet(idx, { header_value: e.target.value })}
-                          />
-                        </div>
-                      )}
-
-                      {/* Test credentials button */}
-                      <div className="flex items-center gap-3 pt-1">
-                        <button
-                          type="button"
-                          disabled={!target.trim() || !cs.auth_type || testingIndex === idx}
-                          onClick={() => handleTestCredentials(idx)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-dark-600 text-dark-200 hover:text-white hover:border-dark-500 bg-dark-800"
-                        >
-                          {testingIndex === idx ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          )}
-                          Test
-                        </button>
-                        {testResults[idx] && (
-                          <span className={`flex items-start gap-1.5 text-xs font-medium leading-snug ${
-                            testResults[idx].success ? 'text-green-400' : 'text-red-400'
-                          }`}>
-                            <span className="mt-0.5 flex-shrink-0">
-                              {testResults[idx].success ? (
-                                <CheckCircle className="w-3.5 h-3.5" />
-                              ) : (
-                                <XCircle className="w-3.5 h-3.5" />
-                              )}
-                            </span>
-                            {testResults[idx].message}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={addCredentialSet}
-                    className="flex items-center gap-2 px-3 py-2 text-sm text-dark-300 hover:text-white bg-dark-900/50 hover:bg-dark-800 border border-dashed border-dark-600 rounded-lg transition-colors w-full justify-center"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Add Credentials
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Multi-Credential Differential Testing */}
+            <CredentialSetsPanel credentialSets={credentialSets} onChange={setCredentialSets} />
 
             <div className="flex justify-end">
               <Button
