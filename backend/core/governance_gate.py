@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Governance Scope Enforcement
+sploit.ai - Governance Scope Enforcement
 
 Centralized enforcement layer that prevents phase-inappropriate actions.
 Example: exploitation MUST NOT be attempted during a recon task.

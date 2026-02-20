@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Validation Judge
+sploit.ai - Validation Judge
 
 Sole authority for approving or rejecting vulnerability findings.
 No finding enters the confirmed list without passing through this judge.

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-NeuroSploit Benchmark Runner & Coverage Analyzer
+sploit.ai Benchmark Runner & Coverage Analyzer
 
 Real execution of 104 CTF-style validation benchmarks:
   - Builds and starts each Docker challenge
-  - Runs NeuroSploit autonomous agent against the target
+  - Runs sploit.ai autonomous agent against the target
   - Checks if the agent extracts the flag
   - Generates pass/fail results with detailed reporting
 
@@ -573,7 +573,7 @@ class ReportGenerator:
         passed = summary["passed"]
 
         lines = [
-            "# NeuroSploit Benchmark Results",
+            "# sploit.ai Benchmark Results",
             "",
             f"**Date**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
             f"**Total Benchmarks**: {total}",
@@ -675,7 +675,7 @@ class ReportGenerator:
 
         print()
         print("=" * 70)
-        print("  NEUROSPLOIT BENCHMARK RESULTS")
+        print("  SPLOIT.AI BENCHMARK RESULTS")
         print("=" * 70)
         print()
         print(f"  Pass Rate:   {passed}/{total} ({passed/total*100:.1f}%)" if total else "  No results")
@@ -864,7 +864,7 @@ class BenchmarkRunner:
         run_idx = 0
 
         print(f"\n{'='*70}")
-        print(f"  NEUROSPLOIT BENCHMARK RUNNER")
+        print(f"  SPLOIT.AI BENCHMARK RUNNER")
         print(f"  Mode: {self.agent_mode} | Timeout: {self.per_benchmark_timeout}s/benchmark")
         print(f"  Running {total_remaining}/{len(configs)} benchmarks")
         if completed:
@@ -1161,7 +1161,7 @@ class BenchmarkRunner:
         print("  Docker cleanup complete.")
 
     async def _run_agent(self, target_url: str, agent_logs: List[str]) -> Tuple[Dict, list]:
-        """Run the NeuroSploit LLM-driven agent against a target."""
+        """Run the sploit.ai LLM-driven agent against a target."""
         from backend.core.llm_agent import LLMDrivenAgent
 
         mode_objectives = {
@@ -1191,7 +1191,7 @@ class BenchmarkRunner:
 # Coverage Analysis (preserved from original)
 # ===========================================================================
 
-TAG_TO_NEUROSPLOIT = {
+TAG_TO_SPLOITAI = {
     "xss": ["xss_reflected", "xss_stored", "xss_dom", "blind_xss", "mutation_xss"],
     "idor": ["idor", "bola"],
     "sqli": ["sqli_error", "sqli_union", "sqli_blind", "sqli_time"],
@@ -1302,8 +1302,8 @@ CAPABILITY_SCORES = {
 }
 
 
-def load_neurosploit_types() -> Tuple[Set[str], Dict]:
-    """Load NeuroSploit's 100 vulnerability types from registry."""
+def load_sploitai_types() -> Tuple[Set[str], Dict]:
+    """Load sploit.ai's 100 vulnerability types from registry."""
     try:
         from backend.core.vuln_engine.registry import VulnerabilityRegistry
         reg = VulnerabilityRegistry()
@@ -1339,7 +1339,7 @@ def load_benchmarks(benchmarks_dir: str) -> List[Dict]:
 
 
 def analyze_coverage(benchmarks: List[Dict], ns_types: Set[str]) -> Dict:
-    """Analyze NeuroSploit coverage of benchmarks."""
+    """Analyze sploit.ai coverage of benchmarks."""
     tag_counter = Counter()
     for bench in benchmarks:
         tags = bench.get("tags", [])
@@ -1351,7 +1351,7 @@ def analyze_coverage(benchmarks: List[Dict], ns_types: Set[str]) -> Dict:
     tag_mapping = {}
 
     for tag in tag_counter:
-        ns_mapped = TAG_TO_NEUROSPLOIT.get(tag, [])
+        ns_mapped = TAG_TO_SPLOITAI.get(tag, [])
         if ns_mapped:
             matched = [t for t in ns_mapped if t in ns_types]
             if matched:
@@ -1452,12 +1452,12 @@ def print_coverage_report(analysis: Dict):
     """Print formatted coverage report."""
     print()
     print("=" * 70)
-    print("  NEUROSPLOIT BENCHMARK COVERAGE ANALYSIS")
+    print("  SPLOIT.AI BENCHMARK COVERAGE ANALYSIS")
     print("=" * 70)
     print()
 
     print(f"  Total Benchmarks:        {analysis['total_benchmarks']}")
-    print(f"  NeuroSploit Vuln Types:  {analysis['ns_total_types']}")
+    print(f"  sploit.ai Vuln Types:  {analysis['ns_total_types']}")
     print()
 
     print("  --- TAG COVERAGE ---")
@@ -1524,7 +1524,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="NeuroSploit Benchmark Runner & Coverage Analyzer",
+        description="sploit.ai Benchmark Runner & Coverage Analyzer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1608,7 +1608,7 @@ Examples:
             print("Error: No benchmarks found")
             sys.exit(1)
 
-        ns_types, ns_info = load_neurosploit_types()
+        ns_types, ns_info = load_sploitai_types()
         analysis = analyze_coverage(benchmarks, ns_types)
 
         if output_json:

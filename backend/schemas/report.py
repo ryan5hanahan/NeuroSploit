@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Report Schemas
+sploit.ai - Report Schemas
 """
 from datetime import datetime
 from typing import Optional, List

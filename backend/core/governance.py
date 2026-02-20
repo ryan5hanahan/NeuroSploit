@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Governance Agent
+sploit.ai - Governance Agent
 
 Scope enforcement for agent and sub-agent tasks. Ensures all scans stay
 within the boundaries of the requested operation — targets, tactics, and

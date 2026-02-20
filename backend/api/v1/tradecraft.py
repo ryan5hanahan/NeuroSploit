@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Tradecraft TTP API Endpoints
+sploit.ai - Tradecraft TTP API Endpoints
 """
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException

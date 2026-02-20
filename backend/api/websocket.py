@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - WebSocket Manager
+sploit.ai - WebSocket Manager
 """
 from typing import Dict, List, Optional
 from fastapi import WebSocket

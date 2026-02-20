@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Strategy Adapter
+sploit.ai - Strategy Adapter
 
 Mid-scan strategy adaptation: signal tracking, 403 bypass attempts,
 diminishing returns detection, endpoint health monitoring, and

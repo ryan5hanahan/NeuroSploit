@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - WAF Detector
+sploit.ai - WAF Detector
 
 WAF fingerprinting, bypass strategy database, and payload adaptation
 for autonomous pentesting. Detects 15+ WAF vendors and provides

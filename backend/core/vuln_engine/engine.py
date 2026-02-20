@@ -1,7 +1,7 @@
 """
-NeuroSploit v3 - Dynamic Vulnerability Engine
+sploit.ai - Dynamic Vulnerability Engine
 
-The core of NeuroSploit v3: prompt-driven vulnerability testing.
+The core of sploit.ai: prompt-driven vulnerability testing.
 Instead of hardcoded tests, this engine dynamically tests based on
 what vulnerabilities are extracted from the user's prompt.
 """

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Confidence Scoring Engine
+sploit.ai - Confidence Scoring Engine
 
 Numeric 0-100 confidence scoring for vulnerability findings.
 Combines proof of execution, negative control results, and signal analysis

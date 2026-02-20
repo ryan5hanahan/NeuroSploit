@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Access Control Learning Engine
+sploit.ai - Access Control Learning Engine
 
 Adaptive learning system for BOLA/BFLA/IDOR and other access control testing.
 Records test outcomes and response patterns to improve future evaluations.

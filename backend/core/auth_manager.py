@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Authentication Manager
+sploit.ai - Authentication Manager
 
 Autonomous login, session management, multi-user context for
 BOLA/BFLA/IDOR testing. Handles login form detection, CSRF extraction,

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Tradecraft Schemas
+sploit.ai - Tradecraft Schemas
 """
 from datetime import datetime
 from typing import Optional, List

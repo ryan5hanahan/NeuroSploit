@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Persistent Cross-Session Memory
+sploit.ai - Persistent Cross-Session Memory
 
 Records attack outcomes and builds cumulative target knowledge.
 Provides priority payloads and context for agent prompts.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# NeuroSploit v3 - Rebuild & Launch Script
+# sploit.ai - Rebuild & Launch Script
 # ============================================================================
 # Usage: chmod +x rebuild.sh && ./rebuild.sh
 # Options:
@@ -13,13 +13,13 @@
 
 set -e
 
-PROJECT_DIR="/opt/NeuroSploitv2"
+PROJECT_DIR="/opt/SploitAI"
 VENV_DIR="$PROJECT_DIR/venv"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 DATA_DIR="$PROJECT_DIR/data"
 LOGS_DIR="$PROJECT_DIR/logs"
 PID_DIR="$PROJECT_DIR/.pids"
-DB_PATH="$DATA_DIR/neurosploit.db"
+DB_PATH="$DATA_DIR/sploitai.db"
 
 # Colors
 RED='\033[0;31m'
@@ -371,7 +371,7 @@ fi
 # ============================================================================
 # 7. Summary
 # ============================================================================
-header "NeuroSploit v3 is running"
+header "sploit.ai is running"
 
 echo ""
 if [ "$FRONTEND_ONLY" = false ]; then
@@ -392,7 +392,7 @@ echo -e "  ${YELLOW}Stop:${NC}  $0 (re-run kills previous)"
 echo -e "         kill \$(cat $PID_DIR/backend.pid) \$(cat $PID_DIR/frontend.pid)"
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  NeuroSploit v3 - Autonomous Security Agent${NC}"
+echo -e "${GREEN}  sploit.ai - Autonomous Security Agent${NC}"
 echo -e ""
 echo -e "  ${BLUE}VulnEngine (100-Type):${NC}"
 echo -e "  - Registry:          100 vuln types, 428 payloads, 100 testers"

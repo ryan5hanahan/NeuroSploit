@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Vulnerabilities API Endpoints
+sploit.ai - Vulnerabilities API Endpoints
 """
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException

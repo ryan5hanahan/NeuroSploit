@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Task/Prompt Library System
+sploit.ai - Task/Prompt Library System
 
 Manage reusable tasks and prompts for the AI Agent.
 - Create, save, edit, delete tasks

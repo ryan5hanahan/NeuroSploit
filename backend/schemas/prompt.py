@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Prompt Schemas
+sploit.ai - Prompt Schemas
 """
 from datetime import datetime
 from typing import Optional, List

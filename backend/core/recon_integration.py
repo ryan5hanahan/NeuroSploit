@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Full Recon Integration
+sploit.ai - Full Recon Integration
 
 Integrates 40+ security/recon tools for comprehensive reconnaissance:
 - Subdomain Enumeration: subfinder, amass, assetfinder, chaos, cero

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Scheduler API Router
+sploit.ai - Scheduler API Router
 
 CRUD endpoints for managing scheduled scan jobs.
 """

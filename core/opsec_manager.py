@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Opsec Profile Manager
+sploit.ai - Opsec Profile Manager
 
 Provides per-scan opsec posture control. Three built-in profiles:
   - stealth:    Low-and-slow, proxy routing, jitter, header randomization

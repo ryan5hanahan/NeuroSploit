@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# NeuroSploit v2 - Reconnaissance Tools Installer
+# sploit.ai - Reconnaissance Tools Installer
 # Installs all required tools for advanced reconnaissance
 #
 
@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 # Banner
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║        NEUROSPLOIT v2 - TOOLS INSTALLER                       ║"
+echo "║        SPLOIT.AI - TOOLS INSTALLER                              ║"
 echo "║        Advanced Reconnaissance Tools Setup                     ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
@@ -486,7 +486,7 @@ update_path() {
 
 # Main installation function
 main() {
-    echo -e "${BLUE}[*] Starting NeuroSploit tools installation...${NC}\n"
+    echo -e "${BLUE}[*] Starting sploit.ai tools installation...${NC}\n"
 
     detect_os
 

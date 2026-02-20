@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - AI-Powered Prompt Processor
+sploit.ai - AI-Powered Prompt Processor
 
 Uses Claude/OpenAI to intelligently analyze prompts and determine:
 1. What vulnerabilities to test

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Database Configuration
+sploit.ai - Database Configuration
 """
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker

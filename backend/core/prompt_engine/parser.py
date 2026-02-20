@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Prompt Parser
+sploit.ai - Prompt Parser
 
 Parses user prompts to extract:
 1. Vulnerability types to test

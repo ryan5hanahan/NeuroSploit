@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Tool Installation Registry for Kali Containers
+sploit.ai - Tool Installation Registry for Kali Containers
 
 Maps tool names to installation commands that work inside kalilinux/kali-rolling.
 Tools grouped by method: pre-installed (base image), apt (Kali repos), go install, pip.

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Command Safety Analyzer
+sploit.ai - Command Safety Analyzer
 
 Parses shell commands to detect dangerous patterns, extract targets,
 and enforce an allowlist of permitted tool binaries. Provides defense

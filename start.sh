@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# NeuroSploit v3 Startup Script
+# sploit.ai Startup Script
 
 echo "================================================"
-echo "  NeuroSploit v3 - AI-Powered Penetration Testing"
+echo "  sploit.ai - AI-Powered Penetration Testing"
 echo "================================================"
 echo ""
 
@@ -44,7 +44,7 @@ if command -v docker-compose &> /dev/null; then
     echo "Starting with Docker Compose..."
     docker-compose -f $COMPOSE_FILE up -d
     echo ""
-    echo "NeuroSploit is starting..."
+    echo "sploit.ai is starting..."
     echo "  - Backend API: http://localhost:8000"
     echo "  - Web Interface: http://localhost:3000"
     echo "  - API Docs: http://localhost:8000/api/docs"
@@ -58,7 +58,7 @@ elif command -v docker &> /dev/null && command -v docker compose &> /dev/null; t
     echo "Starting with Docker Compose (v2)..."
     docker compose -f $COMPOSE_FILE up -d
     echo ""
-    echo "NeuroSploit is starting..."
+    echo "sploit.ai is starting..."
     echo "  - Backend API: http://localhost:8000"
     echo "  - Web Interface: http://localhost:3000"
     echo "  - API Docs: http://localhost:8000/api/docs"
@@ -92,7 +92,7 @@ else
     cd ..
 
     echo ""
-    echo "NeuroSploit is running:"
+    echo "sploit.ai is running:"
     echo "  - Backend API: http://localhost:8000"
     echo "  - Web Interface: http://localhost:3000"
     echo ""

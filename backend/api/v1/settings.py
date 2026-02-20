@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Settings API Endpoints
+sploit.ai - Settings API Endpoints
 """
 import asyncio
 import os

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Injection Context Detection
+sploit.ai - Injection Context Detection
 
 Provides database type detection from error messages and injection
 context classification for payload selection.

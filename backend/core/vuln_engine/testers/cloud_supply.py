@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Cloud & Supply Chain Vulnerability Testers
+sploit.ai - Cloud & Supply Chain Vulnerability Testers
 
 Testers for S3 misconfiguration, cloud metadata, subdomain takeover,
 vulnerable dependencies, container escape, and serverless misconfiguration.
