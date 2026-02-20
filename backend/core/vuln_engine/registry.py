@@ -53,6 +53,7 @@ from backend.core.vuln_engine.testers.data_exposure import (
     ApiKeyExposureTester, SourceCodeDisclosureTester,
     BackupFileExposureTester, VersionDisclosureTester
 )
+from backend.core.vuln_engine.testers.deserialization import InsecureDeserializationTester
 from backend.core.vuln_engine.testers.cloud_supply import (
     S3BucketMisconfigTester, CloudMetadataExposureTester,
     SubdomainTakeoverTester, VulnerableDependencyTester,
@@ -540,7 +541,7 @@ class VulnerabilityRegistry:
         "type_juggling": TypeJugglingTester,
         "timing_attack": TimingAttackTester,
         "host_header_injection": HostHeaderInjectionTester,
-        "insecure_deserialization": BaseTester,  # AI-driven
+        "insecure_deserialization": InsecureDeserializationTester,
         "subdomain_takeover": SubdomainTakeoverTester,
         "improper_error_handling": BaseTester,  # AI-driven
 

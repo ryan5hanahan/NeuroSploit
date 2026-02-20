@@ -536,6 +536,14 @@ GET_PAYLOADS = {
                     },
                 },
             },
+            "include_polyglot": {
+                "type": "boolean",
+                "description": (
+                    "Include multi-context polyglot payloads that trigger across "
+                    "multiple vulnerability types simultaneously (SQLi+XSS, SSTI+XSS, "
+                    "CMDi+SQLi, etc.). Useful for initial probing. Default: false."
+                ),
+            },
         },
         "required": ["vuln_type"],
     },

