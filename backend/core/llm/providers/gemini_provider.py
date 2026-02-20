@@ -25,6 +25,34 @@ class GeminiProvider(LLMProvider):
     async def is_available(self) -> bool:
         return bool(self._api_key)
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List available Gemini models via REST API."""
+        if not self._api_key:
+            return []
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{GEMINI_URL}/models?key={self._api_key}",
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        result = []
+                        for m in data.get("models", []):
+                            name = m.get("name", "")
+                            display = m.get("displayName", name)
+                            # Only include generative models
+                            if "generateContent" in str(m.get("supportedGenerationMethods", [])):
+                                model_id = name.replace("models/", "")
+                                result.append({"id": model_id, "name": display})
+                        return result
+        except Exception:
+            pass
+        return [
+            {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash"},
+            {"id": "gemini-2.0-pro", "name": "Gemini 2.0 Pro"},
+        ]
+
     async def generate(
         self,
         messages: List[Dict[str, Any]],

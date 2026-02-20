@@ -527,21 +527,11 @@ class TestDefenseInDepth:
 
 
 # ===================================================================
-# Integration: AutonomousAgent constructor compatibility
+# Integration: LLMDrivenAgent + governance compatibility
 # ===================================================================
 
-class TestAutonomousAgentIntegration:
-    """Verify the governance parameter is accepted by AutonomousAgent.__init__."""
-
-    def test_governance_param_in_init_signature(self):
-        """The constructor accepts 'governance' as a keyword argument."""
-        import inspect
-        # We can't import AutonomousAgent directly due to heavy deps,
-        # but we can verify via compile-time check that the parameter exists
-        import py_compile
-        py_compile.compile(
-            "backend/core/autonomous_agent.py", doraise=True
-        )
+class TestAgentGovernanceIntegration:
+    """Verify governance integration with LLM-driven agent infrastructure."""
 
     def test_governance_module_importable(self):
         """All public exports are importable."""
@@ -556,10 +546,10 @@ class TestAutonomousAgentIntegration:
         assert GovernanceAgent is not None
 
     def test_api_modules_compile(self):
-        """vuln_lab.py and agent.py compile with governance imports."""
+        """vuln_lab.py and agent_v2.py compile with governance imports."""
         import py_compile
         py_compile.compile("backend/api/v1/vuln_lab.py", doraise=True)
-        py_compile.compile("backend/api/v1/agent.py", doraise=True)
+        py_compile.compile("backend/api/v1/agent_v2.py", doraise=True)
 
 
 # ===================================================================

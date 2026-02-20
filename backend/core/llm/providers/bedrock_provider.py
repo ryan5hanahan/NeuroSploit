@@ -46,6 +46,31 @@ class BedrockProvider(LLMProvider):
     async def is_available(self) -> bool:
         return self._client is not None
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List available Bedrock foundation models."""
+        if not self._client or not BOTO3_AVAILABLE:
+            return []
+        try:
+            bedrock_mgmt = boto3.client("bedrock", region_name=self._region)
+            response = await asyncio.to_thread(
+                bedrock_mgmt.list_foundation_models,
+                byOutputModality="TEXT",
+            )
+            result = []
+            for m in response.get("modelSummaries", []):
+                if m.get("modelLifecycleStatus") == "ACTIVE":
+                    result.append({
+                        "id": m["modelId"],
+                        "name": m.get("modelName", m["modelId"]),
+                    })
+            return sorted(result, key=lambda x: x["name"])
+        except Exception:
+            return [
+                {"id": "us.anthropic.claude-haiku-4-5-20251001-v1:0", "name": "Claude Haiku 4.5 (Bedrock)"},
+                {"id": "us.anthropic.claude-sonnet-4-6-v1:0", "name": "Claude Sonnet 4.6 (Bedrock)"},
+                {"id": "us.anthropic.claude-opus-4-6-v1:0", "name": "Claude Opus 4.6 (Bedrock)"},
+            ]
+
     async def generate(
         self,
         messages: List[Dict[str, Any]],

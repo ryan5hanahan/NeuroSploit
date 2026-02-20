@@ -39,11 +39,10 @@ from tools.recon.recon_tools import FullReconRunner
 
 # Import AI Agents
 try:
-    from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+    from backend.core.llm_agent import LLMDrivenAgent
     from backend.core.task_library import get_task_library, Task, TaskCategory
 except ImportError:
-    AutonomousAgent = None
-    OperationMode = None
+    LLMDrivenAgent = None
     get_task_library = None
     Task = None
     TaskCategory = None
@@ -1027,7 +1026,7 @@ CONTEXTO DE RECON:
             context_file: Optional recon context JSON file
             llm_profile: Optional LLM profile to use
         """
-        if not AutonomousAgent:
+        if not LLMDrivenAgent:
             print("[!] AI Agent not available. Check backend installation.")
             return {"error": "AI Agent not installed"}
 
@@ -1071,15 +1070,17 @@ CONTEXTO DE RECON:
                 }.get(level, "[*]")
                 print(f"{prefix} {message}")
 
-            async with AutonomousAgent(
+            agent = LLMDrivenAgent(
                 target=target,
-                mode=OperationMode.AUTO_PENTEST,
-                log_callback=log_callback,
-                custom_prompt=prompt_content,
-                recon_context=recon_context,
-            ) as agent:
-                report = await agent.run()
-                return report
+                objective=prompt_content or "Perform a comprehensive security assessment",
+                max_steps=100,
+            )
+            result = await agent.run()
+            return {
+                "findings": result.findings,
+                "executive_summary": result.stop_summary or f"Assessment of {target}",
+                "status": result.status,
+            }
 
         try:
             report = asyncio.run(run_agent())
@@ -1134,8 +1135,8 @@ CONTEXTO DE RECON:
             context_file: Path to recon context JSON
             llm_profile: LLM profile to use
         """
-        if not AutonomousAgent:
-            print("[!] Autonomous Agent not available. Check installation.")
+        if not LLMDrivenAgent:
+            print("[!] LLM-Driven Agent not available. Check installation.")
             return {"error": "Agent not installed"}
 
         print(f"\n{'='*70}")
@@ -1181,18 +1182,14 @@ CONTEXTO DE RECON:
             if recon_context:
                 print(f"[+] Loaded context: {context_file}")
 
-        # Get operation mode
-        mode_map = {
-            "recon_only": OperationMode.RECON_ONLY,
-            "full_auto": OperationMode.FULL_AUTO,
-            "prompt_only": OperationMode.PROMPT_ONLY,
-            "analyze_only": OperationMode.ANALYZE_ONLY,
+        # Map old modes to objectives
+        mode_objectives = {
+            "recon_only": "Perform reconnaissance only — discover endpoints, technologies, and attack surface. Do NOT test for vulnerabilities.",
+            "full_auto": "Perform a comprehensive security assessment",
+            "prompt_only": prompt or "Perform a comprehensive security assessment",
+            "analyze_only": "Analyze the target application for potential security issues without active testing",
         }
-        op_mode = mode_map.get(mode, OperationMode.FULL_AUTO)
-
-        # Initialize LLM
-        profile = llm_profile or self.config.get('llm', {}).get('default_profile')
-        self._initialize_llm_manager(profile)
+        objective = prompt or mode_objectives.get(mode, mode_objectives["full_auto"])
 
         print(f"[*] Session: {self.session_id}\n")
 
@@ -1200,29 +1197,19 @@ CONTEXTO DE RECON:
         import asyncio
 
         async def run():
-            async def log_cb(level: str, message: str):
-                prefix = {"info": "[*]", "warning": "[!]", "error": "[X]", "debug": "[D]"}.get(level, "[*]")
-                print(f"{prefix} {message}")
-
-            async def progress_cb(progress: int, message: str):
-                bar = "=" * (progress // 5) + ">" + " " * (20 - progress // 5)
-                print(f"\r[{bar}] {progress}% - {message}", end="", flush=True)
-                if progress == 100:
-                    print()
-
-            async with AutonomousAgent(
+            agent = LLMDrivenAgent(
                 target=target,
-                mode=op_mode,
-                llm_manager=self.llm_manager_instance,
-                log_callback=log_cb,
-                progress_callback=progress_cb,
-                task=task,
-                custom_prompt=prompt,
-                recon_context=recon_context,
-                config=self.config,
-                prompt_file=prompt_file
-            ) as agent:
-                return await agent.run()
+                objective=objective,
+                max_steps=100,
+            )
+            result = await agent.run()
+            return {
+                "findings": result.findings,
+                "executive_summary": result.stop_summary or f"Assessment of {target}",
+                "status": result.status,
+                "steps_used": result.steps_used,
+                "cost_report": result.cost_report,
+            }
 
         try:
             report = asyncio.run(run())

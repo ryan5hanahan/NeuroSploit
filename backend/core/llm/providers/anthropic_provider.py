@@ -41,6 +41,14 @@ class AnthropicProvider(LLMProvider):
     def supports_extended_thinking(self) -> bool:
         return True
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """Return known Anthropic models (no list-models API available)."""
+        return [
+            {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5"},
+            {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+            {"id": "claude-opus-4-6", "name": "Claude Opus 4.6"},
+        ]
+
     async def is_available(self) -> bool:
         return self._client is not None
 

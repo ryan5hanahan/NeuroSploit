@@ -60,7 +60,7 @@ class AgentV2StartRequest(BaseModel):
     )
     auth_type: Optional[str] = Field(
         default=None,
-        description="Auth type: cookie, bearer, basic, or header",
+        description="Auth type: cookie, bearer, basic, header, or login",
     )
     auth_credentials: Optional[Dict[str, str]] = Field(
         default=None,

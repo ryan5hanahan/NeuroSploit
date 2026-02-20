@@ -210,7 +210,7 @@ export interface AgentRequest {
   mode: AgentMode
   task_id?: string
   prompt?: string
-  auth_type?: 'cookie' | 'bearer' | 'basic' | 'header'
+  auth_type?: 'cookie' | 'bearer' | 'basic' | 'header' | 'login'
   auth_value?: string
   custom_headers?: Record<string, string>
   max_depth?: number
@@ -674,7 +674,7 @@ export interface DashboardStatsExtended extends DashboardStats {
 export interface AgentV2CredentialSet {
   label: string
   role: string
-  auth_type: 'cookie' | 'bearer' | 'basic' | 'header'
+  auth_type: 'cookie' | 'bearer' | 'basic' | 'header' | 'login'
   cookie?: string
   token?: string
   username?: string
@@ -690,7 +690,7 @@ export interface AgentV2StartRequest {
   objective?: string
   max_steps?: number
   scope_profile?: string
-  auth_type?: 'cookie' | 'bearer' | 'basic' | 'header'
+  auth_type?: 'cookie' | 'bearer' | 'basic' | 'header' | 'login'
   auth_credentials?: Record<string, string>
   credential_sets?: AgentV2CredentialSet[]
   custom_headers?: Record<string, string>

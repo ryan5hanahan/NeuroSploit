@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  FlaskConical, ChevronDown, ChevronUp, Loader2, Lock,
+  FlaskConical, ChevronDown, ChevronUp, Loader2,
   AlertTriangle, CheckCircle2, XCircle, Play, Square,
   Trash2, Eye, Search, BarChart3, Clock, Target,
   Terminal, Shield, Globe, FileText, ChevronRight, Flag, Users
@@ -9,6 +9,7 @@ import {
 import { vulnLabApi } from '../services/api'
 import type { VulnTypeCategory, VulnLabChallenge, VulnLabStats, VulnLabLogEntry } from '../types'
 import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
+import AuthInputSection, { AuthState } from '../components/AuthInputSection'
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-500',
@@ -66,9 +67,7 @@ export default function VulnLabPage() {
   const [targetUrl, setTargetUrl] = useState('')
   const [challengeName, setChallengeName] = useState('')
   const [selectedVulnType, setSelectedVulnType] = useState('')
-  const [showAuth, setShowAuth] = useState(false)
-  const [authType, setAuthType] = useState('')
-  const [authValue, setAuthValue] = useState('')
+  const [auth, setAuth] = useState<AuthState>({ authType: 'none', authValue: '', username: '', password: '' })
   const [notes, setNotes] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
   const [ctfMode, setCtfMode] = useState(false)
@@ -169,12 +168,21 @@ export default function VulnLabPage() {
         ? ctfPatterns.split('\n').map(p => p.trim()).filter(Boolean)
         : undefined
       const validCredSets = credentialSets.filter(cs => cs.label.trim())
+      // Build auth_type + auth_value for vuln-lab API
+      const effectiveAuthType = auth.authType && auth.authType !== 'none' ? auth.authType : undefined
+      let effectiveAuthValue: string | undefined
+      if (effectiveAuthType === 'basic' || effectiveAuthType === 'login') {
+        effectiveAuthValue = auth.username ? `${auth.username}:${auth.password}` : undefined
+      } else if (effectiveAuthType) {
+        effectiveAuthValue = auth.authValue || undefined
+      }
+
       const resp = await vulnLabApi.run({
         target_url: targetUrl.trim(),
         vuln_type: selectedVulnType || undefined,
         challenge_name: challengeName || undefined,
-        auth_type: authType || undefined,
-        auth_value: authValue || undefined,
+        auth_type: effectiveAuthType,
+        auth_value: effectiveAuthValue,
         notes: notes || undefined,
         ctf_mode: ctfMode || undefined,
         ctf_flag_patterns: ctfPatternsArr,
@@ -413,46 +421,7 @@ export default function VulnLabPage() {
 
             {/* Auth Section */}
             <div className="mb-6">
-              <button
-                onClick={() => setShowAuth(!showAuth)}
-                disabled={isRunning}
-                className="flex items-center gap-2 text-sm text-dark-400 hover:text-white transition-colors disabled:opacity-50"
-              >
-                <Lock className="w-4 h-4" />
-                <span>Authentication (Optional)</span>
-                {showAuth ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-              {showAuth && (
-                <div className="mt-3 space-y-3 pl-6">
-                  <select
-                    value={authType}
-                    onChange={e => setAuthType(e.target.value)}
-                    disabled={isRunning}
-                    className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500"
-                  >
-                    <option value="">No Authentication</option>
-                    <option value="bearer">Bearer Token</option>
-                    <option value="cookie">Cookie</option>
-                    <option value="basic">Basic Auth (user:pass)</option>
-                    <option value="header">Custom Header (Name:Value)</option>
-                  </select>
-                  {authType && (
-                    <input
-                      type="text"
-                      value={authValue}
-                      onChange={e => setAuthValue(e.target.value)}
-                      disabled={isRunning}
-                      placeholder={
-                        authType === 'bearer' ? 'eyJhbGciOiJIUzI1NiIs...' :
-                        authType === 'cookie' ? 'session=abc123; token=xyz' :
-                        authType === 'basic' ? 'admin:password123' :
-                        'X-API-Key:your-api-key'
-                      }
-                      className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500 focus:outline-none focus:border-purple-500"
-                    />
-                  )}
-                </div>
-              )}
+              <AuthInputSection value={auth} onChange={setAuth} disabled={isRunning} />
             </div>
 
             {/* Multi-Credential Differential Testing */}

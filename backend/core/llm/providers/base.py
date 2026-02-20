@@ -119,3 +119,12 @@ class LLMProvider(ABC):
     def supports_extended_thinking(self) -> bool:
         """Whether this provider supports extended thinking."""
         return False
+
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List available models for this provider.
+
+        Returns:
+            List of dicts with 'id' and 'name' keys.
+            Empty list if not supported or unavailable.
+        """
+        return []

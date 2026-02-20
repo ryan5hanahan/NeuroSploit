@@ -10,22 +10,23 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from sqlalchemy import select, func, text
 
-from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+from backend.core.llm_agent import LLMDrivenAgent
 from backend.core.governance_facade import create_governance
 from backend.core.vuln_engine.registry import VulnerabilityRegistry
 from backend.core.ctf_flag_detector import CTFFlagDetector
 from backend.db.database import async_session_factory
 from backend.models import Scan, Target, Vulnerability, Endpoint, Report, VulnLabChallenge
 
-# Import agent.py's shared dicts so ScanDetailsPage can find our scans
-from backend.api.v1.agent import (
-    agent_results, agent_instances, agent_to_scan, scan_to_agent
-)
+# Local state for agent tracking (replaces shared dicts from retired agent.py)
+agent_results: Dict[str, Dict] = {}
+agent_instances: Dict[str, Any] = {}
+agent_to_scan: Dict[str, Any] = {}
+scan_to_agent: Dict[str, str] = {}
 
 router = APIRouter()
 
 # In-memory tracking for running lab tests
-lab_agents: Dict[str, Any] = {}  # AutonomousAgent or CTFCoordinator
+lab_agents: Dict[str, Any] = {}  # LLMDrivenAgent or CTFCoordinator
 lab_results: Dict[str, Dict] = {}
 
 
@@ -569,26 +570,40 @@ async def _run_lab_test(
                 report = await coordinator.run()
                 lab_agents.pop(challenge_id, None)
             else:
-                async with AutonomousAgent(
+                async def on_event(event_type: str, data: Dict):
+                    if event_type == "agent_step":
+                        step = data.get("step", 0)
+                        total = data.get("max_steps", 50)
+                        progress = min(int(step / total * 100), 99)
+                        await progress_callback(progress, f"step_{step}")
+
+                agent = LLMDrivenAgent(
                     target=target,
-                    mode=OperationMode.FULL_AUTO,
-                    log_callback=log_callback,
-                    progress_callback=progress_callback,
-                    auth_headers=auth_headers,
-                    custom_prompt=focused_prompt,
-                    finding_callback=finding_callback,
-                    lab_context=lab_ctx,
-                    governance=governance,
+                    objective=focused_prompt,
+                    max_steps=50,
+                    governance_agent=governance,
+                    custom_headers=auth_headers,
                     credential_sets=credential_sets,
-                ) as agent:
-                    lab_agents[challenge_id] = agent
-                    # Also register in agent.py's shared instances so stop works
-                    agent_instances[agent_id] = agent
+                    on_event=on_event,
+                )
+                lab_agents[challenge_id] = agent
+                agent_instances[agent_id] = agent
 
-                    report = await agent.run()
+                agent_result = await agent.run()
 
-                    lab_agents.pop(challenge_id, None)
-                    agent_instances.pop(agent_id, None)
+                # Convert AgentResult to dict matching expected report format
+                report = {
+                    "findings": agent_result.findings,
+                    "recon": {"endpoints": [], "technologies": [], "parameters": {}},
+                    "executive_summary": agent_result.stop_summary or f"LLM-driven assessment of {target}",
+                }
+                # Feed findings through callback for real-time tracking
+                for f in agent_result.findings:
+                    if f not in findings_list:
+                        await finding_callback(f)
+
+                lab_agents.pop(challenge_id, None)
+                agent_instances.pop(agent_id, None)
 
             # Use findings from report OR from real-time callbacks (fallback)
             report_findings = report.get("findings", [])

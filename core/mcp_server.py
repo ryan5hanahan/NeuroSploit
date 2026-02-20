@@ -999,7 +999,7 @@ _active_governance = None
 def set_mcp_governance(governance):
     """Set the active governance facade for MCP tool calls.
 
-    Called by AutonomousAgent.__aenter__ when MCP runs in-process.
+    Called when MCP runs in-process to provide governance context.
     """
     global _active_governance
     _active_governance = governance

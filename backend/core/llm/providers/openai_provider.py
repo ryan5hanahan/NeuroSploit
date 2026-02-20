@@ -38,6 +38,24 @@ class OpenAIProvider(LLMProvider):
     async def is_available(self) -> bool:
         return self._client is not None
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List available OpenAI models via the API."""
+        if not self._client:
+            return []
+        try:
+            models = await asyncio.to_thread(self._client.models.list)
+            result = []
+            for m in models.data:
+                mid = m.id
+                if any(mid.startswith(p) for p in ("gpt-4", "gpt-3.5", "o1", "o3")):
+                    result.append({"id": mid, "name": mid})
+            return sorted(result, key=lambda x: x["id"])
+        except Exception:
+            return [
+                {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
+                {"id": "gpt-4o", "name": "GPT-4o"},
+            ]
+
     async def generate(
         self,
         messages: List[Dict[str, Any]],

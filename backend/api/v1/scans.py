@@ -502,7 +502,7 @@ async def repeat_scan(
 async def stop_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     """Stop a running scan and save partial results"""
     from backend.api.websocket import manager as ws_manager
-    from backend.api.v1.agent import scan_to_agent, agent_instances, agent_results
+    from backend.api.v1.vuln_lab import scan_to_agent, agent_instances, agent_results
 
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalar_one_or_none()
@@ -600,7 +600,7 @@ async def stop_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
 async def pause_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     """Pause a running scan"""
     from backend.api.websocket import manager as ws_manager
-    from backend.api.v1.agent import scan_to_agent, agent_instances, agent_results
+    from backend.api.v1.vuln_lab import scan_to_agent, agent_instances, agent_results
 
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalar_one_or_none()
@@ -632,7 +632,7 @@ async def pause_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
 async def resume_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     """Resume a paused scan"""
     from backend.api.websocket import manager as ws_manager
-    from backend.api.v1.agent import scan_to_agent, agent_instances, agent_results
+    from backend.api.v1.vuln_lab import scan_to_agent, agent_instances, agent_results
 
     result = await db.execute(select(Scan).where(Scan.id == scan_id))
     scan = result.scalar_one_or_none()
@@ -678,7 +678,7 @@ async def skip_to_phase_endpoint(scan_id: str, target_phase: str, db: AsyncSessi
 
     # If paused, resume first so the skip can be processed
     if scan.status == "paused":
-        from backend.api.v1.agent import scan_to_agent, agent_instances, agent_results
+        from backend.api.v1.vuln_lab import scan_to_agent, agent_instances, agent_results
         agent_id = scan_to_agent.get(scan_id)
         if agent_id and agent_id in agent_instances:
             agent_instances[agent_id].resume()

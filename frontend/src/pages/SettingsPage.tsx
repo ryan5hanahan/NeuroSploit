@@ -33,6 +33,9 @@ interface Settings {
   model_fast: string
   model_balanced: string
   model_deep: string
+  provider_fast: string
+  provider_balanced: string
+  provider_deep: string
   // Cost tracking
   cost_budget_per_scan: number
   cost_warn_at_pct: number
@@ -109,13 +112,22 @@ const MODEL_PRESETS: Record<string, { label: string; value: string }[]> = {
 // Default model per tier per provider (matches router.py DEFAULT_TIER_CONFIG)
 const TIER_DEFAULTS: Record<string, Record<string, string>> = {
   claude: { fast: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-4-6', deep: 'claude-opus-4-6' },
+  anthropic: { fast: 'claude-haiku-4-5-20251001', balanced: 'claude-sonnet-4-6', deep: 'claude-opus-4-6' },
   openai: { fast: 'gpt-4o-mini', balanced: 'gpt-4o', deep: 'gpt-4o' },
   openrouter: { fast: 'anthropic/claude-haiku-4-5-20251001', balanced: 'anthropic/claude-sonnet-4-6', deep: 'anthropic/claude-opus-4-6' },
   ollama: { fast: 'llama3.2:3b', balanced: 'llama3.2', deep: 'llama3.2' },
   bedrock: { fast: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', balanced: 'us.anthropic.claude-sonnet-4-6-v1:0', deep: 'us.anthropic.claude-opus-4-6-v1:0' },
+  gemini: { fast: 'gemini-2.0-flash', balanced: 'gemini-2.0-pro', deep: 'gemini-2.0-pro' },
+  lmstudio: { fast: 'default', balanced: 'default', deep: 'default' },
 }
 
 const TIER_PRESETS: Record<string, { label: string; value: string }[]> = {
+  anthropic: [
+    { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
+    { label: 'Claude Sonnet 4.6', value: 'claude-sonnet-4-6' },
+    { label: 'Claude Opus 4.6', value: 'claude-opus-4-6' },
+    { label: 'Custom', value: '__custom__' },
+  ],
   claude: [
     { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
     { label: 'Claude Sonnet 4.6', value: 'claude-sonnet-4-6' },
@@ -176,6 +188,12 @@ export default function SettingsPage() {
   const [isCustomFast, setIsCustomFast] = useState(false)
   const [isCustomBalanced, setIsCustomBalanced] = useState(false)
   const [isCustomDeep, setIsCustomDeep] = useState(false)
+  // Per-tier provider overrides
+  const [providerFast, setProviderFast] = useState('')
+  const [providerBalanced, setProviderBalanced] = useState('')
+  const [providerDeep, setProviderDeep] = useState('')
+  // Dynamic model lists from API
+  const [dynamicModels, setDynamicModels] = useState<Record<string, { id: string; name: string }[]>>({})
   const [enableKnowledgeAugmentation, setEnableKnowledgeAugmentation] = useState(false)
   const [enableBrowserValidation, setEnableBrowserValidation] = useState(false)
   const [enableExtendedThinking, setEnableExtendedThinking] = useState(false)
@@ -233,6 +251,10 @@ export default function SettingsPage() {
         setIsCustomFast(savedFast !== '' && !tierPresets.some((p: { value: string }) => p.value === savedFast))
         setIsCustomBalanced(savedBalanced !== '' && !tierPresets.some((p: { value: string }) => p.value === savedBalanced))
         setIsCustomDeep(savedDeep !== '' && !tierPresets.some((p: { value: string }) => p.value === savedDeep))
+        // Load per-tier provider overrides
+        setProviderFast(data.provider_fast || '')
+        setProviderBalanced(data.provider_balanced || '')
+        setProviderDeep(data.provider_deep || '')
         setEnableKnowledgeAugmentation(data.enable_knowledge_augmentation ?? false)
         setEnableBrowserValidation(data.enable_browser_validation ?? false)
         setEnableExtendedThinking(data.enable_extended_thinking ?? false)
@@ -279,6 +301,40 @@ export default function SettingsPage() {
     }
   }
 
+  const fetchModelsForProvider = async (providerName: string) => {
+    if (!providerName || dynamicModels[providerName]) return
+    try {
+      const response = await fetch(`/api/v1/settings/available-models?provider=${providerName}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.models && data.models.length > 0) {
+          setDynamicModels(prev => ({ ...prev, [providerName]: data.models }))
+        }
+      }
+    } catch {
+      // Fallback to TIER_PRESETS
+    }
+  }
+
+  // Helper to get effective provider for a tier
+  const getTierProvider = (tier: 'fast' | 'balanced' | 'deep') => {
+    const overrides = { fast: providerFast, balanced: providerBalanced, deep: providerDeep }
+    return overrides[tier] || llmProvider
+  }
+
+  // Get model options for a tier (dynamic API models or fallback to presets)
+  const getTierModelOptions = (tier: 'fast' | 'balanced' | 'deep') => {
+    const effectiveProvider = getTierProvider(tier)
+    const dynamic = dynamicModels[effectiveProvider]
+    if (dynamic && dynamic.length > 0) {
+      return [
+        ...dynamic.map(m => ({ label: m.name, value: m.id })),
+        { label: 'Custom', value: '__custom__' },
+      ]
+    }
+    return TIER_PRESETS[effectiveProvider] || TIER_PRESETS[llmProvider] || []
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     setMessage(null)
@@ -306,6 +362,9 @@ export default function SettingsPage() {
           model_fast: enableModelRouting ? modelFast : undefined,
           model_balanced: enableModelRouting ? modelBalanced : undefined,
           model_deep: enableModelRouting ? modelDeep : undefined,
+          provider_fast: enableModelRouting ? providerFast : undefined,
+          provider_balanced: enableModelRouting ? providerBalanced : undefined,
+          provider_deep: enableModelRouting ? providerDeep : undefined,
           enable_knowledge_augmentation: enableKnowledgeAugmentation,
           enable_browser_validation: enableBrowserValidation,
           enable_extended_thinking: enableExtendedThinking,
@@ -431,7 +490,7 @@ export default function SettingsPage() {
                 <Button
                   key={provider}
                   variant={llmProvider === provider ? 'primary' : 'secondary'}
-                  onClick={() => { setLlmProvider(provider); setLlmModel(''); setIsCustomModel(false); setModelFast(''); setModelBalanced(''); setModelDeep(''); setIsCustomFast(false); setIsCustomBalanced(false); setIsCustomDeep(false); setTestResult(null); setPreviousResult(null) }}
+                  onClick={() => { setLlmProvider(provider); setLlmModel(''); setIsCustomModel(false); setModelFast(''); setModelBalanced(''); setModelDeep(''); setIsCustomFast(false); setIsCustomBalanced(false); setIsCustomDeep(false); setProviderFast(''); setProviderBalanced(''); setProviderDeep(''); setTestResult(null); setPreviousResult(null) }}
                 >
                   {provider === 'openrouter' ? 'OpenRouter' : provider === 'bedrock' ? 'AWS Bedrock' : provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </Button>
@@ -703,53 +762,76 @@ export default function SettingsPage() {
             <ToggleSwitch enabled={enableModelRouting} onToggle={() => setEnableModelRouting(!enableModelRouting)} />
           </div>
 
-          {/* Per-tier model selection (shown when routing is enabled) */}
+          {/* Per-tier model & provider selection (shown when routing is enabled) */}
           {enableModelRouting && (
             <div className="ml-8 p-4 bg-dark-800/50 border border-dark-700 rounded-lg space-y-4">
               <p className="text-xs text-dark-400 mb-2">
-                Select which model to use for each task complexity tier. Leave empty for provider defaults.
+                Configure provider and model for each tier. Leave provider empty to use the global default.
               </p>
               {[
-                { tier: 'fast', label: 'Fast', desc: 'Recon parsing, tool selection, classification', model: modelFast, setModel: setModelFast, isCustom: isCustomFast, setIsCustom: setIsCustomFast },
-                { tier: 'balanced', label: 'Balanced', desc: 'Vuln testing, payload generation, analysis', model: modelBalanced, setModel: setModelBalanced, isCustom: isCustomBalanced, setIsCustom: setIsCustomBalanced },
-                { tier: 'deep', label: 'Deep', desc: 'Strategy planning, confirmation, reporting', model: modelDeep, setModel: setModelDeep, isCustom: isCustomDeep, setIsCustom: setIsCustomDeep },
-              ].map(({ tier, label, desc, model, setModel, isCustom, setIsCustom }) => (
-                <div key={tier}>
-                  <label className="block text-sm font-medium text-dark-200 mb-1">
-                    {label} Tier
-                    <span className="text-xs text-dark-500 ml-2">{desc}</span>
-                  </label>
-                  <select
-                    value={isCustom ? '__custom__' : model}
-                    onChange={(e) => {
-                      if (e.target.value === '__custom__') {
-                        setIsCustom(true)
-                        setModel('')
-                      } else {
-                        setIsCustom(false)
-                        setModel(e.target.value)
-                      }
-                    }}
-                    className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 transition-colors"
-                  >
-                    <option value="">Default ({TIER_DEFAULTS[llmProvider]?.[tier] || '—'})</option>
-                    {(TIER_PRESETS[llmProvider] || []).map((preset) => (
-                      <option key={preset.value} value={preset.value}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </select>
-                  {isCustom && (
-                    <input
-                      type="text"
-                      placeholder="Enter custom model ID..."
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="w-full mt-1 px-3 py-1.5 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500"
-                    />
-                  )}
-                </div>
-              ))}
+                { tier: 'fast' as const, label: 'Fast', desc: 'Recon parsing, tool selection, classification', model: modelFast, setModel: setModelFast, isCustom: isCustomFast, setIsCustom: setIsCustomFast, provider: providerFast, setProvider: setProviderFast },
+                { tier: 'balanced' as const, label: 'Balanced', desc: 'Vuln testing, payload generation, analysis', model: modelBalanced, setModel: setModelBalanced, isCustom: isCustomBalanced, setIsCustom: setIsCustomBalanced, provider: providerBalanced, setProvider: setProviderBalanced },
+                { tier: 'deep' as const, label: 'Deep', desc: 'Strategy planning, confirmation, reporting', model: modelDeep, setModel: setModelDeep, isCustom: isCustomDeep, setIsCustom: setIsCustomDeep, provider: providerDeep, setProvider: setProviderDeep },
+              ].map(({ tier, label, desc, model, setModel, isCustom, setIsCustom, provider, setProvider }) => {
+                const effectiveProvider = provider || llmProvider
+                const modelOptions = getTierModelOptions(tier)
+                return (
+                  <div key={tier} className="space-y-2">
+                    <label className="block text-sm font-medium text-dark-200">
+                      {label} Tier
+                      <span className="text-xs text-dark-500 ml-2">{desc}</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={provider}
+                        onChange={(e) => {
+                          setProvider(e.target.value)
+                          setModel('')
+                          setIsCustom(false)
+                          if (e.target.value) fetchModelsForProvider(e.target.value)
+                        }}
+                        className="w-40 px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                      >
+                        <option value="">Same as default</option>
+                        {['claude', 'openai', 'ollama', 'bedrock', 'gemini', 'lmstudio'].map(p => (
+                          <option key={p} value={p === 'claude' ? 'anthropic' : p}>
+                            {p === 'claude' ? 'Claude' : p === 'bedrock' ? 'AWS Bedrock' : p === 'lmstudio' ? 'LM Studio' : p.charAt(0).toUpperCase() + p.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={isCustom ? '__custom__' : model}
+                        onChange={(e) => {
+                          if (e.target.value === '__custom__') {
+                            setIsCustom(true)
+                            setModel('')
+                          } else {
+                            setIsCustom(false)
+                            setModel(e.target.value)
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500 transition-colors"
+                      >
+                        <option value="">Default ({TIER_DEFAULTS[effectiveProvider]?.[tier] || TIER_DEFAULTS[llmProvider]?.[tier] || '—'})</option>
+                        {modelOptions.map((preset) => (
+                          <option key={preset.value} value={preset.value}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {isCustom && (
+                      <input
+                        type="text"
+                        placeholder="Enter custom model ID..."
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-dark-900 border border-dark-700 rounded-lg text-white text-sm focus:outline-none focus:border-primary-500"
+                      />
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 

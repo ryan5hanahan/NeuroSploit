@@ -18,6 +18,24 @@ class LMStudioProvider(LLMProvider):
     def name(self) -> str:
         return "lmstudio"
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List locally loaded LM Studio models."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._base_url}/v1/models",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return [
+                            {"id": m["id"], "name": m.get("id", "")}
+                            for m in data.get("data", [])
+                        ]
+        except Exception:
+            pass
+        return []
+
     async def is_available(self) -> bool:
         try:
             async with aiohttp.ClientSession() as session:

@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.core.llm import UnifiedLLMClient, LLMConnectionError
-from backend.core.autonomous_agent import AutonomousAgent
 from core.sandbox_manager import get_sandbox
 
 router = APIRouter()
@@ -383,7 +382,7 @@ async def send_message(session_id: str, req: MessageRequest):
 
     # Call LLM
     try:
-        llm = UnifiedLLMClient(AutonomousAgent._load_config())
+        llm = UnifiedLLMClient()
         prompt = f"{context}\n\nUser: {user_message}"
         response = await llm.generate(prompt, system=system_prompt, task_type="custom_prompt")
     except LLMConnectionError as exc:

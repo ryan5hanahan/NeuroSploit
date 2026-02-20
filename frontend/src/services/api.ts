@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Scan, Vulnerability, Prompt, PromptPreset, Report, DashboardStats,
-  AgentTask, AgentRequest, AgentResponse, AgentStatus, AgentLog, AgentMode,
+  AgentTask,
   ScanAgentTask, ActivityFeedItem, ScheduleJob, ScheduleJobRequest, AgentRole,
   VulnLabChallenge, VulnLabRunRequest, VulnLabRunResponse, VulnLabRealtimeStatus,
   VulnTypeCategory, VulnLabStats, SandboxPoolStatus, ScanComparisonResponse,
@@ -332,180 +332,6 @@ export const agentTasksApi = {
   },
 }
 
-// Agent API (Autonomous AI Agent like PentAGI)
-export const agentApi = {
-  // Run the autonomous agent
-  run: async (request: AgentRequest): Promise<AgentResponse> => {
-    const response = await api.post('/agent/run', request)
-    return response.data
-  },
-
-  // Get agent status and results
-  getStatus: async (agentId: string): Promise<AgentStatus> => {
-    const response = await api.get(`/agent/status/${agentId}`)
-    return response.data
-  },
-
-  // Get agent status by scan_id (reverse lookup)
-  getByScan: async (scanId: string): Promise<AgentStatus | null> => {
-    try {
-      const response = await api.get(`/agent/by-scan/${scanId}`)
-      return response.data
-    } catch {
-      return null
-    }
-  },
-
-  // Get agent logs
-  getLogs: async (agentId: string, limit = 100): Promise<{ agent_id: string; total_logs: number; logs: AgentLog[] }> => {
-    const response = await api.get(`/agent/logs/${agentId}?limit=${limit}`)
-    return response.data
-  },
-
-  // Get findings with details
-  getFindings: async (agentId: string) => {
-    const response = await api.get(`/agent/findings/${agentId}`)
-    return response.data
-  },
-
-  // Delete agent results
-  delete: async (agentId: string) => {
-    const response = await api.delete(`/agent/${agentId}`)
-    return response.data
-  },
-
-  // Stop a running agent
-  stop: async (agentId: string) => {
-    const response = await api.post(`/agent/stop/${agentId}`)
-    return response.data
-  },
-
-  // Pause a running agent
-  pause: async (agentId: string) => {
-    const response = await api.post(`/agent/pause/${agentId}`)
-    return response.data
-  },
-
-  // Resume a paused agent
-  resume: async (agentId: string) => {
-    const response = await api.post(`/agent/resume/${agentId}`)
-    return response.data
-  },
-
-  // Skip to a specific phase
-  skipToPhase: async (agentId: string, phase: string) => {
-    const response = await api.post(`/agent/skip-to/${agentId}/${phase}`)
-    return response.data
-  },
-
-  // Send custom prompt to agent
-  sendPrompt: async (agentId: string, prompt: string) => {
-    const response = await api.post(`/agent/prompt/${agentId}`, { prompt })
-    return response.data
-  },
-
-  // Quick synchronous run (for small targets)
-  quickRun: async (target: string, mode: AgentMode = 'full_auto') => {
-    const response = await api.post(`/agent/quick?target=${encodeURIComponent(target)}&mode=${mode}`)
-    return response.data
-  },
-
-  // Task Library
-  tasks: {
-    list: async (category?: string): Promise<AgentTask[]> => {
-      const params = category ? `?category=${category}` : ''
-      const response = await api.get(`/agent/tasks${params}`)
-      return response.data
-    },
-
-    get: async (taskId: string): Promise<AgentTask> => {
-      const response = await api.get(`/agent/tasks/${taskId}`)
-      return response.data
-    },
-
-    create: async (task: {
-      name: string
-      description: string
-      category?: string
-      prompt: string
-      system_prompt?: string
-      tags?: string[]
-    }): Promise<{ message: string; task_id: string }> => {
-      const response = await api.post('/agent/tasks', task)
-      return response.data
-    },
-
-    delete: async (taskId: string) => {
-      const response = await api.delete(`/agent/tasks/${taskId}`)
-      return response.data
-    },
-  },
-
-  // Real-time Task API
-  realtime: {
-    createSession: async (target: string, name?: string) => {
-      const response = await api.post('/agent/realtime/session', { target, name })
-      return response.data
-    },
-
-    sendMessage: async (sessionId: string, message: string) => {
-      const response = await api.post(`/agent/realtime/${sessionId}/message`, { message })
-      return response.data
-    },
-
-    getSession: async (sessionId: string) => {
-      const response = await api.get(`/agent/realtime/${sessionId}`)
-      return response.data
-    },
-
-    getReport: async (sessionId: string) => {
-      const response = await api.get(`/agent/realtime/${sessionId}/report`)
-      return response.data
-    },
-
-    deleteSession: async (sessionId: string) => {
-      const response = await api.delete(`/agent/realtime/${sessionId}`)
-      return response.data
-    },
-
-    listSessions: async () => {
-      const response = await api.get('/agent/realtime/sessions/list')
-      return response.data
-    },
-
-    getLlmStatus: async () => {
-      const response = await api.get('/agent/realtime/llm-status')
-      return response.data
-    },
-
-    getReportHtml: async (sessionId: string) => {
-      const response = await api.get(`/agent/realtime/${sessionId}/report?format=html`, {
-        responseType: 'text'
-      })
-      return response.data
-    },
-
-    getToolsList: async () => {
-      const response = await api.get('/agent/realtime/tools/list')
-      return response.data
-    },
-
-    getToolsStatus: async () => {
-      const response = await api.get('/agent/realtime/tools/status')
-      return response.data
-    },
-
-    executeTool: async (sessionId: string, tool: string, options?: Record<string, any>, timeout?: number) => {
-      const response = await api.post(`/agent/realtime/${sessionId}/execute-tool`, {
-        tool,
-        options,
-        timeout: timeout || 300
-      })
-      return response.data
-    },
-  },
-}
-
 // Vulnerability Lab API
 export const vulnLabApi = {
   getTypes: async (): Promise<{ categories: Record<string, VulnTypeCategory>; total_types: number }> => {
@@ -816,16 +642,97 @@ export const agentV2Api = {
     }
   },
 
-  // Task Library (mirrors agentApi.tasks)
+  // Task Library
   tasks: {
     list: async (category?: string): Promise<AgentTask[]> => {
       const params = category ? `?category=${category}` : ''
-      const response = await api.get(`/agent/tasks${params}`)
+      const response = await api.get(`/tasks${params}`)
       return response.data
     },
 
     get: async (taskId: string): Promise<AgentTask> => {
-      const response = await api.get(`/agent/tasks/${taskId}`)
+      const response = await api.get(`/tasks/${taskId}`)
+      return response.data
+    },
+
+    create: async (task: {
+      name: string
+      description: string
+      category?: string
+      prompt: string
+      system_prompt?: string
+      tags?: string[]
+    }): Promise<{ message: string; task_id: string }> => {
+      const response = await api.post('/tasks', task)
+      return response.data
+    },
+
+    delete: async (taskId: string) => {
+      const response = await api.delete(`/tasks/${taskId}`)
+      return response.data
+    },
+  },
+
+  // Real-time Task API
+  realtime: {
+    createSession: async (target: string, name?: string) => {
+      const response = await api.post('/realtime/session', { target, name })
+      return response.data
+    },
+
+    sendMessage: async (sessionId: string, message: string) => {
+      const response = await api.post(`/realtime/${sessionId}/message`, { message })
+      return response.data
+    },
+
+    getSession: async (sessionId: string) => {
+      const response = await api.get(`/realtime/${sessionId}`)
+      return response.data
+    },
+
+    getReport: async (sessionId: string) => {
+      const response = await api.get(`/realtime/${sessionId}/report`)
+      return response.data
+    },
+
+    deleteSession: async (sessionId: string) => {
+      const response = await api.delete(`/realtime/${sessionId}`)
+      return response.data
+    },
+
+    listSessions: async () => {
+      const response = await api.get('/realtime/sessions/list')
+      return response.data
+    },
+
+    getLlmStatus: async () => {
+      const response = await api.get('/realtime/llm-status')
+      return response.data
+    },
+
+    getReportHtml: async (sessionId: string) => {
+      const response = await api.get(`/realtime/${sessionId}/report?format=html`, {
+        responseType: 'text'
+      })
+      return response.data
+    },
+
+    getToolsList: async () => {
+      const response = await api.get('/realtime/tools/list')
+      return response.data
+    },
+
+    getToolsStatus: async () => {
+      const response = await api.get('/realtime/tools/status')
+      return response.data
+    },
+
+    executeTool: async (sessionId: string, tool: string, options?: Record<string, any>, timeout?: number) => {
+      const response = await api.post(`/realtime/${sessionId}/execute-tool`, {
+        tool,
+        options,
+        timeout: timeout || 300
+      })
       return response.data
     },
   },

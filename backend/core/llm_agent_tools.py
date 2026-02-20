@@ -471,6 +471,104 @@ UPDATE_PLAN = {
     },
 }
 
+GET_PAYLOADS = {
+    "name": "get_payloads",
+    "description": (
+        "Retrieve curated payloads for a specific vulnerability type from the "
+        "built-in payload database (100+ vuln types, 526+ payloads including "
+        "PayloadsAllTheThings/PATT). Use this to get targeted, context-aware "
+        "payloads instead of crafting them from scratch. Supports WAF bypass "
+        "variants, XSS context-specific payloads, and DB-specific SQL injection."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "vuln_type": {
+                "type": "string",
+                "description": (
+                    "Vulnerability type key (e.g., 'sqli_error', 'xss_reflected', "
+                    "'command_injection', 'ssti', 'ssrf', 'lfi', 'xxe', 'nosql_injection', "
+                    "'jwt_manipulation', 'idor', 'cors_misconfig', etc.). "
+                    "Use get_vuln_info with list_types=true to see all available types."
+                ),
+            },
+            "context": {
+                "type": "object",
+                "description": "Optional context for payload selection",
+                "properties": {
+                    "detected_technology": {
+                        "type": "string",
+                        "description": "Detected backend technology (e.g., 'mysql', 'postgresql', 'nodejs', 'php')",
+                    },
+                    "waf_detected": {
+                        "type": "boolean",
+                        "description": "Whether a WAF was detected (adds encoding bypass variants)",
+                    },
+                    "depth": {
+                        "type": "string",
+                        "description": "Payload depth: 'quick' (3), 'standard' (10), 'thorough' (20), 'exhaustive' (all)",
+                        "enum": ["quick", "standard", "thorough", "exhaustive"],
+                    },
+                },
+            },
+            "xss_context": {
+                "type": "string",
+                "description": (
+                    "XSS injection context for context-specific payloads "
+                    "(e.g., 'html_body', 'attribute', 'js_string', 'url', 'css')"
+                ),
+            },
+            "filter_bypass": {
+                "type": "object",
+                "description": "WAF/filter bypass context for targeted bypass payloads",
+                "properties": {
+                    "blocked_chars": {
+                        "type": "string",
+                        "description": "Characters that are blocked (e.g., '<>\"')",
+                    },
+                    "blocked_tags": {
+                        "type": "string",
+                        "description": "HTML tags that are blocked (e.g., 'script,img')",
+                    },
+                    "blocked_events": {
+                        "type": "string",
+                        "description": "Event handlers that are blocked (e.g., 'onerror,onload')",
+                    },
+                },
+            },
+        },
+        "required": ["vuln_type"],
+    },
+}
+
+GET_VULN_INFO = {
+    "name": "get_vuln_info",
+    "description": (
+        "Get vulnerability metadata from the built-in knowledge base. Returns CWE IDs, "
+        "severity ratings, descriptions, impact statements, remediation guidance, and "
+        "false positive markers for 100+ vulnerability types. Use list_types=true to "
+        "see all available vulnerability type keys."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "vuln_type": {
+                "type": "string",
+                "description": (
+                    "Vulnerability type key (e.g., 'sqli_error', 'xss_reflected'). "
+                    "Ignored if list_types is true."
+                ),
+            },
+            "list_types": {
+                "type": "boolean",
+                "description": "If true, return all available vulnerability type keys instead of info for a specific type",
+                "default": False,
+            },
+        },
+        "required": ["vuln_type"],
+    },
+}
+
 STOP = {
     "name": "stop",
     "description": (
@@ -513,5 +611,7 @@ def get_agent_tools() -> List[Dict[str, Any]]:
         SAVE_ARTIFACT,
         REPORT_FINDING,
         UPDATE_PLAN,
+        GET_PAYLOADS,
+        GET_VULN_INFO,
         STOP,
     ]

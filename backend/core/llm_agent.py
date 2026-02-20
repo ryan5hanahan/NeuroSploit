@@ -1,12 +1,8 @@
 """LLM-Driven Agent — autonomous pentesting with full LLM execution control.
 
-Unlike the existing AutonomousAgent (code-driven pipeline with LLM as advisor),
-this agent gives the LLM complete control over execution flow. The LLM decides
-what tools to use, when to pivot, and how to chain findings.
-
-Runs alongside (not replacing) the existing pipeline. The existing AutonomousAgent
-with its 100 vuln type engine remains for structured scans. This agent handles
-open-ended assessments where autonomous reasoning is more valuable.
+The LLM controls the entire execution flow — deciding what tools to use,
+when to pivot, and how to chain findings. Uses the 100+ vuln type payload
+database via get_payloads/get_vuln_info tools.
 
 Usage:
     agent = LLMDrivenAgent(
@@ -33,6 +29,8 @@ from backend.core.llm.tool_executor import (
     DecisionRecord,
     ExecutionContext,
     ToolExecutor,
+    handle_get_payloads,
+    handle_get_vuln_info,
     handle_report_finding,
     handle_save_artifact,
     handle_stop,
@@ -172,6 +170,8 @@ class LLMDrivenAgent:
             "save_artifact": handle_save_artifact,
             "report_finding": handle_report_finding,
             "update_plan": self._handle_update_plan,
+            "get_payloads": handle_get_payloads,
+            "get_vuln_info": handle_get_vuln_info,
             "stop": handle_stop,
         })
 
@@ -340,6 +340,8 @@ class LLMDrivenAgent:
             # Build auth context description for the LLM
             auth_context = ""
             cred_labels = self.context.get_credential_labels()
+            login_creds = self.context.get_login_credentials()
+
             if len(cred_labels) > 1:
                 # Multi-credential mode
                 lines = ["Multiple credential contexts available for differential testing:"]
@@ -348,23 +350,58 @@ class LLMDrivenAgent:
                         f"- **{cl['label']}** (role: {cl['role']}, type: {cl['auth_type']})"
                     )
                 lines.append("")
-                lines.append(
-                    "Use `credential_label` in `http_request` and `browser_navigate` "
-                    "to select which identity to use per-request. Omit for default."
-                )
+                # Separate instructions for header-based vs login-based creds
+                header_labels = [cl for cl in cred_labels if cl["auth_type"] != "login"]
+                login_labels = [cl for cl in cred_labels if cl["auth_type"] == "login"]
+                if header_labels:
+                    lines.append(
+                        "Use `credential_label` in `http_request` and `browser_navigate` "
+                        "to select which identity to use per-request. Omit for default."
+                    )
+                if login_labels:
+                    lines.append("")
+                    lines.append("**Form-based login credentials** (use `browser_submit_form` to authenticate):")
+                    for cl in login_labels:
+                        lc = login_creds.get(cl["label"], {})
+                        lines.append(
+                            f"- **{cl['label']}**: username=`{lc.get('username', '?')}`, "
+                            f"password=`{lc.get('password', '?')}`"
+                        )
+                    lines.append(
+                        "Navigate to the login page, use `browser_extract_forms` to find the "
+                        "login form fields, then use `browser_submit_form` with these credentials."
+                    )
+                lines.append("")
                 lines.append(
                     "Compare responses between contexts to detect BOLA/BFLA/IDOR "
                     "and privilege escalation vulnerabilities."
                 )
                 auth_context = "\n".join(lines)
             elif cred_labels:
-                auth_context = (
-                    f"Authentication is configured: **{cred_labels[0]['auth_type']}** credentials "
-                    f"are automatically injected into `http_request` and `browser_*` tools. "
-                    f"You do not need to manually set auth headers — they are merged "
-                    f"automatically. If you need to test without auth, explicitly pass "
-                    f"empty headers in the tool call."
-                )
+                cl = cred_labels[0]
+                if cl["auth_type"] == "login" and login_creds:
+                    # Form-based login: tell agent the credentials and how to use them
+                    lc = login_creds.get("default", {})
+                    auth_context = (
+                        f"**Form-based login credentials provided:**\n"
+                        f"- Username: `{lc.get('username', '?')}`\n"
+                        f"- Password: `{lc.get('password', '?')}`\n\n"
+                        f"These credentials require form submission — they are NOT automatically "
+                        f"injected as HTTP headers. To authenticate:\n"
+                        f"1. Navigate to the login page with `browser_navigate`\n"
+                        f"2. Extract forms with `browser_extract_forms` to find field names\n"
+                        f"3. Submit credentials with `browser_submit_form`\n"
+                        f"4. After successful login, the browser session retains cookies/tokens "
+                        f"for subsequent requests."
+                    )
+                else:
+                    auth_context = (
+                        f"Authentication is configured: **{cl['auth_type']}** credentials "
+                        f"are automatically injected into `http_request` and `browser_*` tools. "
+                        f"You do not need to manually set auth headers — they are merged "
+                        f"automatically. If you need to test without auth, explicitly pass "
+                        f"empty headers in the tool call."
+                    )
             if self.context.custom_headers:
                 header_names = ", ".join(self.context.custom_headers.keys())
                 auth_context += f"\nCustom headers also injected: {header_names}"

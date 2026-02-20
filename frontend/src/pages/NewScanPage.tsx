@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Upload, Link as LinkIcon, FileText, Play, AlertTriangle,
-  Bot, Search, Target, Brain, BookOpen, ChevronDown, Key, Settings,
+  Bot, Search, Target, Brain, BookOpen, ChevronDown, Settings,
   Zap, Layers, Shield
 } from 'lucide-react'
 import Card from '../components/common/Card'
@@ -10,7 +10,8 @@ import Button from '../components/common/Button'
 import Input from '../components/common/Input'
 import Textarea from '../components/common/Textarea'
 import CredentialSetsPanel, { CredentialSetEntry } from '../components/CredentialSetsPanel'
-import { agentApi, targetsApi } from '../services/api'
+import AuthInputSection, { AuthState } from '../components/AuthInputSection'
+import { agentV2Api, targetsApi } from '../services/api'
 import type { AgentTask, AgentMode } from '../types'
 
 type TargetInputMode = 'single' | 'multiple' | 'file'
@@ -94,8 +95,7 @@ export default function NewScanPage() {
 
   // Auth options
   const [showAuthOptions, setShowAuthOptions] = useState(false)
-  const [authType, setAuthType] = useState<'none' | 'cookie' | 'bearer' | 'basic' | 'header'>('none')
-  const [authValue, setAuthValue] = useState('')
+  const [auth, setAuth] = useState<AuthState>({ authType: 'none', authValue: '', username: '', password: '' })
 
   // Credential sets
   const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
@@ -123,7 +123,7 @@ export default function NewScanPage() {
   const loadTasks = async (category?: string) => {
     setLoadingTasks(true)
     try {
-      const taskList = await agentApi.tasks.list(category === 'all' ? undefined : category)
+      const taskList = await agentV2Api.tasks.list(category === 'all' ? undefined : category)
       setTasks(taskList)
     } catch (error) {
       console.error('Failed to load tasks:', error)
@@ -181,25 +181,36 @@ export default function NewScanPage() {
         return
       }
 
-      // Build request
-      const request: any = {
-        target: validation[0].normalized_url,
-        mode: operationMode,
-        max_depth: maxDepth,
-        ...(operationMode === 'recon_only' && { recon_depth: reconDepth }),
+      // Build V2 request
+      const modeObjectives: Record<string, string> = {
+        recon_only: 'Perform reconnaissance only — discover endpoints, technologies, and attack surface. Do NOT test for vulnerabilities.',
+        full_auto: 'Perform a comprehensive security assessment',
+        prompt_only: customPrompt || 'Perform a comprehensive security assessment',
+        analyze_only: 'Analyze the target application for potential security issues without active testing',
       }
 
-      // Add task or custom prompt
+      const request: any = {
+        target: validation[0].normalized_url,
+        objective: modeObjectives[operationMode] || modeObjectives.full_auto,
+        max_steps: maxDepth * 20,
+      }
+
+      // Add task or custom prompt as objective
       if (selectedTask && !useCustomPrompt) {
         request.task_id = selectedTask.id
       } else if (useCustomPrompt && customPrompt.trim()) {
-        request.prompt = customPrompt
+        request.objective = customPrompt
       }
 
       // Add auth if specified
-      if (authType !== 'none' && authValue.trim()) {
-        request.auth_type = authType
-        request.auth_value = authValue
+      if (auth.authType === 'basic' || auth.authType === 'login') {
+        if (auth.username.trim()) {
+          request.auth_type = auth.authType
+          request.auth_credentials = { username: auth.username, password: auth.password }
+        }
+      } else if (auth.authType && auth.authType !== 'none' && auth.authValue.trim()) {
+        request.auth_type = auth.authType
+        request.auth_credentials = { [auth.authType]: auth.authValue }
       }
 
       // Add credential sets for differential testing
@@ -209,10 +220,10 @@ export default function NewScanPage() {
       }
 
       // Start agent
-      const response = await agentApi.run(request)
+      const response = await agentV2Api.start(request)
 
-      // Navigate to agent status page
-      navigate(`/agent/${response.agent_id}`)
+      // Navigate to agent detail page
+      navigate(`/agent/${response.operation_id}`)
     } catch (error) {
       console.error('Failed to start agent:', error)
       setUrlError('Failed to start agent. Please try again.')
@@ -538,69 +549,11 @@ export default function NewScanPage() {
         )}
       </Card>
 
-      {/* Authentication Options */}
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <Key className="w-5 h-5 text-primary-500" />
-            <span>Authentication</span>
-            <span className="text-xs text-dark-500">(Optional)</span>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div className="flex gap-2 flex-wrap">
-            {[
-              { id: 'none', label: 'None' },
-              { id: 'cookie', label: 'Cookie' },
-              { id: 'bearer', label: 'Bearer Token' },
-              { id: 'basic', label: 'Basic Auth' },
-              { id: 'header', label: 'Custom Header' }
-            ].map((type) => (
-              <Button
-                key={type.id}
-                variant={authType === type.id ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setAuthType(type.id as any)}
-              >
-                {type.label}
-              </Button>
-            ))}
-          </div>
-
-          {authType !== 'none' && (
-            <Input
-              placeholder={
-                authType === 'cookie' ? 'session=abc123; token=xyz789' :
-                authType === 'bearer' ? 'eyJhbGciOiJIUzI1NiIs...' :
-                authType === 'basic' ? 'username:password' :
-                'X-API-Key: your-api-key'
-              }
-              value={authValue}
-              onChange={(e) => setAuthValue(e.target.value)}
-              label={
-                authType === 'cookie' ? 'Cookie String' :
-                authType === 'bearer' ? 'Bearer Token' :
-                authType === 'basic' ? 'Username:Password' :
-                'Header:Value'
-              }
-            />
-          )}
-        </div>
-      </Card>
-
-      {/* Multi-Credential Differential Testing */}
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-primary-500" />
-            <span>Multi-Credential Testing</span>
-            <span className="text-xs text-dark-500">(Optional)</span>
-          </div>
-        }
-      >
+      {/* Authentication & Multi-Credential Testing */}
+      <div className="space-y-4">
+        <AuthInputSection value={auth} onChange={setAuth} />
         <CredentialSetsPanel credentialSets={credentialSets} onChange={setCredentialSets} />
-      </Card>
+      </div>
 
       {/* Advanced Options */}
       <Card

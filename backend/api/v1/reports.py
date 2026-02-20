@@ -71,7 +71,7 @@ async def generate_report(
     # Try to get tool_executions from agent in-memory results
     tool_executions = []
     try:
-        from backend.api.v1.agent import scan_to_agent, agent_results
+        from backend.api.v1.vuln_lab import scan_to_agent, agent_results
         agent_id = scan_to_agent.get(report_data.scan_id)
         if agent_id and agent_id in agent_results:
             tool_executions = agent_results[agent_id].get("tool_executions", [])
@@ -131,7 +131,7 @@ async def generate_ai_report(
     # Try to get tool_executions from agent in-memory results
     tool_executions = []
     try:
-        from backend.api.v1.agent import scan_to_agent, agent_results
+        from backend.api.v1.vuln_lab import scan_to_agent, agent_results
         agent_id = scan_to_agent.get(report_data.scan_id)
         if agent_id and agent_id in agent_results:
             tool_executions = agent_results[agent_id].get("tool_executions", [])

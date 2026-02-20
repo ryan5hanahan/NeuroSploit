@@ -7,7 +7,7 @@ import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import Input from '../components/common/Input'
 import Textarea from '../components/common/Textarea'
-import { agentApi } from '../services/api'
+import { agentV2Api } from '../services/api'
 import type { AgentTask } from '../types'
 
 const CATEGORIES = [
@@ -53,7 +53,7 @@ export default function TaskLibraryPage() {
   const loadTasks = async () => {
     setLoading(true)
     try {
-      const taskList = await agentApi.tasks.list()
+      const taskList = await agentV2Api.tasks.list()
       setTasks(taskList)
     } catch (error) {
       console.error('Failed to load tasks:', error)
@@ -88,7 +88,7 @@ export default function TaskLibraryPage() {
 
     setCreating(true)
     try {
-      await agentApi.tasks.create({
+      await agentV2Api.tasks.create({
         name: newTask.name,
         description: newTask.description,
         category: newTask.category,
@@ -117,7 +117,7 @@ export default function TaskLibraryPage() {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      await agentApi.tasks.delete(taskId)
+      await agentV2Api.tasks.delete(taskId)
       await loadTasks()
       setDeleteConfirm(null)
       if (selectedTask?.id === taskId) {

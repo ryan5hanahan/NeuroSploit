@@ -21,9 +21,9 @@ interface Props {
 const AUTH_TYPES = [
   { value: 'bearer', label: 'Bearer Token' },
   { value: 'cookie', label: 'Cookie' },
-  { value: 'basic', label: 'Basic Auth' },
+  { value: 'basic', label: 'Basic Auth (HTTP)' },
   { value: 'header', label: 'Custom Header' },
-  { value: 'login', label: 'Login (user/pass)' },
+  { value: 'login', label: 'Form Login' },
 ]
 
 const ROLES = ['user', 'admin', 'moderator', 'guest']

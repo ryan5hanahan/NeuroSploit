@@ -19,6 +19,24 @@ class OllamaProvider(LLMProvider):
     def name(self) -> str:
         return "ollama"
 
+    async def list_models(self) -> List[Dict[str, str]]:
+        """List locally available Ollama models."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._base_url}/api/tags",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return [
+                            {"id": m["name"], "name": m["name"]}
+                            for m in data.get("models", [])
+                        ]
+        except Exception:
+            pass
+        return []
+
     async def is_available(self) -> bool:
         try:
             async with aiohttp.ClientSession() as session:

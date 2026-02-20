@@ -30,7 +30,6 @@ from backend.core.ai_prompt_processor import AIPromptProcessor, AIVulnerabilityA
 from backend.core.vuln_engine.engine import DynamicVulnerabilityEngine
 from backend.core.vuln_engine.payload_generator import PayloadGenerator, normalize_vuln_type
 from backend.core.autonomous_scanner import AutonomousScanner
-from backend.core.autonomous_agent import AutonomousAgent, OperationMode
 from backend.core.ai_prompt_processor import TestingPlan
 from backend.core.llm_agent import LLMDrivenAgent
 from backend.core import scan_registry
@@ -112,37 +111,6 @@ async def run_scan_task(scan_id: str):
     finally:
         scan_registry.unregister(scan_id)
         _scan_phase_control.pop(scan_id, None)
-
-
-def _map_aa_finding_to_vulnerability(finding, scan_id: str) -> "Vulnerability":
-    """Map an AutonomousAgent Finding dataclass to a Vulnerability model."""
-    return Vulnerability(
-        scan_id=scan_id,
-        title=f"{finding.vulnerability_type.upper()} - {finding.affected_endpoint[:50]}",
-        vulnerability_type=finding.vulnerability_type,
-        severity=finding.severity,
-        cvss_score=finding.cvss_score if finding.cvss_score else None,
-        cvss_vector=finding.cvss_vector or None,
-        cwe_id=finding.cwe_id or None,
-        description=finding.evidence,
-        affected_endpoint=finding.affected_endpoint,
-        poc_payload=finding.payload,
-        poc_request=finding.request[:5000] if finding.request else "",
-        poc_response=finding.response[:5000] if finding.response else "",
-        poc_parameter=finding.parameter or None,
-        poc_evidence=finding.proof_of_execution or None,
-        impact=finding.impact or None,
-        remediation=finding.remediation or finding.impact,
-        ai_analysis=finding.poc_code or "",
-        poc_code=finding.poc_code or None,
-        screenshots=finding.screenshots or [],
-        url=finding.affected_endpoint,
-        parameter=finding.parameter or None,
-        credential_label=finding.credential_label or None,
-        auth_context=finding.auth_context if finding.auth_context else None,
-        validation_status=finding.ai_status if finding.ai_status != "confirmed" else "ai_confirmed",
-        ai_rejection_reason=finding.rejection_reason or None,
-    )
 
 
 class ScanService:
@@ -645,185 +613,103 @@ class ScanService:
                 await ws_manager.broadcast_log(scan_id, "info", "")
                 await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
 
-                # Check if LLM-driven agent mode is requested
                 scan_config = scan.config if hasattr(scan, "config") and scan.config else {}
-                use_llm_agent = scan_config.get("agent_mode") == "llm_driven"
 
-                if use_llm_agent:
-                    await ws_manager.broadcast_log(scan_id, "info", "PHASE 3: LLM-DRIVEN AUTONOMOUS AGENT")
-                    await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
+                await ws_manager.broadcast_log(scan_id, "info", "PHASE 3: AUTONOMOUS SECURITY AGENT")
+                await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
 
-                    for target in targets:
-                        if self._stop_requested:
-                            break
+                for target in targets:
+                    if self._stop_requested:
+                        break
 
-                        await ws_manager.broadcast_log(scan_id, "info", f"Deploying LLM Agent on: {target.url}")
+                    await ws_manager.broadcast_log(scan_id, "info", f"Deploying LLM Agent on: {target.url}")
 
-                        agent_task = await self._create_agent_task(
-                            scan_id=scan_id,
-                            task_type="testing",
-                            task_name=f"LLM Agent: {target.hostname or target.url[:30]}",
-                            description=f"LLM-driven autonomous assessment on {target.url}",
-                            tool_name="llm_driven_agent",
-                            tool_category="ai"
-                        )
+                    agent_task = await self._create_agent_task(
+                        scan_id=scan_id,
+                        task_type="testing",
+                        task_name=f"LLM Agent: {target.hostname or target.url[:30]}",
+                        description=f"LLM-driven autonomous assessment on {target.url}",
+                        tool_name="llm_driven_agent",
+                        tool_category="ai"
+                    )
 
-                        try:
-                            async def llm_agent_event(event_type: str, data: dict):
-                                if event_type == "agent_step":
-                                    await ws_manager.broadcast_log(
-                                        scan_id, "info",
-                                        f"[Step {data.get('step')}/{data.get('max_steps')}] {data.get('tool')}"
-                                    )
-
-                            max_steps = scan_config.get("llm_agent_max_steps", 100)
-                            llm_agent = LLMDrivenAgent(
-                                target=target.url,
-                                objective=scan_config.get("objective", "Comprehensive security assessment"),
-                                max_steps=max_steps,
-                                governance_agent=governance.governance if hasattr(governance, 'governance') else None,
-                                on_event=llm_agent_event,
-                            )
-                            agent_result = await llm_agent.run()
-
-                            findings_count = 0
-                            for finding in agent_result.findings:
-                                finding_severity = finding.get("severity", "info")
-                                vuln = Vulnerability(
-                                    scan_id=scan_id,
-                                    title=finding.get("title", "Unknown")[:255],
-                                    vulnerability_type=finding.get("vuln_type", "unknown"),
-                                    severity=finding_severity,
-                                    description=finding.get("description", ""),
-                                    affected_endpoint=finding.get("endpoint", ""),
-                                    cvss_score=finding.get("cvss_score"),
-                                    cvss_vector=finding.get("cvss_vector"),
-                                    cwe_id=finding.get("cwe_id"),
-                                    impact=finding.get("impact"),
-                                    references=finding.get("references", []),
-                                    poc_payload=finding.get("poc_payload") or finding.get("evidence", "")[:5000],
-                                    poc_parameter=finding.get("poc_parameter"),
-                                    poc_request=finding.get("poc_request") or finding.get("reproduction_steps", "")[:5000],
-                                    poc_response=finding.get("poc_response"),
-                                    poc_code=finding.get("poc_code"),
-                                    poc_evidence=finding.get("evidence", "")[:5000],
-                                    remediation=finding.get("remediation", ""),
-                                    ai_analysis=finding.get("evidence", "")
+                    try:
+                        async def llm_agent_event(event_type: str, data: dict):
+                            if event_type == "agent_step":
+                                await ws_manager.broadcast_log(
+                                    scan_id, "info",
+                                    f"[Step {data.get('step')}/{data.get('max_steps')}] {data.get('tool')}"
                                 )
-                                backfill_vulnerability_metadata(vuln)
-                                self.db.add(vuln)
-                                await self.db.flush()
-                                await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan_id)
-                                findings_count += 1
 
-                                await self._increment_vulnerability_count(scan, finding_severity)
-
-                                await ws_manager.broadcast_vulnerability_found(scan_id, {
-                                    "id": vuln.id,
-                                    "title": vuln.title,
-                                    "severity": vuln.severity,
-                                    "type": finding.get("vuln_type", "unknown"),
-                                    "endpoint": finding.get("endpoint", "")
-                                })
-
-                            # Persist LLM cost data from LLM-driven agent
-                            if agent_result.cost_report:
-                                scan.total_cost_usd = (scan.total_cost_usd or 0) + agent_result.cost_report.get("total_cost_usd", 0)
-                                scan.total_tokens = (scan.total_tokens or 0) + agent_result.cost_report.get("total_input_tokens", 0) + agent_result.cost_report.get("total_output_tokens", 0)
-
-                            await self._complete_agent_task(
-                                agent_task,
-                                items_processed=agent_result.steps_used,
-                                items_found=findings_count,
-                                summary=f"LLM agent used {agent_result.steps_used} steps, found {findings_count} vulnerabilities"
-                            )
-                        except Exception as e:
-                            await self._fail_agent_task(agent_task, str(e))
-
-                        await self.db.commit()
-
-                else:
-                    await ws_manager.broadcast_log(scan_id, "info", "PHASE 3: AUTONOMOUS SECURITY AGENT")
-                    await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
-
-                    # Run the AutonomousAgent for each target
-                    for target in targets:
-                        if self._stop_requested:
-                            break
-
-                        await ws_manager.broadcast_log(scan_id, "info", f"Deploying AI Agent on: {target.url}")
-
-                        agent_task = await self._create_agent_task(
-                            scan_id=scan_id,
-                            task_type="testing",
-                            task_name=f"Autonomous Agent: {target.hostname or target.url[:30]}",
-                            description=f"Autonomous penetration testing on {target.url}",
-                            tool_name="autonomous_agent",
-                            tool_category="ai"
+                        max_steps = scan_config.get("llm_agent_max_steps", 100)
+                        llm_agent = LLMDrivenAgent(
+                            target=target.url,
+                            objective=scan_config.get("objective", "Comprehensive security assessment"),
+                            max_steps=max_steps,
+                            governance_agent=governance.governance if hasattr(governance, 'governance') else None,
+                            on_event=llm_agent_event,
+                            auth_type=scan.auth_type if hasattr(scan, 'auth_type') else None,
+                            auth_credentials=scan.auth_credentials if hasattr(scan, 'auth_credentials') else None,
+                            credential_sets=self._build_credential_sets(scan),
+                            custom_headers=self._build_auth_headers(scan),
                         )
+                        agent_result = await llm_agent.run()
 
-                        try:
-                            async def agent_log(level: str, message: str):
-                                await ws_manager.broadcast_log(scan_id, level, message)
-
-                            auth_headers = self._build_auth_headers(scan)
-
-                            findings_count = 0
-                            endpoints_tested = 0
-
-                            async with AutonomousAgent(
-                                target=target.url,
-                                mode=OperationMode.AUTO_PENTEST,
-                                log_callback=agent_log,
-                                auth_headers=auth_headers,
-                                recon_context={"data": recon_data},
-                                governance=governance,
+                        findings_count = 0
+                        for finding in agent_result.findings:
+                            finding_severity = finding.get("severity", "info")
+                            vuln = Vulnerability(
                                 scan_id=scan_id,
-                                credential_sets=self._build_credential_sets(scan),
-                            ) as agent:
-                                agent_report = await agent.run()
-
-                                # Access raw Finding dataclass instances for full field mapping
-                                for finding in agent.findings:
-                                    if finding.ai_status == "rejected":
-                                        continue
-                                    vuln = _map_aa_finding_to_vulnerability(finding, scan_id)
-                                    backfill_vulnerability_metadata(vuln)
-                                    self.db.add(vuln)
-                                    await self.db.flush()
-                                    await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan_id)
-                                    findings_count += 1
-
-                                    await self._increment_vulnerability_count(scan, finding.severity)
-
-                                    await ws_manager.broadcast_vulnerability_found(scan_id, {
-                                        "id": vuln.id,
-                                        "title": vuln.title,
-                                        "severity": vuln.severity,
-                                        "type": finding.vulnerability_type,
-                                        "endpoint": finding.affected_endpoint
-                                    })
-
-                                # Update endpoint count from report
-                                endpoints_tested = agent_report.get("summary", {}).get("endpoints_tested", 0)
-                                scan.total_endpoints += endpoints_tested
-
-                                # Persist LLM cost data
-                                cost_report = agent_report.get("cost_report")
-                                if cost_report:
-                                    scan.total_cost_usd = (scan.total_cost_usd or 0) + cost_report.get("total_cost_usd", 0)
-                                    scan.total_tokens = (scan.total_tokens or 0) + cost_report.get("total_input_tokens", 0) + cost_report.get("total_output_tokens", 0)
-
-                            await self._complete_agent_task(
-                                agent_task,
-                                items_processed=endpoints_tested,
-                                items_found=findings_count,
-                                summary=f"Tested {endpoints_tested} endpoints, found {findings_count} vulnerabilities"
+                                title=finding.get("title", "Unknown")[:255],
+                                vulnerability_type=finding.get("vuln_type", "unknown"),
+                                severity=finding_severity,
+                                description=finding.get("description", ""),
+                                affected_endpoint=finding.get("endpoint", ""),
+                                cvss_score=finding.get("cvss_score"),
+                                cvss_vector=finding.get("cvss_vector"),
+                                cwe_id=finding.get("cwe_id"),
+                                impact=finding.get("impact"),
+                                references=finding.get("references", []),
+                                poc_payload=finding.get("poc_payload") or finding.get("evidence", "")[:5000],
+                                poc_parameter=finding.get("poc_parameter"),
+                                poc_request=finding.get("poc_request") or finding.get("reproduction_steps", "")[:5000],
+                                poc_response=finding.get("poc_response"),
+                                poc_code=finding.get("poc_code"),
+                                poc_evidence=finding.get("evidence", "")[:5000],
+                                remediation=finding.get("remediation", ""),
+                                ai_analysis=finding.get("evidence", "")
                             )
-                        except Exception as e:
-                            await self._fail_agent_task(agent_task, str(e))
+                            backfill_vulnerability_metadata(vuln)
+                            self.db.add(vuln)
+                            await self.db.flush()
+                            await VulnEnrichmentService.get_instance().enqueue(vuln.id, scan_id)
+                            findings_count += 1
 
-                        await self.db.commit()
+                            await self._increment_vulnerability_count(scan, finding_severity)
+
+                            await ws_manager.broadcast_vulnerability_found(scan_id, {
+                                "id": vuln.id,
+                                "title": vuln.title,
+                                "severity": vuln.severity,
+                                "type": finding.get("vuln_type", "unknown"),
+                                "endpoint": finding.get("endpoint", "")
+                            })
+
+                        # Persist LLM cost data
+                        if agent_result.cost_report:
+                            scan.total_cost_usd = (scan.total_cost_usd or 0) + agent_result.cost_report.get("total_cost_usd", 0)
+                            scan.total_tokens = (scan.total_tokens or 0) + agent_result.cost_report.get("total_input_tokens", 0) + agent_result.cost_report.get("total_output_tokens", 0)
+
+                        await self._complete_agent_task(
+                            agent_task,
+                            items_processed=agent_result.steps_used,
+                            items_found=findings_count,
+                            summary=f"LLM agent used {agent_result.steps_used} steps, found {findings_count} vulnerabilities"
+                        )
+                    except Exception as e:
+                        await self._fail_agent_task(agent_task, str(e))
+
+                    await self.db.commit()
 
                 # Continue with additional AI-driven testing
 
@@ -1196,11 +1082,17 @@ Be thorough and test all discovered endpoints aggressively.
             elif scan.auth_type == "bearer" and "bearer_token" in creds:
                 headers["Authorization"] = f"Bearer {creds['bearer_token']}"
 
-            elif scan.auth_type == "basic" and "username" in creds and "password" in creds:
+            elif scan.auth_type == "basic":
                 import base64
-                credentials = f"{creds['username']}:{creds['password']}"
-                encoded = base64.b64encode(credentials.encode()).decode()
-                headers["Authorization"] = f"Basic {encoded}"
+                if "username" in creds and "password" in creds:
+                    credentials = f"{creds['username']}:{creds['password']}"
+                elif "basic" in creds and ":" in str(creds["basic"]):
+                    credentials = creds["basic"]
+                else:
+                    credentials = None
+                if credentials:
+                    encoded = base64.b64encode(credentials.encode()).decode()
+                    headers["Authorization"] = f"Basic {encoded}"
 
             elif scan.auth_type == "header" and "header_name" in creds and "header_value" in creds:
                 headers[creds["header_name"]] = creds["header_value"]

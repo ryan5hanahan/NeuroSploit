@@ -81,31 +81,50 @@ class ExecutionContext:
 
     # Built in __post_init__: maps label -> pre-built headers dict
     _credential_contexts: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # Login credentials that need form submission (not header injection)
+    _login_credentials: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
     def __post_init__(self):
         """Build credential context lookup from auth config + credential_sets."""
         self._credential_contexts = {}
+        self._login_credentials = {}
 
         # Register single auth_type/auth_credentials as "default"
         if self.auth_type and self.auth_credentials:
-            self._credential_contexts["default"] = self._build_headers_for(
-                self.auth_type, self.auth_credentials,
-            )
+            if self.auth_type == "login":
+                self._login_credentials["default"] = {
+                    "username": self.auth_credentials.get("username", ""),
+                    "password": self.auth_credentials.get("password", ""),
+                }
+            else:
+                self._credential_contexts["default"] = self._build_headers_for(
+                    self.auth_type, self.auth_credentials,
+                )
 
         # Register each credential set
         if self.credential_sets:
             for cs in self.credential_sets:
                 label = cs.get("label", "default")
                 auth_type = cs.get("auth_type", "")
-                if auth_type:
+                if auth_type == "login":
+                    username = cs.get("username", "")
+                    password = cs.get("password", "")
+                    if username:
+                        self._login_credentials[label] = {
+                            "username": username,
+                            "password": password,
+                        }
+                elif auth_type:
                     headers = self._build_headers_for(auth_type, cs)
                     self._credential_contexts[label] = headers
 
             # If no "default" yet, promote first set
-            if "default" not in self._credential_contexts and self.credential_sets:
+            if "default" not in self._credential_contexts and "default" not in self._login_credentials and self.credential_sets:
                 first_label = self.credential_sets[0].get("label", "")
                 if first_label and first_label in self._credential_contexts:
                     self._credential_contexts["default"] = self._credential_contexts[first_label]
+                elif first_label and first_label in self._login_credentials:
+                    self._login_credentials["default"] = self._login_credentials[first_label]
 
     @staticmethod
     def _build_headers_for(auth_type: str, creds: Dict[str, str]) -> Dict[str, str]:
@@ -123,8 +142,12 @@ class ExecutionContext:
             import base64 as b64
             username = creds.get("username", "")
             password = creds.get("password", "")
-            encoded = b64.b64encode(f"{username}:{password}".encode()).decode()
-            headers["Authorization"] = f"Basic {encoded}"
+            if not username and "basic" in creds and ":" in str(creds["basic"]):
+                parts = str(creds["basic"]).split(":", 1)
+                username, password = parts[0], parts[1]
+            if username:
+                encoded = b64.b64encode(f"{username}:{password}".encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
         elif auth_type == "header":
             name = creds.get("header_name", "")
             value = creds.get("header_value", "")
@@ -179,6 +202,13 @@ class ExecutionContext:
                 "auth_type": self.auth_type,
             })
         return labels
+
+    def get_login_credentials(self) -> Dict[str, Dict[str, str]]:
+        """Return login-type credentials (username/password) that need form submission.
+
+        Returns dict: {label: {"username": ..., "password": ...}}
+        """
+        return dict(self._login_credentials)
 
     # Stuck detection: track consecutive failures per method/approach
     method_attempts: Dict[str, int] = field(default_factory=dict)
@@ -496,3 +526,164 @@ async def handle_stop(args: Dict[str, Any], context: ExecutionContext) -> str:
     context.stop_reason = args["reason"]
     context.stop_summary = args["summary"]
     return f"Operation stopped: {args['reason']}"
+
+
+# ---------------------------------------------------------------------------
+# Payload & vulnerability knowledge base tools
+# ---------------------------------------------------------------------------
+
+# Lazy-loaded singletons (avoid re-loading on every call)
+_payload_generator = None
+_vulnerability_registry = None
+
+
+def _get_payload_generator():
+    global _payload_generator
+    if _payload_generator is None:
+        from ..vuln_engine.payload_generator import PayloadGenerator
+        _payload_generator = PayloadGenerator()
+    return _payload_generator
+
+
+def _get_vulnerability_registry():
+    global _vulnerability_registry
+    if _vulnerability_registry is None:
+        from ..vuln_engine.registry import VulnerabilityRegistry
+        _vulnerability_registry = VulnerabilityRegistry()
+    return _vulnerability_registry
+
+
+async def handle_get_payloads(args: Dict[str, Any], context: ExecutionContext) -> str:
+    """Handle the get_payloads tool — returns curated payloads with PATT-first dedup.
+
+    Merge order: PATT payloads first (community-maintained, more comprehensive),
+    then curated payloads appended only if not already present.
+    """
+    vuln_type = args["vuln_type"]
+    ctx = args.get("context", {})
+    xss_context = args.get("xss_context")
+    filter_bypass = args.get("filter_bypass")
+
+    pg = _get_payload_generator()
+
+    # Normalize the vuln_type
+    from ..vuln_engine.payload_generator import normalize_vuln_type
+    canonical = normalize_vuln_type(vuln_type)
+
+    # 1. Load PATT payloads first (highest priority)
+    patt_payloads: List[str] = []
+    try:
+        patt_payloads = pg.patt.get_payloads(canonical)
+    except Exception as e:
+        logger.warning(f"PATT payload load failed for {canonical}: {e}")
+
+    # 2. Load curated payloads
+    curated_payloads: List[str] = list(pg.payload_libraries.get(canonical, []))
+
+    # 3. DB-specific payloads if technology detected
+    if ctx.get("detected_technology"):
+        db_payloads = pg._select_db_payloads(canonical, ctx)
+        if db_payloads:
+            curated_payloads = db_payloads + curated_payloads
+
+    # 4. PATT-first merge: start with PATT set, append curated only if not present
+    seen = set(patt_payloads)
+    merged = list(patt_payloads)
+    for p in curated_payloads:
+        if p not in seen:
+            seen.add(p)
+            merged.append(p)
+
+    # 5. XSS context-specific payloads
+    if xss_context:
+        context_payloads = pg.get_context_payloads(xss_context)
+        for p in context_payloads:
+            if p not in seen:
+                seen.add(p)
+                merged.append(p)
+
+    # 6. Filter bypass payloads
+    if filter_bypass:
+        filter_map = {
+            "blocked_chars": filter_bypass.get("blocked_chars", ""),
+            "blocked_tags": filter_bypass.get("blocked_tags", ""),
+            "blocked_events": filter_bypass.get("blocked_events", ""),
+        }
+        bypass_payloads = pg.get_filter_bypass_payloads(filter_map)
+        for p in bypass_payloads:
+            if p not in seen:
+                seen.add(p)
+                merged.append(p)
+
+    # 7. WAF bypass variants
+    if ctx.get("waf_detected"):
+        merged = pg._add_waf_bypasses(merged, canonical)
+
+    # 8. Depth-based limiting
+    depth = ctx.get("depth", "standard")
+    depth_limits = {"quick": 3, "standard": 10, "thorough": 20, "exhaustive": 0}
+    limit = depth_limits.get(depth, 10)
+    if limit > 0 and len(merged) > limit:
+        merged = merged[:limit]
+
+    if not merged:
+        return f"No payloads found for vuln_type '{vuln_type}' (canonical: '{canonical}'). Use get_vuln_info with list_types=true to see available types."
+
+    # Format output
+    lines = [
+        f"Payloads for {canonical} ({len(merged)} payloads, depth={depth}):",
+        "",
+    ]
+    for i, p in enumerate(merged, 1):
+        lines.append(f"  {i}. {p}")
+
+    return "\n".join(lines)
+
+
+async def handle_get_vuln_info(args: Dict[str, Any], context: ExecutionContext) -> str:
+    """Handle the get_vuln_info tool — returns vulnerability metadata."""
+    list_types = args.get("list_types", False)
+    registry = _get_vulnerability_registry()
+
+    if list_types:
+        type_keys = sorted(registry.VULNERABILITY_INFO.keys())
+        lines = [f"Available vulnerability types ({len(type_keys)} total):", ""]
+        for key in type_keys:
+            info = registry.VULNERABILITY_INFO[key]
+            lines.append(f"  {key}: {info.get('title', key)} [{info.get('severity', 'medium')}] ({info.get('cwe_id', 'N/A')})")
+        return "\n".join(lines)
+
+    vuln_type = args["vuln_type"]
+
+    # Try to normalize
+    try:
+        from ..vuln_engine.payload_generator import normalize_vuln_type
+        canonical = normalize_vuln_type(vuln_type)
+    except Exception:
+        canonical = vuln_type
+
+    info = registry.VULNERABILITY_INFO.get(canonical)
+    if not info:
+        # Try exact match with original
+        info = registry.VULNERABILITY_INFO.get(vuln_type)
+
+    if not info:
+        return (
+            f"No vulnerability info found for '{vuln_type}' (canonical: '{canonical}'). "
+            f"Use list_types=true to see all {len(registry.VULNERABILITY_INFO)} available types."
+        )
+
+    lines = [
+        f"Vulnerability: {info.get('title', canonical)}",
+        f"Type Key: {canonical}",
+        f"Severity: {info.get('severity', 'medium')}",
+        f"CWE: {info.get('cwe_id', 'N/A')}",
+        f"",
+        f"Description: {info.get('description', 'N/A')}",
+        f"",
+        f"Impact: {info.get('impact', 'N/A')}",
+        f"",
+        f"Remediation: {info.get('remediation', 'N/A')}",
+    ]
+
+    return "\n".join(lines)

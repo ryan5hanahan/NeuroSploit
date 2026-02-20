@@ -212,7 +212,9 @@ class UnifiedLLMClient:
         Returns:
             Generated text string.
         """
-        provider = self._get_provider()
+        # Resolve per-tier provider (may differ from active provider)
+        resolved_provider_name = self.router.resolve_provider(task_type)
+        provider = self._get_provider(resolved_provider_name)
 
         default_system = (
             "You are an expert penetration tester and security researcher. "
@@ -220,14 +222,14 @@ class UnifiedLLMClient:
             "Be precise and avoid false positives."
         )
 
-        # Resolve options via router
-        options = self.router.resolve(task_type, self._active_provider_name)
+        # Resolve options via router (uses per-tier provider)
+        options = self.router.resolve(task_type)
         if max_tokens > 0:
             options.max_tokens = max_tokens
 
         # Enable prompt caching for Claude on balanced/deep tiers
         tier = self.router.get_tier(task_type)
-        if self._active_provider_name == "anthropic" and tier != ModelTier.FAST:
+        if resolved_provider_name == "anthropic" and tier != ModelTier.FAST:
             options.cache_system_prompt = True
 
         messages = [{"role": "user", "content": prompt}]
@@ -237,7 +239,7 @@ class UnifiedLLMClient:
         try:
             response = await provider.generate(messages, system_prompt, options)
         except Exception as e:
-            raise LLMConnectionError(f"API call failed ({self._active_provider_name}): {e}")
+            raise LLMConnectionError(f"API call failed ({resolved_provider_name}): {e}")
         elapsed_ms = (time.monotonic() - start) * 1000
 
         # Track cost
@@ -316,8 +318,9 @@ class UnifiedLLMClient:
         Returns:
             Final LLMResponse (may contain text from multiple turns).
         """
-        provider = self._get_provider()
-        options = self.router.resolve(task_type, self._active_provider_name)
+        resolved_provider_name = self.router.resolve_provider(task_type)
+        provider = self._get_provider(resolved_provider_name)
+        options = self.router.resolve(task_type)
         if max_tokens > 0:
             options.max_tokens = max_tokens
 

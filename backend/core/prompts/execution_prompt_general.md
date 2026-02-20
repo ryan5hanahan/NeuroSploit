@@ -93,6 +93,19 @@ For each hypothesis, track your attempts explicitly:
 
 ---
 
+## Payload Database
+
+Use `get_payloads` to retrieve curated payloads from the built-in database (100+ vuln types, 526+ payloads including PayloadsAllTheThings). This gives you battle-tested payloads instead of crafting from scratch:
+- `get_payloads(vuln_type="sqli_error")` — SQL injection error-based payloads
+- `get_payloads(vuln_type="xss_reflected", xss_context="attribute")` — context-aware XSS
+- `get_payloads(vuln_type="command_injection", context={"depth": "thorough"})` — more payloads
+
+Use `get_vuln_info` for CWE IDs, severity ratings, false positive markers, and remediation guidance:
+- `get_vuln_info(vuln_type="sqli_error")` — get metadata for SQL injection
+- `get_vuln_info(vuln_type="", list_types=true)` — list all 100+ available types
+
+---
+
 ## Batch Gate Protocol
 
 **Run tools in parallel when**:

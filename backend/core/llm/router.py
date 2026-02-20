@@ -92,6 +92,7 @@ class ModelRouter:
         self._enabled = True
         self._default_provider = "anthropic"
         self._tier_config = dict(DEFAULT_TIER_CONFIG)
+        self._tier_providers: Dict[str, str] = {}  # tier name -> provider name override
 
         if config:
             self._load_config(config)
@@ -115,6 +116,9 @@ class ModelRouter:
                     existing_models = dict(merged.get("models", {}))
                     existing_models.update(tier_data["models"])
                     merged["models"] = existing_models
+                # Per-tier provider override from config
+                if "provider" in tier_data:
+                    self._tier_providers[tier_name] = tier_data["provider"]
                 self._tier_config[tier_name] = merged
 
         # Apply env var overrides: LLM_MODEL_FAST, LLM_MODEL_BALANCED, LLM_MODEL_DEEP
@@ -130,9 +134,38 @@ class ModelRouter:
                 models[self._default_provider] = env_val
                 self._tier_config[tier_name]["models"] = models
 
+        # Apply per-tier provider env var overrides
+        for tier_name, env_key in (
+            ("fast", "LLM_PROVIDER_FAST"),
+            ("balanced", "LLM_PROVIDER_BALANCED"),
+            ("deep", "LLM_PROVIDER_DEEP"),
+        ):
+            env_val = os.getenv(env_key, "").strip()
+            if env_val:
+                self._tier_providers[tier_name] = env_val
+
     @property
     def enabled(self) -> bool:
         return self._enabled
+
+    def resolve_provider(self, task_type: str) -> str:
+        """Resolve the provider for a given task type based on per-tier overrides.
+
+        Looks up the tier for the task type, then checks _tier_providers for
+        a per-tier provider override. Falls back to _default_provider.
+
+        Args:
+            task_type: One of the task type strings.
+
+        Returns:
+            Provider name string (e.g., 'anthropic', 'openai', 'ollama').
+        """
+        if not self._enabled:
+            tier_name = "balanced"
+        else:
+            tier = TASK_TIER_MAP.get(task_type, ModelTier.BALANCED)
+            tier_name = tier.value
+        return self._tier_providers.get(tier_name, self._default_provider)
 
     def resolve(
         self,
@@ -143,12 +176,14 @@ class ModelRouter:
 
         Args:
             task_type: One of the 18 task type strings, or "default".
-            provider: Provider name override (defaults to configured default).
+            provider: Provider name override (defaults to per-tier or global default).
 
         Returns:
             GenerateOptions with model, temperature, max_tokens pre-filled.
         """
-        provider = provider or self._default_provider
+        # Use per-tier provider resolution, then fall back to explicit override or global default
+        if provider is None:
+            provider = self.resolve_provider(task_type)
 
         if not self._enabled:
             # Routing disabled — use balanced tier for everything

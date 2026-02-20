@@ -115,7 +115,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     op_total_cost = float(op_cost_row[0])
     op_total_tokens = int(op_cost_row[1])
 
-    # Cost aggregation from Scan table (AutonomousAgent)
+    # Cost aggregation from Scan table
     scan_cost_result = await db.execute(
         select(
             func.coalesce(func.sum(Scan.total_cost_usd), 0),

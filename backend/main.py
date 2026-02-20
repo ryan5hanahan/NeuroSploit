@@ -11,7 +11,7 @@ from pathlib import Path
 
 from backend.config import settings
 from backend.db.database import init_db, close_db
-from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance, agent_v2, enrichment
+from backend.api.v1 import scans, targets, prompts, reports, dashboard, vulnerabilities, settings as settings_router, agent_tasks, scheduler, vuln_lab, terminal, sandbox, tradecraft, memory, traces, governance, agent_v2, enrichment, task_library, realtime
 from backend.api.websocket import manager as ws_manager
 
 
@@ -119,8 +119,12 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(vulnerabilities.router, prefix="/api/v1/vulnerabilities", tags=["Vulnerabilities"])
 app.include_router(settings_router.router, prefix="/api/v1/settings", tags=["Settings"])
-app.include_router(agent.router, prefix="/api/v1/agent", tags=["AI Agent"])
 app.include_router(agent_tasks.router, prefix="/api/v1/agent-tasks", tags=["Agent Tasks"])
+app.include_router(task_library.router, prefix="/api/v1/tasks", tags=["Task Library"])
+app.include_router(realtime.router, prefix="/api/v1/realtime", tags=["Realtime Tasks"])
+# Backward compat: task library and realtime also accessible under /api/v1/agent/*
+app.include_router(task_library.router, prefix="/api/v1/agent/tasks", tags=["Task Library (Legacy)"])
+app.include_router(realtime.router, prefix="/api/v1/agent/realtime", tags=["Realtime Tasks (Legacy)"])
 app.include_router(scheduler.router, prefix="/api/v1/scheduler", tags=["Scheduler"])
 app.include_router(vuln_lab.router, prefix="/api/v1/vuln-lab", tags=["Vulnerability Lab"])
 app.include_router(terminal.router, prefix="/api/v1/terminal", tags=["Terminal Agent"])

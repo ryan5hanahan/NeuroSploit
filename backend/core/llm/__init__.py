@@ -1,7 +1,6 @@
 """NeuroSploit Unified LLM Layer.
 
-Replaces both LLMClient (autonomous_agent.py) and LLMManager (core/llm_manager.py)
-with a single unified client providing 3-tier model routing, native tool calling,
+Unified LLM client providing 3-tier model routing, native tool calling,
 structured JSON output, and per-scan cost tracking.
 
 Usage:

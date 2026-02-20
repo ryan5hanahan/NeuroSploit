@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import ScanDetailsPage from './pages/ScanDetailsPage'
-import AgentStatusPage from './pages/AgentStatusPage'
+
 import TaskLibraryPage from './pages/TaskLibraryPage'
 import RealtimeTaskPage from './pages/RealtimeTaskPage'
 import ReportsPage from './pages/ReportsPage'
@@ -33,9 +33,6 @@ function App() {
         <Route path="/operations/:id" element={<NavigateOperationToAgent />} />
         <Route path="/scan/new" element={<Navigate to="/agent" replace />} />
         <Route path="/auto" element={<Navigate to="/agent" replace />} />
-
-        {/* Legacy V1 agent route */}
-        <Route path="/agent-v1/:agentId" element={<AgentStatusPage />} />
 
         {/* Existing routes */}
         <Route path="/vuln-lab" element={<VulnLabPage />} />

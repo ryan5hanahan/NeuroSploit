@@ -114,6 +114,10 @@ class SettingsUpdate(BaseModel):
     model_fast: Optional[str] = None
     model_balanced: Optional[str] = None
     model_deep: Optional[str] = None
+    # Per-tier provider overrides (mix providers across tiers)
+    provider_fast: Optional[str] = None
+    provider_balanced: Optional[str] = None
+    provider_deep: Optional[str] = None
     # Tracing & memory
     enable_tracing: Optional[bool] = None
     enable_persistent_memory: Optional[bool] = None
@@ -161,6 +165,10 @@ class SettingsResponse(BaseModel):
     model_fast: str = ""
     model_balanced: str = ""
     model_deep: str = ""
+    # Per-tier provider overrides
+    provider_fast: str = ""
+    provider_balanced: str = ""
+    provider_deep: str = ""
     # OSINT API key presence (masked)
     has_shodan_key: bool = False
     has_censys_key: bool = False
@@ -258,6 +266,9 @@ def _load_settings_from_env() -> dict:
         "model_fast": os.getenv("LLM_MODEL_FAST", ""),
         "model_balanced": os.getenv("LLM_MODEL_BALANCED", ""),
         "model_deep": os.getenv("LLM_MODEL_DEEP", ""),
+        "provider_fast": os.getenv("LLM_PROVIDER_FAST", ""),
+        "provider_balanced": os.getenv("LLM_PROVIDER_BALANCED", ""),
+        "provider_deep": os.getenv("LLM_PROVIDER_DEEP", ""),
         "enable_knowledge_augmentation": _env_bool("ENABLE_KNOWLEDGE_AUGMENTATION", False),
         "enable_browser_validation": _env_bool("ENABLE_BROWSER_VALIDATION", False),
         "enable_extended_thinking": _env_bool("ENABLE_EXTENDED_THINKING", False),
@@ -324,6 +335,9 @@ async def get_settings():
         model_fast=_settings.get("model_fast", ""),
         model_balanced=_settings.get("model_balanced", ""),
         model_deep=_settings.get("model_deep", ""),
+        provider_fast=_settings.get("provider_fast", ""),
+        provider_balanced=_settings.get("provider_balanced", ""),
+        provider_deep=_settings.get("provider_deep", ""),
         has_shodan_key=bool(_settings.get("shodan_api_key") or os.getenv("SHODAN_API_KEY")),
         has_censys_key=bool(
             (_settings.get("censys_api_id") or os.getenv("CENSYS_API_ID"))
@@ -451,6 +465,18 @@ async def update_settings(settings_data: SettingsUpdate):
         ("model_fast", "LLM_MODEL_FAST"),
         ("model_balanced", "LLM_MODEL_BALANCED"),
         ("model_deep", "LLM_MODEL_DEEP"),
+    ]:
+        val = getattr(settings_data, field_name, None)
+        if val is not None:
+            _settings[field_name] = val
+            os.environ[env_key] = val
+            env_updates[env_key] = val
+
+    # Per-tier provider overrides
+    for field_name, env_key in [
+        ("provider_fast", "LLM_PROVIDER_FAST"),
+        ("provider_balanced", "LLM_PROVIDER_BALANCED"),
+        ("provider_deep", "LLM_PROVIDER_DEEP"),
     ]:
         val = getattr(settings_data, field_name, None)
         if val is not None:
@@ -848,3 +874,26 @@ async def get_installed_tools():
             "percentage": round((total_installed / total_tools) * 100, 1)
         }
     }
+
+
+@router.get("/available-models")
+async def get_available_models(provider: str = ""):
+    """List available models for a given LLM provider.
+
+    Query params:
+        provider: Provider name (claude/anthropic, openai, ollama, bedrock, gemini, lmstudio).
+                  Defaults to the active provider.
+    """
+    from backend.core.llm import UnifiedLLMClient
+
+    # Normalize provider name
+    provider_alias = {"claude": "anthropic", "": None}
+    provider_name = provider_alias.get(provider.lower().strip(), provider.lower().strip())
+
+    try:
+        client = UnifiedLLMClient()
+        prov = client._get_provider(provider_name)
+        models = await prov.list_models()
+        return {"provider": prov.name, "models": models}
+    except Exception as e:
+        return {"provider": provider_name or "unknown", "models": [], "error": str(e)}

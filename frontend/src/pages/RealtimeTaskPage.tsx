@@ -8,7 +8,7 @@ import {
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import { SeverityBadge } from '../components/common/Badge'
-import { agentApi } from '../services/api'
+import { agentV2Api } from '../services/api'
 import type { RealtimeSession, RealtimeMessage, RealtimeSessionSummary } from '../types'
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
@@ -88,7 +88,7 @@ export default function RealtimeTaskPage() {
 
   const checkLlmStatus = async () => {
     try {
-      const status = await agentApi.realtime.getLlmStatus()
+      const status = await agentV2Api.realtime.getLlmStatus()
       setLlmStatus({
         available: status.available,
         provider: status.provider,
@@ -106,7 +106,7 @@ export default function RealtimeTaskPage() {
 
   const loadToolsInfo = async () => {
     try {
-      const status = await agentApi.realtime.getToolsStatus()
+      const status = await agentV2Api.realtime.getToolsStatus()
       setToolsStatus(status)
     } catch (err) {
       console.error('Failed to load tools info:', err)
@@ -120,7 +120,7 @@ export default function RealtimeTaskPage() {
 
   const loadSessions = async () => {
     try {
-      const data = await agentApi.realtime.listSessions()
+      const data = await agentV2Api.realtime.listSessions()
       setSessions(data.sessions || [])
     } catch (err) {
       console.error('Failed to load sessions:', err)
@@ -133,7 +133,7 @@ export default function RealtimeTaskPage() {
     setError(null)
 
     try {
-      const result = await agentApi.realtime.createSession(newTarget, newSessionName || undefined)
+      const result = await agentV2Api.realtime.createSession(newTarget, newSessionName || undefined)
       await loadSessions()
       await loadSession(result.session_id)
       setShowNewSession(false)
@@ -150,7 +150,7 @@ export default function RealtimeTaskPage() {
     setError(null)
 
     try {
-      const data = await agentApi.realtime.getSession(sessionId)
+      const data = await agentV2Api.realtime.getSession(sessionId)
       setActiveSession(data)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load session')
@@ -177,7 +177,7 @@ export default function RealtimeTaskPage() {
     } : null)
 
     try {
-      const result = await agentApi.realtime.sendMessage(activeSession.session_id, messageToSend)
+      const result = await agentV2Api.realtime.sendMessage(activeSession.session_id, messageToSend)
 
       // Add assistant response
       const assistantMessage: RealtimeMessage = {
@@ -232,7 +232,7 @@ export default function RealtimeTaskPage() {
     } : null)
 
     try {
-      await agentApi.realtime.executeTool(activeSession.session_id, toolId)
+      await agentV2Api.realtime.executeTool(activeSession.session_id, toolId)
 
       // Reload session to get updated messages and findings
       await loadSession(activeSession.session_id)
@@ -257,7 +257,7 @@ export default function RealtimeTaskPage() {
     if (!confirm('Delete this session?')) return
 
     try {
-      await agentApi.realtime.deleteSession(sessionId)
+      await agentV2Api.realtime.deleteSession(sessionId)
       if (activeSession?.session_id === sessionId) {
         setActiveSession(null)
       }
@@ -272,7 +272,7 @@ export default function RealtimeTaskPage() {
 
     setGeneratingReport(true)
     try {
-      const htmlContent = await agentApi.realtime.getReportHtml(activeSession.session_id)
+      const htmlContent = await agentV2Api.realtime.getReportHtml(activeSession.session_id)
 
       // Open in new tab
       const newWindow = window.open('', '_blank')
@@ -291,7 +291,7 @@ export default function RealtimeTaskPage() {
     if (!activeSession) return
 
     try {
-      const report = await agentApi.realtime.getReport(activeSession.session_id)
+      const report = await agentV2Api.realtime.getReport(activeSession.session_id)
       const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

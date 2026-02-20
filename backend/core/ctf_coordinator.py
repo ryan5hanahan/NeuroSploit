@@ -29,6 +29,16 @@ except ImportError:
         HAS_PLAYWRIGHT = False
 
 
+class _SimpleRecon:
+    """Lightweight recon data container for CTF pipeline (replaces AutonomousAgent.recon)."""
+    def __init__(self):
+        self.endpoints: List[str] = []
+        self.parameters: Dict[str, List[str]] = {}
+        self.technologies: List[str] = []
+        self.forms: List[Dict] = []
+        self.api_endpoints: List[str] = []
+
+
 def _embed_screenshot(filepath: str) -> str:
     """Convert screenshot file path to base64 data URI."""
     path = Path(filepath)
@@ -162,8 +172,8 @@ class CTFCoordinator:
     # ------------------------------------------------------------------
 
     async def _run_recon_phase(self):
-        """Run a single recon agent to populate ReconData."""
-        from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+        """Run a single recon agent for reconnaissance."""
+        from backend.core.llm_agent import LLMDrivenAgent
         from backend.core.governance_facade import create_governance
 
         await self._log_callback("info", "[PIPELINE] Phase 1/4: Recon Agent starting")
@@ -177,38 +187,44 @@ class CTFCoordinator:
             log_callback=labeled_log,
         )
 
-        async with AutonomousAgent(
+        recon_progress = self._make_recon_progress()
+
+        async def on_event(event_type: str, data):
+            if event_type == "agent_step":
+                step = data.get("step", 0)
+                total = data.get("max_steps", 30)
+                await recon_progress(min(int(step / total * 100), 99), "recon")
+
+        agent = LLMDrivenAgent(
             target=self.target,
-            mode=OperationMode.FULL_AUTO,
-            log_callback=labeled_log,
-            progress_callback=self._make_recon_progress(),
-            auth_headers=self.auth_headers,
-            custom_prompt=self.custom_prompt,
-            finding_callback=self._finding_callback,
-            lab_context=self.lab_context,
-            scan_id=self.scan_id,
-            governance=governance,
-        ) as agent:
-            self._agents.append(agent)
+            objective=(
+                "Perform RECONNAISSANCE ONLY — do NOT test for vulnerabilities. "
+                "Discover endpoints, forms, parameters, technologies, and API paths. "
+                "Use HTTP requests and browser navigation to map the application."
+            ),
+            max_steps=30,
+            governance_agent=governance,
+            custom_headers=self.auth_headers,
+            on_event=on_event,
+        )
+        self._agents.append(agent)
 
-            # Run recon + sandbox scan only
-            await labeled_log("info", "Running reconnaissance...")
-            await asyncio.gather(
-                agent._run_recon_only(),
-                agent._run_sandbox_scan(),
-            )
+        await labeled_log("info", "Running reconnaissance...")
+        result = await agent.run()
 
-            # Deep-copy the populated recon data
-            self._recon_data = copy.deepcopy(agent.recon)
+        # Extract recon-like data from findings and artifacts
+        # LLMDrivenAgent stores discovered data in its memory/findings
+        self._recon_data = self._build_recon_from_result(result)
 
-            recon_summary = (
-                f"endpoints={len(self._recon_data.endpoints)}, "
-                f"params={len(self._recon_data.parameters)}, "
-                f"techs={len(self._recon_data.technologies)}, "
-                f"forms={len(self._recon_data.forms)}"
-            )
-            await self._log_callback("info", f"[PIPELINE] Recon complete: {recon_summary}")
+        recon_summary = (
+            f"endpoints={len(self._recon_data.endpoints)}, "
+            f"params={len(self._recon_data.parameters)}, "
+            f"techs={len(self._recon_data.technologies)}, "
+            f"forms={len(self._recon_data.forms)}"
+        )
+        await self._log_callback("info", f"[PIPELINE] Recon complete: {recon_summary}")
 
+        if agent in self._agents:
             self._agents.remove(agent)
 
     # ------------------------------------------------------------------
@@ -252,7 +268,6 @@ class CTFCoordinator:
     async def _get_prioritized_vulns(self) -> List[str]:
         """Ask LLM to prioritize vuln types based on recon data, with fallback."""
         from backend.core.llm import UnifiedLLMClient
-        from backend.core.autonomous_agent import AutonomousAgent
 
         # Build context from recon
         recon_summary = ""
@@ -272,7 +287,7 @@ class CTFCoordinator:
             )
 
         # Get default plan for the full vuln list
-        default_plan = AutonomousAgent._static_default_attack_plan()
+        default_plan = self._static_default_attack_plan()
 
         prompt = (
             "You are a CTF challenge solver. Based on the recon data below, "
@@ -287,7 +302,7 @@ class CTFCoordinator:
         )
 
         try:
-            llm = UnifiedLLMClient(AutonomousAgent._load_config())
+            llm = UnifiedLLMClient()
             if not llm.is_available():
                 raise Exception("No LLM available")
 
@@ -313,8 +328,6 @@ class CTFCoordinator:
 
     async def _run_testing_phase(self, assignments: List[List[str]]):
         """Launch N-1 testing agents in parallel with periodic challenge polling."""
-        from backend.core.autonomous_agent import AutonomousAgent, OperationMode
-
         await self._log_callback("info", f"[PIPELINE] Phase 3/4: Launching {self.testing_agent_count} parallel testing agents")
 
         tasks = []
@@ -330,8 +343,8 @@ class CTFCoordinator:
                 await self._log_callback("error", f"[PIPELINE] {label} failed: {result}")
 
     async def _run_single_tester(self, index: int, label: str, vuln_types: List[str]):
-        """Run a single testing agent with preset recon and focused vuln types."""
-        from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+        """Run a single testing agent focused on specific vuln types."""
+        from backend.core.llm_agent import LLMDrivenAgent
         from backend.core.governance_facade import create_governance
 
         labeled_log = self._make_labeled_log(label)
@@ -349,33 +362,49 @@ class CTFCoordinator:
         # Merge harvested credentials so testing agents can work authenticated
         merged_auth = {**self.auth_headers, **self._harvested_auth_headers}
 
-        async with AutonomousAgent(
-            target=self.target,
-            mode=OperationMode.FULL_AUTO,
-            log_callback=labeled_log,
-            progress_callback=self._make_testing_progress(index),
-            auth_headers=merged_auth,
-            custom_prompt=self.custom_prompt,
-            finding_callback=labeled_finding,
-            lab_context=self.lab_context,
-            scan_id=self.scan_id,
-            governance=governance,
-            preset_recon=copy.deepcopy(self._recon_data),
-            focus_vuln_types=vuln_types,
-            agent_label=label,
-        ) as agent:
-            self._agents.append(agent)
+        testing_progress = self._make_testing_progress(index)
 
-            try:
-                report = await agent.run()
-                findings = report.get("findings", [])
-                self._all_findings.extend(findings)
-                await labeled_log("info", f"Completed: {len(findings)} findings")
-            except Exception as e:
-                await labeled_log("error", f"Agent error: {e}")
-            finally:
-                if agent in self._agents:
-                    self._agents.remove(agent)
+        async def on_event(event_type: str, data):
+            if event_type == "agent_step":
+                step = data.get("step", 0)
+                total = data.get("max_steps", 50)
+                await testing_progress(min(int(step / total * 100), 99), "testing")
+
+        # Build recon context for the objective
+        recon_info = ""
+        if self._recon_data and self._recon_data.endpoints:
+            recon_info = f"\n\nKnown endpoints: {', '.join(self._recon_data.endpoints[:20])}"
+
+        agent = LLMDrivenAgent(
+            target=self.target,
+            objective=(
+                f"Test for these specific vulnerability types: {', '.join(vuln_types)}. "
+                f"Use get_payloads tool for each vuln type to get curated payloads. "
+                f"This is a CTF challenge — the vulnerabilities are expected to exist. "
+                f"Be thorough with multiple injection points and encoding bypasses."
+                f"{recon_info}"
+            ),
+            max_steps=50,
+            governance_agent=governance,
+            custom_headers=merged_auth,
+            on_event=on_event,
+        )
+        self._agents.append(agent)
+
+        try:
+            result = await agent.run()
+            findings = result.findings
+            for f in findings:
+                f["agent_label"] = label
+            self._all_findings.extend(findings)
+            for f in findings:
+                await labeled_finding(f)
+            await labeled_log("info", f"Completed: {len(findings)} findings")
+        except Exception as e:
+            await labeled_log("error", f"Agent error: {e}")
+        finally:
+            if agent in self._agents:
+                self._agents.remove(agent)
 
     # ------------------------------------------------------------------
     # Phase 4: Aggregation
@@ -585,6 +614,21 @@ class CTFCoordinator:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _build_recon_from_result(self, result) -> '_SimpleRecon':
+        """Build a recon-like object from LLMDrivenAgent results."""
+        recon = _SimpleRecon()
+        # Extract endpoints from findings
+        for f in (result.findings if result else []):
+            ep = f.get("affected_endpoint") or f.get("url", "")
+            if ep and ep not in recon.endpoints:
+                recon.endpoints.append(ep)
+            param = f.get("parameter", "")
+            if param and ep:
+                recon.parameters.setdefault(ep, [])
+                if param not in recon.parameters[ep]:
+                    recon.parameters[ep].append(param)
+        return recon
 
     def _make_labeled_log(self, label: str) -> Callable:
         """Return a log callback that prefixes messages with [Label]."""

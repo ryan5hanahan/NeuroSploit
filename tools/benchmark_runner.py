@@ -1161,31 +1161,30 @@ class BenchmarkRunner:
         print("  Docker cleanup complete.")
 
     async def _run_agent(self, target_url: str, agent_logs: List[str]) -> Tuple[Dict, list]:
-        """Run the NeuroSploit autonomous agent against a target."""
-        from backend.core.autonomous_agent import AutonomousAgent, OperationMode
+        """Run the NeuroSploit LLM-driven agent against a target."""
+        from backend.core.llm_agent import LLMDrivenAgent
 
-        mode_map = {
-            "full_auto": OperationMode.FULL_AUTO,
-            "auto_pentest": OperationMode.AUTO_PENTEST,
-            "recon_only": OperationMode.RECON_ONLY,
+        mode_objectives = {
+            "full_auto": "Perform a comprehensive security assessment",
+            "auto_pentest": "Perform a comprehensive security assessment",
+            "recon_only": "Perform reconnaissance only — discover endpoints, technologies, and attack surface",
         }
-        mode = mode_map.get(self.agent_mode, OperationMode.FULL_AUTO)
+        objective = mode_objectives.get(self.agent_mode, mode_objectives["full_auto"])
 
-        async def log_callback(level: str, message: str):
-            timestamp = datetime.utcnow().strftime("%H:%M:%S")
-            entry = f"[{timestamp}] [{level.upper()}] {message}"
-            agent_logs.append(entry)
-
-        agent = AutonomousAgent(
+        agent = LLMDrivenAgent(
             target=target_url,
-            mode=mode,
-            log_callback=log_callback,
+            objective=objective,
+            max_steps=100,
         )
 
-        async with agent:
-            report = await agent.run()
+        result = await agent.run()
 
-        return report, list(agent.findings)
+        report = {
+            "findings": result.findings,
+            "executive_summary": result.stop_summary or f"Assessment of {target_url}",
+            "status": result.status,
+        }
+        return report, list(result.findings)
 
 
 # ===========================================================================
