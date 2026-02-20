@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react'
-import { Bug, CheckCircle, XCircle, Search, FileText, Settings } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Bug, CheckCircle, XCircle, Search, FileText, Settings, Play, ChevronDown, ChevronUp } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
-import { bugBountyApi } from '../services/api'
+import { bugBountyApi, agentV2Api } from '../services/api'
 import type { BugBountyProgram, BugBountyScope, BugBountyScopeAsset, BugBountySubmission } from '../types'
 
+function assetToUrl(asset: BugBountyScopeAsset): string {
+  const id = asset.asset_identifier
+  const t = (asset.asset_type || '').toUpperCase()
+  if (t === 'URL' || id.startsWith('http://') || id.startsWith('https://')) return id
+  if (t === 'WILDCARD') return `https://${id.replace(/^\*\./, '')}`
+  if (t === 'IP_ADDRESS') return `http://${id}`
+  if (t === 'CIDR') return `http://${id}`
+  return `https://${id}`
+}
+
 export default function BugBountyPage() {
+  const navigate = useNavigate()
+
   // Connection state
   const [connected, setConnected] = useState<boolean | null>(null)
   const [connectionError, setConnectionError] = useState('')
@@ -26,6 +38,13 @@ export default function BugBountyPage() {
   // Submissions
   const [submissions, setSubmissions] = useState<BugBountySubmission[]>([])
   const [loadingSubmissions, setLoadingSubmissions] = useState(false)
+
+  // Asset selection & launch
+  const [selectedAssets, setSelectedAssets] = useState<Set<number>>(new Set())
+  const [showLaunchOptions, setShowLaunchOptions] = useState(false)
+  const [launchObjective, setLaunchObjective] = useState('')
+  const [launchMaxSteps, setLaunchMaxSteps] = useState(100)
+  const [isLaunching, setIsLaunching] = useState(false)
 
   useEffect(() => {
     checkConnection()
@@ -91,8 +110,54 @@ export default function BugBountyPage() {
   const handleProgramChange = (handle: string) => {
     setSelectedProgram(handle)
     setScopeCheckResult(null)
+    setSelectedAssets(new Set())
+    setShowLaunchOptions(false)
     if (handle) loadScope(handle)
     else setScope(null)
+  }
+
+  const toggleAsset = (idx: number) => {
+    setSelectedAssets(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const toggleAllAssets = () => {
+    if (!scope) return
+    if (selectedAssets.size === scope.in_scope.length) {
+      setSelectedAssets(new Set())
+    } else {
+      setSelectedAssets(new Set(scope.in_scope.map((_, i) => i)))
+    }
+  }
+
+  const handleLaunchAgent = async () => {
+    if (!scope || selectedAssets.size === 0) return
+    setIsLaunching(true)
+    try {
+      const assets = Array.from(selectedAssets).sort((a, b) => a - b).map(i => scope.in_scope[i])
+      const urls = assets.map(assetToUrl)
+      const [target, ...rest] = urls
+
+      const resp = await agentV2Api.start({
+        target,
+        additional_targets: rest.length > 0 ? rest : undefined,
+        objective: launchObjective.trim() || undefined,
+        max_steps: launchMaxSteps,
+        scope_profile: 'bug_bounty',
+        bugbounty_platform: 'hackerone',
+        bugbounty_program: selectedProgram,
+      })
+      navigate(`/agent/${resp.operation_id}`)
+    } catch (err: any) {
+      console.error('Failed to launch agent:', err)
+      alert(err?.response?.data?.detail || 'Failed to launch agent')
+    } finally {
+      setIsLaunching(false)
+    }
   }
 
   const handleScopeCheck = async () => {
@@ -218,6 +283,14 @@ export default function BugBountyPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-dark-700">
+                          <th className="py-2 px-3 w-8">
+                            <input
+                              type="checkbox"
+                              checked={selectedAssets.size === scope.in_scope.length && scope.in_scope.length > 0}
+                              onChange={toggleAllAssets}
+                              className="w-4 h-4 rounded bg-dark-900 border-dark-600 text-primary-500 focus:ring-primary-500 cursor-pointer"
+                            />
+                          </th>
                           <th className="text-left py-2 px-3 text-dark-400 font-medium">Asset</th>
                           <th className="text-left py-2 px-3 text-dark-400 font-medium">Type</th>
                           <th className="text-center py-2 px-3 text-dark-400 font-medium">Bounty</th>
@@ -226,7 +299,19 @@ export default function BugBountyPage() {
                       </thead>
                       <tbody>
                         {scope.in_scope.map((asset: BugBountyScopeAsset, i: number) => (
-                          <tr key={i} className="border-b border-dark-800">
+                          <tr
+                            key={i}
+                            onClick={() => toggleAsset(i)}
+                            className={`border-b border-dark-800 cursor-pointer transition-colors ${selectedAssets.has(i) ? 'bg-primary-500/10' : 'hover:bg-dark-900/30'}`}
+                          >
+                            <td className="py-2 px-3" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedAssets.has(i)}
+                                onChange={() => toggleAsset(i)}
+                                className="w-4 h-4 rounded bg-dark-900 border-dark-600 text-primary-500 focus:ring-primary-500 cursor-pointer"
+                              />
+                            </td>
                             <td className="py-2 px-3 text-white font-mono text-xs">{asset.asset_identifier}</td>
                             <td className="py-2 px-3 text-dark-300">{asset.asset_type}</td>
                             <td className="py-2 px-3 text-center">
@@ -242,6 +327,62 @@ export default function BugBountyPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Launch action bar */}
+                  {selectedAssets.size > 0 && (
+                    <div className="mt-3 p-4 bg-dark-900/50 rounded-lg space-y-3 border border-primary-500/20">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-dark-200">
+                          <span className="font-medium text-primary-400">{selectedAssets.size}</span> asset{selectedAssets.size !== 1 ? 's' : ''} selected:
+                          <span className="ml-2 text-dark-400 font-mono text-xs">
+                            {Array.from(selectedAssets).sort((a, b) => a - b).slice(0, 3).map(i => scope.in_scope[i].asset_identifier).join(', ')}
+                            {selectedAssets.size > 3 && ` +${selectedAssets.size - 3} more`}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setShowLaunchOptions(!showLaunchOptions)}
+                          className="text-xs text-dark-400 hover:text-dark-200 flex items-center gap-1"
+                        >
+                          Options {showLaunchOptions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      {showLaunchOptions && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-dark-400 mb-1">Custom Objective</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Focus on authentication bypasses"
+                              value={launchObjective}
+                              onChange={(e) => setLaunchObjective(e.target.value)}
+                              className="w-full px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-white text-sm focus:outline-none focus:border-primary-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-dark-400 mb-1">Max Steps</label>
+                            <input
+                              type="number"
+                              min={10}
+                              max={1000}
+                              value={launchMaxSteps}
+                              onChange={(e) => setLaunchMaxSteps(Number(e.target.value))}
+                              className="w-full px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-white text-sm focus:outline-none focus:border-primary-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleLaunchAgent}
+                        isLoading={isLaunching}
+                        className="w-full"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Launch Agent on {selectedAssets.size} Asset{selectedAssets.size !== 1 ? 's' : ''}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
