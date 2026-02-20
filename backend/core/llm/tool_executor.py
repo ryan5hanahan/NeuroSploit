@@ -72,6 +72,8 @@ class ExecutionContext:
     _stopped: bool = False
     stop_reason: str = ""
     stop_summary: str = ""
+    max_duration_seconds: int = 3600  # 1 hour wall-clock limit
+    _start_time: float = field(default_factory=time.time)
 
     # Authentication (in-memory only, not persisted)
     auth_type: Optional[str] = None  # "cookie", "bearer", "basic", "header"
@@ -221,6 +223,18 @@ class ExecutionContext:
         return self._stopped
 
     @property
+    def elapsed_seconds(self) -> float:
+        return time.time() - self._start_time
+
+    @property
+    def time_remaining_seconds(self) -> float:
+        return max(0.0, self.max_duration_seconds - self.elapsed_seconds)
+
+    @property
+    def time_exceeded(self) -> bool:
+        return self.elapsed_seconds >= self.max_duration_seconds
+
+    @property
     def budget_pct(self) -> float:
         return (self.current_step / self.max_steps * 100) if self.max_steps > 0 else 0
 
@@ -255,11 +269,13 @@ class ToolExecutor:
         context: ExecutionContext,
         governance_agent=None,
         on_step: Optional[Callable] = None,
+        cost_tracker=None,
     ):
         self.context = context
         self.governance = governance_agent
         self._handlers: Dict[str, Callable] = {}
         self._on_step = on_step  # Callback for step progress events
+        self._cost_tracker = cost_tracker  # CostTracker for budget enforcement
 
     def register(self, tool_name: str, handler: Callable) -> None:
         """Register a tool handler function.
@@ -278,11 +294,35 @@ class ToolExecutor:
         This method is the tool_executor callback passed to
         UnifiedLLMClient.generate_with_tools().
         """
-        # Budget enforcement
+        # Step budget enforcement
         if self.context.current_step >= self.context.max_steps:
             return ToolResult(
                 tool_call_id=tool_call.id,
                 content="BUDGET EXHAUSTED: You have used all available steps. Call 'stop' to end the operation.",
+                is_error=True,
+            )
+
+        # Wall-clock time enforcement
+        if self.context.time_exceeded:
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                content=(
+                    f"TIME LIMIT EXCEEDED: Operation has been running for "
+                    f"{self.context.elapsed_seconds:.0f}s (limit: "
+                    f"{self.context.max_duration_seconds}s). Call 'stop' to end."
+                ),
+                is_error=True,
+            )
+
+        # LLM cost budget enforcement
+        if self._cost_tracker and self._cost_tracker.over_budget:
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                content=(
+                    f"COST BUDGET EXCEEDED: ${self._cost_tracker.total_cost:.2f} spent "
+                    f"(budget: ${self._cost_tracker.budget_usd:.2f}). "
+                    f"Call 'stop' to end the operation."
+                ),
                 is_error=True,
             )
 
@@ -300,8 +340,13 @@ class ToolExecutor:
             self.context.tool_call_counts.get(tool_call.name, 0) + 1
         )
 
-        # Governance check (skip for non-destructive tools)
-        if self.governance and tool_call.name in ("shell_execute", "http_request", "browser_submit_form"):
+        # Governance check — covers all tools that interact with external targets
+        _GOVERNED_TOOLS = {
+            "shell_execute", "http_request",
+            "browser_submit_form", "browser_navigate",
+            "browser_js", "browser_extract", "browser_screenshot",
+        }
+        if self.governance and tool_call.name in _GOVERNED_TOOLS:
             gov_result = self._check_governance(tool_call)
             if gov_result:
                 return ToolResult(
@@ -330,6 +375,13 @@ class ToolExecutor:
             is_error = True
 
         elapsed_ms = (time.monotonic() - start) * 1000
+
+        # Sanitize output (redact secrets + detect prompt injection)
+        try:
+            from ..output_sanitizer import sanitize_output
+            result_content = sanitize_output(result_content)
+        except Exception as e:
+            logger.debug(f"Output sanitization error: {e}")
 
         # Truncate output to prevent context overflow
         if len(result_content) > 30000:
@@ -365,39 +417,55 @@ class ToolExecutor:
         )
 
     def _check_governance(self, tool_call: ToolCall) -> Optional[str]:
-        """Check if a tool call is within governance scope."""
+        """Check if a tool call is within governance scope.
+
+        Covers:
+          - URL scope enforcement on http_request, browser_*, and shell targets
+          - Command safety analysis via CommandAnalyzer (replaces old string blocklist)
+          - Phase-action enforcement via governance.check_action()
+        """
         if not self.governance:
             return None
 
         try:
-            if tool_call.name == "http_request":
+            # --- URL scope check for HTTP and browser tools ---
+            url_tools = {
+                "http_request", "browser_submit_form", "browser_navigate",
+                "browser_js", "browser_extract", "browser_screenshot",
+            }
+            if tool_call.name in url_tools:
                 url = tool_call.arguments.get("url", "")
                 if url and not self.governance.is_url_in_scope(url):
                     return f"URL {url} is not in scope"
 
-            if tool_call.name == "browser_submit_form":
-                url = tool_call.arguments.get("url", "")
-                if url and not self.governance.is_url_in_scope(url):
-                    return f"URL {url} is not in scope"
-
+            # --- Command safety analysis for shell_execute ---
             if tool_call.name == "shell_execute":
+                from ..command_analyzer import CommandAnalyzer
+
                 command = tool_call.arguments.get("command", "")
-                # Block dangerous commands
-                blocked = [
-                    "rm -rf /",
-                    "mkfs",
-                    "dd if=",
-                    ":(){:|:&};:",
-                    "shutdown",
-                    "reboot",
-                    "halt",
-                    "poweroff",
-                ]
-                for pattern in blocked:
-                    if pattern in command:
-                        return f"Dangerous command blocked: contains '{pattern}'"
-        except Exception:
-            pass
+                if command:
+                    decision = CommandAnalyzer.analyze(command, strict=True)
+                    if not decision.allowed:
+                        return f"Command blocked: {decision.reason}"
+
+                    # Check extracted targets against scope
+                    for target in decision.extracted_targets:
+                        # Build a URL for scope checking
+                        test_url = f"https://{target}" if "://" not in target else target
+                        if not self.governance.is_url_in_scope(test_url):
+                            return f"Shell command targets out-of-scope host: {target}"
+
+            # --- Phase-action enforcement ---
+            if hasattr(self.governance, 'check_action'):
+                phase_decision = self.governance.check_action(
+                    tool_call.name,
+                    {"tool_args": tool_call.arguments},
+                )
+                if not phase_decision.allowed:
+                    return phase_decision.reason
+
+        except Exception as e:
+            logger.debug(f"Governance check error: {e}")
 
         return None
 

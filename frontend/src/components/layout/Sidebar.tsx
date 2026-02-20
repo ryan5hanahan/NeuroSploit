@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Crosshair,
   Bug,
+  ShieldCheck,
 } from 'lucide-react'
 
 const navItems = [
@@ -28,6 +29,7 @@ const navItems = [
   { path: '/prompts', icon: MessageSquare, label: 'Prompt Library' },
   { path: '/tradecraft', icon: Crosshair, label: 'Tradecraft' },
   { path: '/bugbounty', icon: Bug, label: 'Bug Bounty' },
+  { path: '/governance', icon: ShieldCheck, label: 'Governance' },
   { path: '/scheduler', icon: Clock, label: 'Scheduler' },
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/settings', icon: Settings, label: 'Settings' },

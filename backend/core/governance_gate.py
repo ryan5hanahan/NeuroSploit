@@ -186,6 +186,21 @@ PHASE_RANK: Dict[str, int] = {
 }
 
 
+# Valid phase transitions — prevents arbitrary phase jumping
+# Each key maps to the set of phases it is allowed to transition TO.
+VALID_PHASE_TRANSITIONS: Dict[str, set] = {
+    "initializing": {"passive_recon", "recon", "analyzing", "full_auto", "reporting", "completed"},
+    "passive_recon": {"recon", "analyzing", "reporting", "completed"},
+    "recon": {"analyzing", "testing", "full_auto", "reporting", "completed"},
+    "analyzing": {"testing", "exploitation", "full_auto", "reporting", "completed"},
+    "testing": {"exploitation", "full_auto", "reporting", "completed"},
+    "exploitation": {"reporting", "completed"},
+    "full_auto": {"reporting", "completed"},
+    "reporting": {"completed"},
+    "completed": set(),  # Terminal state — no transitions allowed
+}
+
+
 # ---------------------------------------------------------------------------
 # Action classifier — maps tools, MCP calls, and methods to categories
 # ---------------------------------------------------------------------------
@@ -417,6 +432,7 @@ class GovernanceGate:
         self.checks_performed: int = 0
         self.checks_blocked: int = 0
         self.violation_callback = violation_callback
+        self.phase_transitions: List[Dict[str, Any]] = []  # Audit trail of transitions
 
     @property
     def is_enabled(self) -> bool:
@@ -426,8 +442,46 @@ class GovernanceGate:
     def is_strict(self) -> bool:
         return self.governance_mode == "strict"
 
-    def set_phase(self, phase: str):
-        """Update the current scan phase, respecting the ceiling."""
+    def set_phase(self, phase: str) -> bool:
+        """Update the current scan phase with transition validation.
+
+        Returns True if phase was set, False if transition was invalid.
+        Respects both the transition state machine and the phase ceiling.
+        """
+        previous_phase = self.current_phase
+
+        # Validate transition (skip if governance is off)
+        if self.is_enabled and previous_phase != phase:
+            valid_next = VALID_PHASE_TRANSITIONS.get(previous_phase, set())
+            if phase not in valid_next:
+                detail = (
+                    f"Invalid phase transition: '{previous_phase}' → '{phase}'. "
+                    f"Valid transitions: {sorted(valid_next) if valid_next else 'none (terminal state)'}"
+                )
+                logger.warning(f"[Governance] {detail}")
+
+                violation = GovernanceViolation(
+                    scan_id=self.scan_id,
+                    phase=previous_phase,
+                    action=f"set_phase({phase})",
+                    action_category="phase_transition",
+                    allowed_categories=sorted(valid_next),
+                    disposition="blocked" if self.is_strict else "warned",
+                    detail=detail,
+                    layer="phase",
+                )
+                self.violations.append(violation)
+                if self.violation_callback:
+                    try:
+                        self.violation_callback(violation)
+                    except Exception:
+                        pass
+
+                if self.is_strict:
+                    return False
+                # In warn mode, allow but record
+
+        # Ceiling enforcement
         if self.phase_ceiling:
             ceiling_rank = PHASE_RANK.get(self.phase_ceiling, 99)
             requested_rank = PHASE_RANK.get(phase, 99)
@@ -438,8 +492,20 @@ class GovernanceGate:
                     f"Clamping to ceiling."
                 )
                 phase = self.phase_ceiling
+
         self.current_phase = phase
-        logger.debug(f"[Governance] Phase set to '{phase}' for scan {self.scan_id}")
+
+        # Record transition
+        self.phase_transitions.append({
+            "from": previous_phase,
+            "to": phase,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        logger.debug(
+            f"[Governance] Phase transition: '{previous_phase}' → '{phase}' "
+            f"for scan {self.scan_id}"
+        )
+        return True
 
     def check(self, action: str, context: Optional[Dict] = None) -> GovernanceDecision:
         """Check whether an action is permitted in the current phase.
@@ -536,6 +602,7 @@ class GovernanceGate:
             "violations_blocked": len(blocked),
             "violations_warned": len(warned),
             "violations_by_category": by_category,
+            "phase_transitions": list(self.phase_transitions),
         }
 
     def get_allowed_categories(self) -> List[str]:

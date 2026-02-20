@@ -89,6 +89,8 @@ class ScanScope:
     skip_port_scan: bool = False
     max_recon_depth: str = "medium"      # "quick" | "medium" | "full"
     nuclei_template_tags: Optional[str] = None
+    include_subdomains: bool = True      # *.example.com in scope if example.com allowed
+    allowed_cidrs: FrozenSet[str] = frozenset()  # CIDR ranges (e.g. "192.168.1.0/24")
 
 
 @dataclass
@@ -207,15 +209,46 @@ class GovernanceAgent:
         return self.scope.nuclei_template_tags
 
     def is_url_in_scope(self, url: str) -> bool:
-        """Check if a URL's domain (and port, if scoped) is within scope."""
-        if not self.scope.allowed_domains:
+        """Check if a URL's domain (and port, if scoped) is within scope.
+
+        Supports:
+          - Exact domain match
+          - Subdomain inheritance (*.example.com if include_subdomains=True)
+          - CIDR range matching for IP-based targets
+          - Host:port matching
+        """
+        if not self.scope.allowed_domains and not self.scope.allowed_cidrs:
             return True
         try:
-            parsed = urlparse(url)
+            parsed = urlparse(url if "://" in url else f"https://{url}")
             host = parsed.hostname or ""
             netloc = parsed.netloc or ""
-            # Match against both hostname-only and host:port entries
-            return host in self.scope.allowed_domains or netloc in self.scope.allowed_domains
+
+            # 1. Exact domain or netloc match
+            if host in self.scope.allowed_domains or netloc in self.scope.allowed_domains:
+                return True
+
+            # 2. Subdomain inheritance: foo.bar.example.com matches example.com
+            if self.scope.include_subdomains and host:
+                for domain in self.scope.allowed_domains:
+                    if host.endswith(f".{domain}"):
+                        return True
+
+            # 3. CIDR matching for IP-based targets
+            if self.scope.allowed_cidrs and host:
+                import ipaddress as _ipaddr
+                try:
+                    target_ip = _ipaddr.ip_address(host)
+                    for cidr in self.scope.allowed_cidrs:
+                        try:
+                            if target_ip in _ipaddr.ip_network(cidr, strict=False):
+                                return True
+                        except ValueError:
+                            continue
+                except ValueError:
+                    pass  # host is not an IP address
+
+            return False
         except Exception:
             return False
 

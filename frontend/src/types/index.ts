@@ -909,3 +909,56 @@ export interface BugBountySubmission {
   created_at: string | null
   updated_at: string | null
 }
+
+// Governance types
+export interface GovernanceViolation {
+  id: string
+  scan_id: string
+  layer: 'scope' | 'phase'
+  phase: string | null
+  action: string | null
+  action_category: string | null
+  allowed_categories: string[]
+  context: Record<string, unknown> | null
+  disposition: 'blocked' | 'warned'
+  detail: string | null
+  created_at: string | null
+}
+
+export interface GovernanceScanStats {
+  scan_id: string
+  total_violations: number
+  scope_violations: number
+  phase_violations: number
+  blocked: number
+  warned: number
+  by_category: Record<string, number>
+}
+
+export interface GovernanceOverview {
+  total_violations: number
+  scans_with_violations: number
+  blocked: number
+  warned: number
+  scope_violations: number
+  phase_violations: number
+  by_category: Record<string, number>
+  recent_violations: GovernanceViolation[]
+}
+
+export interface GovernanceProfile {
+  id: string
+  name: string
+  description: string
+  scope_profile: string
+  governance_mode: string
+  allowed_vuln_types: string[]
+  include_subdomains: boolean
+  max_recon_depth: string
+  max_steps: number
+  max_duration_seconds: number
+  budget_usd: number
+  sandbox_fallback_policy: string
+  created_at: string
+  updated_at: string
+}
