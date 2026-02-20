@@ -39,6 +39,7 @@ TASK_TIER_MAP: Dict[str, ModelTier] = {
     "agent_step": ModelTier.BALANCED,         # Hypothesis phase — standard testing
     "agent_step_analysis": ModelTier.BALANCED, # Validation/Reporting — Sonnet handles confirmation fine
     "agent_summary": ModelTier.DEEP,          # Final summary before budget exhaustion
+    "subagent_step": ModelTier.FAST,          # Sub-agent swarm steps — cheap parallel recon
 }
 
 

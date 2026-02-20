@@ -52,9 +52,11 @@ from backend.core.tools.browser_tool import (
     handle_browser_screenshot,
     handle_browser_submit_form,
 )
+from backend.core.tools.dynamic_tool import handle_create_tool
 from backend.core.tools.http_tool import handle_http_request
 from backend.core.tools.parallel_executor import execute_parallel
 from backend.core.tools.shell_tool import handle_shell_execute
+from backend.core.tools.swarm_tool import handle_spawn_subagent
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +160,7 @@ class LLMDrivenAgent:
         )
 
         # Register all tool handlers
-        self.executor.register_many({
+        self._tool_handlers_map = {
             "shell_execute": handle_shell_execute,
             "http_request": handle_http_request,
             "browser_navigate": handle_browser_navigate,
@@ -175,7 +177,33 @@ class LLMDrivenAgent:
             "get_payloads": handle_get_payloads,
             "get_vuln_info": handle_get_vuln_info,
             "stop": handle_stop,
-        })
+        }
+        self.executor.register_many(self._tool_handlers_map)
+
+        # Dynamic tools list (appended to by create_tool)
+        self._dynamic_tools_list: List[Dict[str, Any]] = []
+
+        # Swarm sub-agent handler (closure capturing agent state)
+        async def _swarm_handler(args, ctx):
+            return await handle_spawn_subagent(
+                args, ctx,
+                llm_client=self.llm,
+                memory=self.memory,
+                governance=self.executor.governance,
+                tool_handlers=self._tool_handlers_map,
+                parent_cancelled=lambda: self._cancelled,
+            )
+
+        # Dynamic tool creation handler (closure capturing executor + tools list)
+        async def _create_tool_handler(args, ctx):
+            return await handle_create_tool(
+                args, ctx,
+                executor=self.executor,
+                tools_list=self._dynamic_tools_list,
+            )
+
+        self.executor.register("spawn_subagent", _swarm_handler)
+        self.executor.register("create_tool", _create_tool_handler)
 
         # Internal state
         self._cancelled = False
@@ -266,8 +294,6 @@ class LLMDrivenAgent:
 
     async def _run_loop(self) -> AgentResult:
         """Core execution loop — LLM decides, tools execute, results feed back."""
-        tools = get_agent_tools()
-
         # Build initial message
         initial_message = f"Begin your security assessment of {self.target}.\n\n"
         initial_message += f"Objective: {self.objective}\n\n"
@@ -430,6 +456,9 @@ class LLMDrivenAgent:
 
             # Snapshot findings count before this step (for decision records)
             findings_before = len(self.context.findings)
+
+            # Refresh tools list (picks up dynamically created tools)
+            tools = get_agent_tools() + self._dynamic_tools_list
 
             # Generate LLM response
             try:
