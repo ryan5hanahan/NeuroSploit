@@ -343,8 +343,11 @@ class ToolExecutor:
         # Governance check — covers all tools that interact with external targets
         _GOVERNED_TOOLS = {
             "shell_execute", "http_request",
-            "browser_submit_form", "browser_navigate",
-            "browser_js", "browser_extract", "browser_screenshot",
+            "browser_navigate", "browser_extract_links",
+            "browser_extract_forms", "browser_submit_form",
+            "browser_screenshot", "browser_execute_js",
+            "spawn_subagent", "create_tool",
+            "get_payloads",
         }
         if self.governance and tool_call.name in _GOVERNED_TOOLS:
             gov_result = self._check_governance(tool_call)
