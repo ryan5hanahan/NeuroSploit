@@ -816,6 +816,10 @@ export interface AgentV2OperationSummary {
   max_steps: number
   findings_count: number
   total_cost_usd?: number
+  cost_usd?: number
+  started_at?: string
+  duration_seconds?: number
+  severity_breakdown?: Record<string, number>
 }
 
 export interface AgentV2WSStep {
