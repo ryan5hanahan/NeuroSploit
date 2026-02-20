@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, Shield, AlertTriangle, Plus, ArrowRight, CheckCircle, StopCircle, Clock, FileText, Cpu, BrainCircuit, RefreshCw, XCircle } from 'lucide-react'
+import { Activity, Shield, AlertTriangle, Plus, ArrowRight, CheckCircle, StopCircle, Clock, FileText, Cpu, BrainCircuit, RefreshCw, XCircle, DollarSign, Zap } from 'lucide-react'
 import Card from '../components/common/Card'
 import Button from '../components/common/Button'
 import { SeverityBadge } from '../components/common/Badge'
@@ -154,6 +154,68 @@ export default function HomePage() {
         ))}
       </div>
 
+      {/* Cost & Operations Stats */}
+      {stats?.costs && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="hover:border-dark-700 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-purple-500/10">
+                <DollarSign className="w-6 h-6 text-purple-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">
+                  ${stats.costs.total_cost_usd.toFixed(4)}
+                </p>
+                <p className="text-sm text-dark-400">Total Cost</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="hover:border-dark-700 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-cyan-500/10">
+                <Zap className="w-6 h-6 text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">
+                  {stats.costs.total_tokens >= 1000000
+                    ? `${(stats.costs.total_tokens / 1000000).toFixed(1)}M`
+                    : stats.costs.total_tokens >= 1000
+                    ? `${(stats.costs.total_tokens / 1000).toFixed(1)}K`
+                    : stats.costs.total_tokens}
+                </p>
+                <p className="text-sm text-dark-400">Total Tokens</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="hover:border-dark-700 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-indigo-500/10">
+                <BrainCircuit className="w-6 h-6 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">
+                  {stats.operations?.total || 0}
+                </p>
+                <p className="text-sm text-dark-400">Operations</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="hover:border-dark-700 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-teal-500/10">
+                <Cpu className="w-6 h-6 text-teal-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">
+                  {stats.endpoints?.total || 0}
+                </p>
+                <p className="text-sm text-dark-400">Endpoints</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Severity Distribution */}
       {stats && stats.vulnerabilities.total > 0 && (
         <Card title="Vulnerability Distribution">
@@ -243,6 +305,11 @@ export default function HomePage() {
                 <span className="text-xs text-dark-500">
                   {op.steps_used}/{op.max_steps} steps
                 </span>
+                {op.total_cost_usd != null && op.total_cost_usd > 0 && (
+                  <span className="text-xs text-purple-400">
+                    ${op.total_cost_usd.toFixed(4)}
+                  </span>
+                )}
                 <span className="text-sm text-white font-medium">
                   {op.findings_count} findings
                 </span>

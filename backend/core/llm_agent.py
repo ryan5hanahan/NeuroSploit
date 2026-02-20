@@ -52,6 +52,7 @@ from backend.core.tools.browser_tool import (
     handle_browser_extract_links,
     handle_browser_navigate,
     handle_browser_screenshot,
+    handle_browser_submit_form,
 )
 from backend.core.tools.http_tool import handle_http_request
 from backend.core.tools.parallel_executor import execute_parallel
@@ -163,6 +164,7 @@ class LLMDrivenAgent:
             "browser_navigate": handle_browser_navigate,
             "browser_extract_links": handle_browser_extract_links,
             "browser_extract_forms": handle_browser_extract_forms,
+            "browser_submit_form": handle_browser_submit_form,
             "browser_screenshot": handle_browser_screenshot,
             "browser_execute_js": handle_browser_execute_js,
             "memory_store": self._handle_memory_store,

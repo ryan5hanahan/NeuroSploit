@@ -138,6 +138,50 @@ BROWSER_EXTRACT_FORMS = {
     },
 }
 
+BROWSER_SUBMIT_FORM = {
+    "name": "browser_submit_form",
+    "description": (
+        "Fill in and submit a form in the current browser page. Use this to test "
+        "login forms with default/weak credentials, submit registration forms, "
+        "or interact with any HTML form. Provide field names and values as key-value "
+        "pairs. Hidden fields (CSRF tokens) are preserved automatically. "
+        "Optionally navigate to the page first via 'url' to get fresh CSRF tokens."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "form_selector": {
+                "type": "string",
+                "description": (
+                    "CSS selector for the form, or a numeric index "
+                    "(e.g. '0' for the first form on the page)"
+                ),
+            },
+            "field_values": {
+                "type": "object",
+                "description": (
+                    "Mapping of form field name attributes to values "
+                    "(e.g. {\"username\": \"admin\", \"password\": \"admin\"})"
+                ),
+                "additionalProperties": {"type": "string"},
+            },
+            "submit_selector": {
+                "type": "string",
+                "description": "Optional CSS selector for the submit button (auto-detected if omitted)",
+            },
+            "url": {
+                "type": "string",
+                "description": "Navigate to this URL first to get fresh CSRF tokens before filling the form",
+            },
+            "credential_label": {
+                "type": "string",
+                "description": "Credential context to use (e.g., 'admin', 'user_a'). Omit for default.",
+            },
+        },
+        "required": ["form_selector", "field_values"],
+    },
+}
+
 BROWSER_SCREENSHOT = {
     "name": "browser_screenshot",
     "description": (
@@ -461,6 +505,7 @@ def get_agent_tools() -> List[Dict[str, Any]]:
         BROWSER_NAVIGATE,
         BROWSER_EXTRACT_LINKS,
         BROWSER_EXTRACT_FORMS,
+        BROWSER_SUBMIT_FORM,
         BROWSER_SCREENSHOT,
         BROWSER_EXECUTE_JS,
         MEMORY_STORE,

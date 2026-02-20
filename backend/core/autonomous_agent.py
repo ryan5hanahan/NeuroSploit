@@ -5255,6 +5255,17 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
             # Remove xss_stored from generic injection loop (already tested via forms)
             injection_types = [v for v in injection_types if v != "xss_stored"]
 
+        # ── Phase B0.3: Form-based authentication testing ──
+        auth_form_types = {"default_credentials", "weak_password", "auth_bypass", "brute_force"}
+        if auth_form_types & set(ai_types) and self.recon.forms:
+            await self.log("info", "  [FORM AUTH] Testing login forms for auth vulnerabilities")
+            auth_findings = await self._test_form_auth()
+            for finding in auth_findings:
+                await self._add_finding(finding)
+            # Remove tested auth types from ai_types so they don't fall through
+            # to the generic _ai_dynamic_test()
+            ai_types = [v for v in ai_types if v not in auth_form_types]
+
         # ── Phase B0.5: Reflected XSS - dedicated context-aware testing ──
         if "xss_reflected" in injection_types:
             await self.log("info", f"  [REFLECTED XSS] Context-aware testing against {len(test_targets)} targets")
@@ -5850,6 +5861,201 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
         except Exception:
             pass
         return []
+
+    async def _test_form_auth(self) -> List[Finding]:
+        """Test login forms for default/weak credentials.
+
+        Identifies forms with a password field, maps username/password fields,
+        and submits credential pairs using the existing testers' response
+        analysis logic.
+
+        Returns:
+            List of confirmed findings (at most one per form).
+        """
+        from backend.core.vuln_engine.testers.auth import (
+            DefaultCredentialsTester,
+            WeakPasswordTester,
+        )
+
+        USERNAME_HINTS = {"username", "user", "email", "login", "name", "usr", "uid"}
+        PASSWORD_HINTS = {"password", "pass", "pwd", "passwd", "secret"}
+
+        default_tester = DefaultCredentialsTester()
+        weak_tester = WeakPasswordTester()
+
+        # Identify forms with a password field
+        login_forms = []
+        for form in self.recon.forms:
+            details = form.get("input_details", [])
+            has_password = any(
+                d.get("type") == "password"
+                for d in details if isinstance(d, dict)
+            )
+            if has_password:
+                login_forms.append(form)
+
+        if not login_forms:
+            await self.log("info", "  [FORM AUTH] No login forms found")
+            return []
+
+        await self.log("info", f"  [FORM AUTH] Found {len(login_forms)} login form(s)")
+
+        # Build credential pairs: default_creds + weak passwords with "admin" user
+        cred_pairs = list(default_tester.default_creds)
+        for pw in weak_tester.weak_passwords:
+            pair = ("admin", pw)
+            if pair not in cred_pairs:
+                cred_pairs.append(pair)
+        # Cap at 20 to limit request volume
+        cred_pairs = cred_pairs[:20]
+
+        findings: List[Finding] = []
+
+        for form in login_forms[:5]:
+            action = form.get("action", "")
+            method = form.get("method", "POST").upper()
+            page_url = form.get("page_url", action)
+            details = form.get("input_details", [])
+
+            if not action:
+                continue
+
+            # Identify username and password field names
+            user_field = None
+            pass_field = None
+            for d in details:
+                if not isinstance(d, dict):
+                    continue
+                name_lower = d.get("name", "").lower()
+                if d.get("type") == "password":
+                    pass_field = d["name"]
+                elif any(h in name_lower for h in USERNAME_HINTS):
+                    user_field = d["name"]
+
+            if not pass_field:
+                continue
+            if not user_field:
+                # Fallback: first text/email field that isn't hidden
+                for d in details:
+                    if not isinstance(d, dict):
+                        continue
+                    if d.get("type") in ("text", "email", ""):
+                        user_field = d["name"]
+                        break
+            if not user_field:
+                continue
+
+            await self.log(
+                "info",
+                f"    [FORM AUTH] Testing {page_url[:60]} "
+                f"(user={user_field}, pass={pass_field})",
+            )
+
+            # Identify hidden fields (CSRF tokens, etc.)
+            hidden_fields: Dict[str, str] = {}
+            csrf_field_names: List[str] = []
+            for d in details:
+                if not isinstance(d, dict):
+                    continue
+                if d.get("type") == "hidden":
+                    hidden_fields[d["name"]] = d.get("value", "")
+                    if any(tok in d["name"].lower() for tok in ("csrf", "token", "_token", "nonce")):
+                        csrf_field_names.append(d["name"])
+
+            form_found = False
+            for username, password in cred_pairs:
+                if self.is_cancelled():
+                    return findings
+
+                # Rate limit
+                await asyncio.sleep(0.333)
+
+                # Refresh CSRF tokens if applicable
+                if csrf_field_names:
+                    fresh = await self._fetch_fresh_form_values(page_url, action)
+                    if fresh:
+                        for fd in fresh:
+                            if fd.get("type") == "hidden" and fd.get("name") in hidden_fields:
+                                hidden_fields[fd["name"]] = fd.get("value", "")
+
+                # Build form data
+                form_data: Dict[str, str] = {}
+                form_data.update(hidden_fields)
+                form_data[user_field] = username
+                form_data[pass_field] = password
+
+                resp = await self._make_request(action, method, form_data)
+                if not resp:
+                    continue
+
+                payload_str = f"{username}:{password}"
+                context: Dict = {"form_action": action, "page_url": page_url}
+
+                # Check with DefaultCredentialsTester
+                confirmed, confidence, detail = default_tester.analyze_response(
+                    payload_str,
+                    resp.get("status", 0),
+                    resp.get("headers", {}),
+                    resp.get("body", ""),
+                    context,
+                )
+
+                # If not caught by default creds, try weak password tester
+                if not confirmed:
+                    confirmed, confidence, detail = weak_tester.analyze_response(
+                        payload_str,
+                        resp.get("status", 0),
+                        resp.get("headers", {}),
+                        resp.get("body", ""),
+                        context,
+                    )
+
+                if confirmed and detail:
+                    finding_id = hashlib.md5(
+                        f"form_auth_{action}_{username}_{password}".encode()
+                    ).hexdigest()[:12]
+
+                    finding = Finding(
+                        id=finding_id,
+                        title=f"Default/Weak Credentials Accepted: {username}/{password}",
+                        severity="high",
+                        vulnerability_type="default_credentials",
+                        description=(
+                            f"The login form at {action} accepts default/weak "
+                            f"credentials ({username}/{password}). {detail}"
+                        ),
+                        affected_endpoint=action,
+                        parameter=f"{user_field}, {pass_field}",
+                        payload=payload_str,
+                        evidence=(
+                            f"Submitted {method} to {action} with "
+                            f"{user_field}={username}&{pass_field}={password}. "
+                            f"Response status: {resp.get('status')}. "
+                            f"Analysis: {detail}"
+                        ),
+                        request=f"{method} {action} ({user_field}={username}&{pass_field}=***)",
+                        response=f"HTTP {resp.get('status', 0)} - {resp.get('body', '')[:300]}",
+                        impact="Unauthorized access to the application with default credentials",
+                        remediation=(
+                            "Remove default credentials, enforce strong password policy, "
+                            "implement account lockout after failed attempts"
+                        ),
+                        cwe_id="CWE-798",
+                        confidence=str(int(confidence * 100)),
+                        confidence_score=int(confidence * 100),
+                    )
+                    findings.append(finding)
+                    await self.log(
+                        "warning",
+                        f"    [FORM AUTH] CONFIRMED: {username}/{password} at {action[:60]}",
+                    )
+                    form_found = True
+                    break  # One finding per form is enough
+
+            if not form_found:
+                await self.log("info", f"    [FORM AUTH] No default/weak creds accepted at {action[:60]}")
+
+        return findings
 
     async def _test_stored_xss(self, form: Dict) -> Optional[Finding]:
         """AI-driven two-phase stored XSS testing for a form.
@@ -8278,6 +8484,13 @@ Provide your analysis:"""
             report["exploit_chains"] = self.chain_engine.get_attack_graph()
         if self.auth_manager:
             report["auth_status"] = self.auth_manager.get_auth_summary()
+
+        # Include LLM cost data if available
+        if hasattr(self, 'llm') and self.llm and hasattr(self.llm, 'cost_tracker'):
+            try:
+                report["cost_report"] = self.llm.cost_tracker.report()
+            except Exception:
+                pass
 
         # Log summary
         await self.log("info", "=" * 60)

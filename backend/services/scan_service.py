@@ -726,6 +726,11 @@ class ScanService:
                                     "endpoint": finding.get("endpoint", "")
                                 })
 
+                            # Persist LLM cost data from LLM-driven agent
+                            if agent_result.cost_report:
+                                scan.total_cost_usd = (scan.total_cost_usd or 0) + agent_result.cost_report.get("total_cost_usd", 0)
+                                scan.total_tokens = (scan.total_tokens or 0) + agent_result.cost_report.get("total_input_tokens", 0) + agent_result.cost_report.get("total_output_tokens", 0)
+
                             await self._complete_agent_task(
                                 agent_task,
                                 items_processed=agent_result.steps_used,
@@ -802,6 +807,12 @@ class ScanService:
                                 # Update endpoint count from report
                                 endpoints_tested = agent_report.get("summary", {}).get("endpoints_tested", 0)
                                 scan.total_endpoints += endpoints_tested
+
+                                # Persist LLM cost data
+                                cost_report = agent_report.get("cost_report")
+                                if cost_report:
+                                    scan.total_cost_usd = (scan.total_cost_usd or 0) + cost_report.get("total_cost_usd", 0)
+                                    scan.total_tokens = (scan.total_tokens or 0) + cost_report.get("total_input_tokens", 0) + cost_report.get("total_output_tokens", 0)
 
                             await self._complete_agent_task(
                                 agent_task,

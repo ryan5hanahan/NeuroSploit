@@ -3,7 +3,7 @@ NeuroSploit v3 - Scan Model
 """
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, Boolean, DateTime, Text, JSON
+from sqlalchemy import String, Integer, Float, Boolean, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.db.database import Base
 import uuid
@@ -58,6 +58,10 @@ class Scan(Base):
     medium_count: Mapped[int] = mapped_column(Integer, default=0)
     low_count: Mapped[int] = mapped_column(Integer, default=0)
     info_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # LLM cost tracking
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
 
     # Relationships
     targets: Mapped[List["Target"]] = relationship("Target", back_populates="scan", cascade="all, delete-orphan")
@@ -130,5 +134,7 @@ class Scan(Base):
             "medium_count": self.medium_count,
             "low_count": self.low_count,
             "info_count": self.info_count,
+            "total_cost_usd": self.total_cost_usd or 0.0,
+            "total_tokens": self.total_tokens or 0,
             "repeated_from_id": self.repeated_from_id
         }

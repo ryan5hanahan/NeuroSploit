@@ -149,6 +149,135 @@ class BrowserSession:
 
         return links
 
+    async def submit_form(
+        self,
+        form_selector: str,
+        field_values: Dict[str, str],
+        submit_selector: Optional[str] = None,
+        pre_navigate_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fill and submit a form in the browser.
+
+        Args:
+            form_selector: CSS selector for the form, or a numeric index
+                           (e.g. "0" for the first form on the page).
+            field_values: Mapping of field *name* attributes to values.
+                          Hidden fields (like CSRF tokens) found in the form
+                          are preserved automatically unless overridden.
+            submit_selector: Optional CSS selector for the submit button.
+                             Auto-detected if omitted.
+            pre_navigate_url: If given, navigate here first so the browser
+                              picks up fresh CSRF tokens before filling.
+        """
+        await self.ensure_started()
+
+        # Rate limit: minimum 333 ms between submissions
+        now = time.monotonic()
+        last = getattr(self, "_last_submit_time", 0.0)
+        if now - last < 0.333:
+            await asyncio.sleep(0.333 - (now - last))
+        self._last_submit_time = time.monotonic()
+
+        try:
+            # Optionally navigate first (fresh CSRF tokens)
+            if pre_navigate_url:
+                await self._page.goto(
+                    pre_navigate_url, wait_until="domcontentloaded", timeout=15000
+                )
+                await self._page.wait_for_timeout(500)
+
+            # Locate the form
+            if form_selector.isdigit():
+                form = self._page.locator("form").nth(int(form_selector))
+            else:
+                form = self._page.locator(form_selector).first
+
+            # Verify form exists
+            if await form.count() == 0:
+                return {"error": f"Form not found: {form_selector}"}
+
+            # Fill fields
+            for field_name, value in field_values.items():
+                field = form.locator(f'[name="{field_name}"]').first
+                if await field.count() == 0:
+                    continue
+
+                tag = await field.evaluate("el => el.tagName.toLowerCase()")
+                if tag == "select":
+                    await field.select_option(value)
+                else:
+                    input_type = await field.get_attribute("type") or "text"
+                    if input_type in ("checkbox", "radio"):
+                        if value.lower() in ("true", "1", "on", "yes"):
+                            await field.check()
+                        else:
+                            await field.uncheck()
+                    else:
+                        await field.fill(value)
+
+            # Find and click submit button
+            if submit_selector:
+                submit_btn = form.locator(submit_selector).first
+            else:
+                # Auto-detect: button[type=submit] > input[type=submit] > first button
+                for sel in [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    "button",
+                ]:
+                    submit_btn = form.locator(sel).first
+                    if await submit_btn.count() > 0:
+                        break
+                else:
+                    return {"error": "No submit button found in form"}
+
+            # Click and wait for navigation (handle both full-page and AJAX)
+            try:
+                async with self._page.expect_navigation(
+                    wait_until="domcontentloaded", timeout=15000
+                ):
+                    await submit_btn.click()
+            except Exception:
+                # AJAX form — no navigation event; just click and wait
+                try:
+                    await submit_btn.click()
+                except Exception:
+                    pass
+                await self._page.wait_for_timeout(2000)
+
+            # Let JS settle
+            await self._page.wait_for_timeout(1000)
+
+            title = await self._page.title()
+            final_url = self._page.url
+
+            # Try to get response status from last navigation
+            status = 0
+            try:
+                response = await self._page.evaluate(
+                    "() => window.performance.getEntries().pop()?.responseStatus || 0"
+                )
+                status = int(response) if response else 0
+            except Exception:
+                pass
+
+            content = await self._page.evaluate(
+                "() => document.body?.innerText || ''"
+            )
+            if len(content) > 5000:
+                content = content[:5000] + "\n[CONTENT TRUNCATED]"
+
+            return {
+                "title": title,
+                "url": final_url,
+                "status": status,
+                "content_preview": content,
+                "form_submitted": True,
+            }
+
+        except Exception as e:
+            return {"error": str(e)}
+
     async def extract_forms(self) -> List[Dict[str, Any]]:
         """Extract all forms from the current page."""
         await self.ensure_started()
@@ -355,6 +484,39 @@ async def handle_browser_extract_forms(args: Dict[str, Any], context: Any) -> st
                 lines.append(f"    - {name}: {ftype}{req}")
 
     return "\n".join(lines)
+
+
+async def handle_browser_submit_form(args: Dict[str, Any], context: Any) -> str:
+    """Handle browser_submit_form tool call."""
+    label = args.get("credential_label")
+    session = get_browser_session(
+        context.operation_id, context.artifacts_dir,
+        auth_headers=_get_context_auth_headers(context, label=label),
+        credential_label=label,
+    )
+
+    form_selector = args.get("form_selector", "0")
+    field_values = args.get("field_values", {})
+    submit_selector = args.get("submit_selector")
+    url = args.get("url")
+
+    result = await session.submit_form(
+        form_selector=form_selector,
+        field_values=field_values,
+        submit_selector=submit_selector,
+        pre_navigate_url=url,
+    )
+
+    if "error" in result:
+        return f"Form submission failed: {result['error']}"
+
+    return (
+        f"Form submitted successfully\n"
+        f"Title: {result['title']}\n"
+        f"URL: {result['url']}\n"
+        f"Status: {result.get('status', 'N/A')}\n"
+        f"Content:\n{result['content_preview']}"
+    )
 
 
 async def handle_browser_screenshot(args: Dict[str, Any], context: Any) -> str:

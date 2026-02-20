@@ -18,6 +18,7 @@
 
 3. **Map authentication**
    - Find login/registration forms: `browser_extract_forms`
+   - Test discovered login forms with default credentials via `browser_submit_form`
    - Register a test account if possible
    - Identify auth mechanism (cookie, JWT, API key, OAuth)
    - Note session management patterns
@@ -144,6 +145,26 @@ For each hypothesis, track your attempts explicitly:
 4. Try HTTP method override (X-HTTP-Method-Override: PUT)
 5. Try path traversal (/admin/../admin, /Admin, /ADMIN)
 6. If any returns 200 with admin content → bypass confirmed
+```
+
+### Form-Based Authentication Testing
+```
+1. Navigate to the login page: browser_navigate
+2. Extract forms to identify field names: browser_extract_forms
+3. Note the username and password field names (e.g. "username", "password")
+4. Submit default credentials via browser_submit_form:
+   - {"username": "admin", "password": "admin"}
+   - {"username": "admin", "password": "password"}
+   - {"username": "root", "password": "root"}
+   - {"username": "test", "test": "test"}
+5. Check response for success indicators:
+   - Redirect to dashboard/admin/home
+   - "Welcome", "Dashboard", "logged in" in page content
+   - Session token or cookie set
+6. If successful: browser_screenshot for evidence, then report_finding
+7. Also test weak passwords: "123456", "password", "qwerty"
+8. Use the 'url' parameter in browser_submit_form to get fresh CSRF tokens
+   before each submission attempt
 ```
 
 ---

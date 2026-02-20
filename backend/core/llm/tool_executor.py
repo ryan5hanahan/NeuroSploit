@@ -271,7 +271,7 @@ class ToolExecutor:
         )
 
         # Governance check (skip for non-destructive tools)
-        if self.governance and tool_call.name in ("shell_execute", "http_request"):
+        if self.governance and tool_call.name in ("shell_execute", "http_request", "browser_submit_form"):
             gov_result = self._check_governance(tool_call)
             if gov_result:
                 return ToolResult(
@@ -341,6 +341,11 @@ class ToolExecutor:
 
         try:
             if tool_call.name == "http_request":
+                url = tool_call.arguments.get("url", "")
+                if url and not self.governance.is_url_in_scope(url):
+                    return f"URL {url} is not in scope"
+
+            if tool_call.name == "browser_submit_form":
                 url = tool_call.arguments.get("url", "")
                 if url and not self.governance.is_url_in_scope(url):
                     return f"URL {url} is not in scope"

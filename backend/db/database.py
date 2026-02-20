@@ -65,6 +65,14 @@ async def _run_migrations(conn):
             logger.info("Adding 'credential_sets' column to scans table...")
             await conn.execute(text("ALTER TABLE scans ADD COLUMN credential_sets JSON"))
 
+        if "total_cost_usd" not in columns:
+            logger.info("Adding 'total_cost_usd' column to scans table...")
+            await conn.execute(text("ALTER TABLE scans ADD COLUMN total_cost_usd FLOAT DEFAULT 0.0"))
+
+        if "total_tokens" not in columns:
+            logger.info("Adding 'total_tokens' column to scans table...")
+            await conn.execute(text("ALTER TABLE scans ADD COLUMN total_tokens INTEGER DEFAULT 0"))
+
         # Check and add columns to reports table
         result = await conn.execute(text("PRAGMA table_info(reports)"))
         columns = [row[1] for row in result.fetchall()]
