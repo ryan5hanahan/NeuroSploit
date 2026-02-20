@@ -134,7 +134,7 @@ class TestFactoryFunctions:
 
     def test_full_auto_scope_all_types_allowed(self):
         scope = create_full_auto_scope("https://example.com")
-        assert scope.allowed_vuln_types == frozenset()  # empty = all
+        assert scope.allowed_vuln_types is None  # None = all allowed
 
     def test_full_auto_scope_no_skips(self):
         scope = create_full_auto_scope("https://example.com")

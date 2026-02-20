@@ -110,7 +110,8 @@ class TestStrictMode:
 
     def test_strict_allows_nuclei_in_testing(self):
         gov = _make_gov(governance_mode="strict")
-        gov.set_phase("testing")
+        gov.set_phase("recon")    # initializing → recon (valid)
+        gov.set_phase("testing")  # recon → testing (valid)
         decision = gov.check_action("nuclei")
         assert decision.allowed is True
 
@@ -274,7 +275,8 @@ class TestPhaseProgression:
         assert "passive_recon" in recon_cats
         assert "exploitation" not in recon_cats
 
-        gov.set_phase("exploitation")
+        gov.set_phase("analyzing")     # recon → analyzing (valid)
+        gov.set_phase("exploitation")  # analyzing → exploitation (valid)
         exploit_cats = gov.get_allowed_categories()
         assert "exploitation" in exploit_cats
 

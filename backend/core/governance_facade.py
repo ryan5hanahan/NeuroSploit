@@ -315,6 +315,11 @@ def create_governance(
     # Resolve governance mode: scan config > explicit param > "warn"
     effective_mode = gov_config.get("mode", governance_mode)
 
+    # Force strict mode for recon_only — this is the final backstop.
+    # Even if the prompt fails to deter the agent, the GovernanceGate blocks the tool call.
+    if scope_profile == "recon_only":
+        effective_mode = "strict"
+
     # 1. Create scope layer
     factory = _SCOPE_FACTORIES.get(scope_profile)
     if not factory:

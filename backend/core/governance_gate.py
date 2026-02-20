@@ -274,10 +274,48 @@ ACTION_CLASSIFICATION: Dict[str, str] = {
 
     # Reporting
     "report_generation": ActionCategory.REPORTING,
+
+    # LLM agent tool names (base classification — classify_with_context may escalate)
+    "shell_execute": ActionCategory.ACTIVE_RECON,
+    "http_request": ActionCategory.ACTIVE_RECON,
+    "browser_navigate": ActionCategory.ACTIVE_RECON,
+    "browser_extract_links": ActionCategory.ACTIVE_RECON,
+    "browser_extract_forms": ActionCategory.ACTIVE_RECON,
+    "browser_submit_form": ActionCategory.ACTIVE_RECON,
+    "browser_screenshot": ActionCategory.ACTIVE_RECON,
+    "browser_execute_js": ActionCategory.ACTIVE_RECON,
+    "memory_store": ActionCategory.ANALYSIS,
+    "memory_search": ActionCategory.ANALYSIS,
+    "save_artifact": ActionCategory.ANALYSIS,
+    "report_finding": ActionCategory.REPORTING,
+    "update_plan": ActionCategory.ANALYSIS,
+    "get_payloads": ActionCategory.ANALYSIS,
+    "get_vuln_info": ActionCategory.ANALYSIS,
+    "spawn_subagent": ActionCategory.ACTIVE_RECON,
+    "create_tool": ActionCategory.ANALYSIS,
+    "stop": ActionCategory.REPORTING,
 }
 
 # Unclassified actions default to the most restrictive category
 DEFAULT_UNCLASSIFIED_CATEGORY = ActionCategory.EXPLOITATION
+
+
+# Rank ordering for category comparison (higher = more intrusive)
+_CATEGORY_RANK: Dict[str, int] = {
+    ActionCategory.PASSIVE_RECON: 0,
+    ActionCategory.ACTIVE_RECON: 1,
+    ActionCategory.ANALYSIS: 2,
+    ActionCategory.REPORTING: 2,
+    ActionCategory.VULNERABILITY_SCAN: 3,
+    ActionCategory.EXPLOITATION: 4,
+    ActionCategory.POST_EXPLOITATION: 5,
+}
+
+
+def _category_rank(category) -> int:
+    """Return numeric rank for a category (higher = more intrusive)."""
+    cat_str = category.value if isinstance(category, ActionCategory) else str(category)
+    return _CATEGORY_RANK.get(cat_str, 4)  # default to exploitation level
 
 
 class ActionClassifier:
@@ -343,6 +381,74 @@ class ActionClassifier:
     def load_custom_overrides(cls, overrides: Dict[str, str]):
         """Load custom classification overrides from config."""
         cls._custom_overrides = {k.lower(): v for k, v in overrides.items()}
+
+    @classmethod
+    def classify_with_context(cls, action: str, context: Optional[Dict] = None) -> str:
+        """Classify action considering payload intent, not just tool name.
+
+        Inspects tool arguments for exploitation indicators. Returns the
+        MORE restrictive category when payload content escalates the base
+        classification (e.g. http_request with SQLi payload → EXPLOITATION).
+        """
+        base_category = cls.classify(action)
+        if not context:
+            return base_category
+
+        tool_args = context.get("tool_args", {})
+        if not tool_args:
+            return base_category
+
+        # shell_execute: check if the command invokes an exploitation tool
+        if action == "shell_execute":
+            command = tool_args.get("command", "")
+            if command:
+                cmd_parts = command.split()
+                cmd_tool = cmd_parts[0] if cmd_parts else ""
+                # Strip path prefix (e.g. /usr/bin/sqlmap → sqlmap)
+                cmd_tool = cmd_tool.rsplit("/", 1)[-1]
+                tool_category = cls.classify(cmd_tool)
+                if _category_rank(tool_category) > _category_rank(base_category):
+                    return tool_category
+
+        # http_request: check URL/body for vuln-scan/exploit patterns
+        if action == "http_request":
+            url = tool_args.get("url", "")
+            body = tool_args.get("body", "")
+            combined = f"{url} {body}".lower()
+
+            sqli_indicators = [
+                "union+select", "union select", "' or ", "\" or ",
+                "sqlmap", "1=1", "sleep(", "benchmark(", "waitfor delay",
+                "pg_sleep", "extractvalue(", "updatexml(",
+            ]
+            xss_indicators = [
+                "<script", "javascript:", "onerror=", "onload=",
+                "onfocus=", "onmouseover=", "<img src=",
+            ]
+            exploit_indicators = [
+                "passwd", "/etc/shadow", "cmd.exe", "cmd=",
+                "; ls", "| cat", "$(", "`", "../../../",
+            ]
+
+            if any(ind in combined for ind in sqli_indicators):
+                return ActionCategory.EXPLOITATION
+            if any(ind in combined for ind in xss_indicators):
+                return ActionCategory.VULNERABILITY_SCAN
+            if any(ind in combined for ind in exploit_indicators):
+                return ActionCategory.EXPLOITATION
+
+        # browser_submit_form: check for credential testing
+        if action == "browser_submit_form":
+            data = tool_args.get("data", {})
+            if isinstance(data, dict):
+                field_names = {k.lower() for k in data.keys()}
+                cred_fields = {"password", "passwd", "pass", "pwd"}
+                if field_names & cred_fields:
+                    # Form submission with password fields = exploitation attempt
+                    if _category_rank(ActionCategory.EXPLOITATION) > _category_rank(base_category):
+                        return ActionCategory.EXPLOITATION
+
+        return base_category
 
     @classmethod
     def get_classification(cls, action: str) -> Dict[str, str]:
@@ -447,8 +553,25 @@ class GovernanceGate:
 
         Returns True if phase was set, False if transition was invalid.
         Respects both the transition state machine and the phase ceiling.
+
+        Order: ceiling clamp first, then transition validation on the
+        clamped phase. This ensures that e.g. requesting "exploitation"
+        with ceiling="recon" attempts "recon" (which may be a valid
+        transition), rather than blocking "exploitation" outright.
         """
         previous_phase = self.current_phase
+
+        # Ceiling enforcement FIRST — clamp before validating transition
+        if self.phase_ceiling:
+            ceiling_rank = PHASE_RANK.get(self.phase_ceiling, 99)
+            requested_rank = PHASE_RANK.get(phase, 99)
+            if requested_rank > ceiling_rank:
+                logger.warning(
+                    f"[Governance] Phase '{phase}' exceeds ceiling "
+                    f"'{self.phase_ceiling}' for scan {self.scan_id}. "
+                    f"Clamping to ceiling."
+                )
+                phase = self.phase_ceiling
 
         # Validate transition (skip if governance is off)
         if self.is_enabled and previous_phase != phase:
@@ -481,18 +604,6 @@ class GovernanceGate:
                     return False
                 # In warn mode, allow but record
 
-        # Ceiling enforcement
-        if self.phase_ceiling:
-            ceiling_rank = PHASE_RANK.get(self.phase_ceiling, 99)
-            requested_rank = PHASE_RANK.get(phase, 99)
-            if requested_rank > ceiling_rank:
-                logger.warning(
-                    f"[Governance] Phase '{phase}' exceeds ceiling "
-                    f"'{self.phase_ceiling}' for scan {self.scan_id}. "
-                    f"Clamping to ceiling."
-                )
-                phase = self.phase_ceiling
-
         self.current_phase = phase
 
         # Record transition
@@ -516,10 +627,10 @@ class GovernanceGate:
 
         # Fast path: governance disabled
         if not self.is_enabled:
-            category = ActionClassifier.classify(action)
+            category = ActionClassifier.classify_with_context(action, context)
             return GovernanceDecision(allowed=True, action_category=category)
 
-        category = ActionClassifier.classify(action)
+        category = ActionClassifier.classify_with_context(action, context)
         phase_rules = self.policy.get(self.current_phase, {})
         allowed_categories = phase_rules.get("allowed", [])
 

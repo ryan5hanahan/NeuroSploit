@@ -246,17 +246,24 @@ async def test_credentials(request: TestCredentialsRequest):
     )
 
 
+def _scope_to_task_category(scope_profile: str) -> str:
+    """Map scope profile to task category for phase ceiling enforcement."""
+    _SCOPE_TASK_CATEGORY = {
+        "recon_only": "recon",
+        "full_auto": "full_auto",
+        "ctf": "full_auto",
+        "vuln_lab": "vulnerability",
+        "bug_bounty": "vulnerability",
+    }
+    return _SCOPE_TASK_CATEGORY.get(scope_profile, "full_auto")
+
+
 @router.post("/start", response_model=AgentV2StartResponse)
 async def start_agent(request: AgentV2StartRequest):
     """Start an LLM-driven autonomous security assessment."""
     from backend.core.llm_agent import LLMDrivenAgent
-    from backend.core.governance import (
-        create_full_auto_scope,
-        create_ctf_scope,
-        create_recon_only_scope,
-        create_vuln_lab_scope,
-        GovernanceAgent,
-    )
+    from backend.core.governance import GovernanceAgent
+    from backend.core.governance_facade import create_governance
 
     # Cleanup stale entries
     _cleanup_stale()
@@ -312,7 +319,19 @@ async def start_agent(request: AgentV2StartRequest):
             scope, bugbounty_context = build_scan_scope_from_program(
                 program, program_scope, request.target,
             )
-            governance = GovernanceAgent(scope)
+            # Wrap in Governance facade for phase-action enforcement
+            scope_agent = GovernanceAgent(scope)
+            from backend.core.governance_gate import create_governance_gate
+            phase_gate = create_governance_gate(
+                scan_id=operation_id if 'operation_id' in dir() else "pending",
+                task_category="vulnerability",
+            )
+            from backend.core.governance_facade import Governance
+            governance = Governance(
+                scope_agent=scope_agent,
+                phase_gate=phase_gate,
+                scan_id="pending",
+            )
             logger.info(
                 f"Bug bounty scope built for {request.bugbounty_platform}/{request.bugbounty_program}"
             )
@@ -322,15 +341,13 @@ async def start_agent(request: AgentV2StartRequest):
             logger.error(f"Bug bounty scope creation failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Bug bounty scope creation failed: {e}")
     else:
-        scope_factories = {
-            "full_auto": lambda: create_full_auto_scope(all_targets),
-            "ctf": lambda: create_ctf_scope(all_targets),
-            "recon_only": lambda: create_recon_only_scope(all_targets),
-            "vuln_lab": lambda: create_vuln_lab_scope(request.target, "all"),
-        }
-        scope_factory = scope_factories.get(request.scope_profile, scope_factories["full_auto"])
-        scope = scope_factory()
-        governance = GovernanceAgent(scope)
+        governance = create_governance(
+            scan_id="pending",  # Updated below after operation_id is known
+            target_url=request.target,
+            scope_profile=request.scope_profile,
+            governance_mode="strict" if request.scope_profile == "recon_only" else "warn",
+            task_category=_scope_to_task_category(request.scope_profile),
+        )
 
     # Create event callback for WebSocket broadcasting
     async def on_event(event_type: str, data: dict):
@@ -367,6 +384,12 @@ async def start_agent(request: AgentV2StartRequest):
     )
 
     operation_id = agent.operation_id
+
+    # Update governance scan_id now that operation_id is known
+    if hasattr(governance, 'scan_id'):
+        governance.scan_id = operation_id
+    if hasattr(governance, '_phase_gate') and governance._phase_gate:
+        governance._phase_gate.scan_id = operation_id
 
     # Create Scan + Target DB records so findings appear in dashboard
     scan_id = None

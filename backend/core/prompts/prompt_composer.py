@@ -32,6 +32,7 @@ def compose_agent_system_prompt(
     additional_targets: Optional[List[str]] = None,
     subdomain_discovery: bool = False,
     bugbounty_instructions: str = "",
+    governance_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Compose the full system prompt for the LLM-driven agent.
 
@@ -48,6 +49,7 @@ def compose_agent_system_prompt(
         auth_context: Authentication context description (optional).
         additional_targets: Extra target URLs (optional).
         subdomain_discovery: Whether subdomain enumeration is enabled.
+        governance_context: Scope/phase governance info (optional).
 
     Returns:
         Assembled system prompt string.
@@ -108,6 +110,12 @@ def compose_agent_system_prompt(
     # --- Dynamic sections below (appended AFTER static content for cache coherence) ---
 
     dynamic_sections = []
+
+    # Governance scope restrictions (HIGHEST PRIORITY — placed first)
+    if governance_context:
+        gov_section = _build_governance_section(governance_context)
+        if gov_section:
+            dynamic_sections.append(gov_section)
 
     # Auth context
     if auth_context:
@@ -177,3 +185,54 @@ def compose_reflection_prompt(
         "3. Are there untested high-value targets?\n"
         "4. Is there enough evidence for current findings?\n"
     )
+
+
+def _build_governance_section(governance_context: Dict[str, Any]) -> str:
+    """Build the governance scope restriction section for the system prompt."""
+    scope_profile = governance_context.get("scope_profile", "full_auto")
+    governance_mode = governance_context.get("governance_mode", "warn")
+    allowed_phases = governance_context.get("allowed_phases", [])
+
+    lines = [
+        "## Scope Restrictions",
+        "",
+        f"**Governance Mode**: {governance_mode}",
+        f"**Scope Profile**: {scope_profile}",
+    ]
+
+    if allowed_phases:
+        lines.append(f"**Allowed Phases**: {', '.join(sorted(allowed_phases))}")
+
+    if scope_profile == "recon_only":
+        lines.extend([
+            "",
+            "### RECON ONLY — STRICT ENFORCEMENT",
+            "",
+            "You are authorized for **reconnaissance ONLY**. "
+            "The following are **STRICTLY FORBIDDEN** and will be BLOCKED by the governance layer:",
+            "",
+            "- SQL injection testing (sqlmap, manual payloads, UNION SELECT, etc.)",
+            "- XSS testing (dalfox, manual payloads, script injection, etc.)",
+            "- Password reset or credential testing of any kind",
+            "- Form submission attacks or login attempts",
+            "- Exploitation of any vulnerability",
+            "- Vulnerability scanning tools (nuclei, nikto, etc.)",
+            "- Default credential attempts",
+            "- Command injection testing",
+            "- File inclusion (LFI/RFI) testing",
+            "- Any payload delivery or active exploitation",
+            "",
+            "**You may ONLY**:",
+            "- Enumerate endpoints and paths (gobuster, ffuf, katana)",
+            "- Fingerprint technologies (httpx, wafw00f)",
+            "- Discover subdomains (subfinder, dnsx)",
+            "- Crawl pages and analyze structure",
+            "- Analyze HTTP headers and responses",
+            "- Port scan (nmap, naabu)",
+            "- Document and map the attack surface",
+            "",
+            "Any exploitation attempt **WILL BE BLOCKED** by the governance layer. "
+            "Do not waste steps attempting actions that will be rejected.",
+        ])
+
+    return "\n".join(lines)
