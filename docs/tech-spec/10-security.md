@@ -108,7 +108,7 @@ Each profile also defines per-tool rate limits and concurrency settings for: nuc
 
 - mitmproxy runs as a Docker Compose service (profile: `proxy`)
 - Sandbox containers route through mitmproxy when the OPSEC profile's `proxy_routing` is `"auto"` or `"opt-in"`
-- Proxy env vars (`HTTP_PROXY`, `HTTPS_PROXY`) set to `http://neurosploit-mitmproxy:8081` via `_get_proxy_env()` in `core/sandbox_manager.py`
+- Proxy env vars (`HTTP_PROXY`, `HTTPS_PROXY`) set to `http://sploitai-mitmproxy:8081` via `_get_proxy_env()` in `core/sandbox_manager.py`
 - MCP server exposes 7 proxy tools: `proxy_status`, `proxy_flows`, `proxy_capture`, `proxy_replay`, `proxy_intercept`, `proxy_clear`, `proxy_export`
 
 ## Container Isolation (Sandbox)
@@ -117,7 +117,7 @@ File: `core/sandbox_manager.py`
 
 ### Architecture
 
-- Persistent sandbox container (`neurosploit-sandbox`) runs on `neurosploit-network`
+- Persistent sandbox container (`sploitai-sandbox`) runs on `sploitai-network`
 - Tools executed via `docker exec` for sub-second startup (no container creation per command)
 - Output collected from container stdout + output files
 
@@ -134,7 +134,7 @@ File: `core/sandbox_manager.py`
 
 - Auto-cleanup of orphan containers on backend startup
 - Container health monitoring
-- Network isolation with controlled egress (via `neurosploit-network`)
+- Network isolation with controlled egress (via `sploitai-network`)
 
 ### Docker SDK
 

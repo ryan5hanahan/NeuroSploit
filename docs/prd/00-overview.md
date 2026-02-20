@@ -1,8 +1,8 @@
 # Product Overview
 
-## What is NeuroSploit?
+## What is sploit.ai?
 
-NeuroSploit v3 is an AI-powered penetration testing platform. It uses large language models to autonomously discover, test, and report web application vulnerabilities. The system combines traditional security tooling (nmap, sqlmap, nuclei, ProjectDiscovery suite) with LLM-driven analysis to guide vulnerability discovery, generate proof-of-concept payloads, verify findings, and produce professional HTML security assessment reports.
+sploit.ai v3 is an AI-powered penetration testing platform. It uses large language models to autonomously discover, test, and report web application vulnerabilities. The system combines traditional security tooling (nmap, sqlmap, nuclei, ProjectDiscovery suite) with LLM-driven analysis to guide vulnerability discovery, generate proof-of-concept payloads, verify findings, and produce professional HTML security assessment reports.
 
 ## Vision
 
@@ -11,7 +11,7 @@ Replace manual penetration testing workflows with AI-guided automation. Large la
 ## Target Users
 
 ### Penetration Testers
-Augment manual testing workflows. NeuroSploit handles the initial reconnaissance, automated vulnerability scanning, and report generation, freeing pentesters to focus on complex business logic and chained exploit paths.
+Augment manual testing workflows. sploit.ai handles the initial reconnaissance, automated vulnerability scanning, and report generation, freeing pentesters to focus on complex business logic and chained exploit paths.
 
 ### CTF Competitors
 Automated challenge solving via the multi-agent CTF pipeline. The system deploys multiple specialized agents in parallel to maximize flag capture rate against web-based CTF targets.

@@ -1,8 +1,8 @@
-# NeuroSploit Documentation
+# sploit.ai Documentation
 
 ## Overview
 
-NeuroSploit is an AI-powered penetration testing platform that uses large language models to guide automated vulnerability discovery, testing, and reporting for web applications.
+sploit.ai is an AI-powered penetration testing platform that uses large language models to guide automated vulnerability discovery, testing, and reporting for web applications.
 
 This documentation captures the current state of the system as-built and serves as a reference for contributors.
 

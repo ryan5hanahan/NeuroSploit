@@ -1,6 +1,6 @@
 # Implementation Proposal: Enhanced Governance — Phase-Scoped Action Enforcement
 
-**Author:** NeuroSploit Team
+**Author:** sploit.ai Team
 **Date:** 2026-02-13
 **Status:** PROPOSAL
 
@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-NeuroSploit currently has no mechanism to prevent phase-inappropriate actions. A scan configured for **recon-only** can still trigger exploitation payloads if the LLM agent or chain engine escalates beyond its mandate. Similarly, nothing prevents the payload generator from firing during the analysis phase, or the autonomous scanner from launching active probes during a passive-recon task.
+sploit.ai currently has no mechanism to prevent phase-inappropriate actions. A scan configured for **recon-only** can still trigger exploitation payloads if the LLM agent or chain engine escalates beyond its mandate. Similarly, nothing prevents the payload generator from firing during the analysis phase, or the autonomous scanner from launching active probes during a passive-recon task.
 
 **Concrete example:** A user selects `recon_full` (TaskCategory.RECON). The agent runs subdomain enumeration, but then the chain engine discovers an exposed admin panel and autonomously escalates to `default_credentials` and `auth_bypass` testing — a clear scope violation.
 

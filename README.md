@@ -1,6 +1,6 @@
-# NeuroSploit v3
+# sploit.ai v3
 
-![NeuroSploit](https://img.shields.io/badge/NeuroSploit-AI--Powered%20Pentesting-blueviolet)
+![sploit.ai](https://img.shields.io/badge/sploit.ai-AI--Powered%20Pentesting-blueviolet)
 ![Version](https://img.shields.io/badge/Version-3.0.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
@@ -12,7 +12,7 @@
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-NeuroSploit v3 is an advanced security assessment platform that combines AI-driven autonomous agents with an LLM-driven agent (13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory), 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), governance scope enforcement (5 profiles), NVD & ExploitDB vulnerability enrichment, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
+sploit.ai v3 is an advanced security assessment platform that combines AI-driven autonomous agents with an LLM-driven agent (13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory), 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), governance scope enforcement (5 profiles), NVD & ExploitDB vulnerability enrichment, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
 
 ---
 
@@ -77,8 +77,8 @@ NeuroSploit v3 is an advanced security assessment platform that combines AI-driv
 
 ```bash
 # Clone repository with submodules
-git clone --recurse-submodules https://github.com/your-org/NeuroSploit.git
-cd NeuroSploit
+git clone --recurse-submodules https://github.com/your-org/sploit.ai.git
+cd sploit.ai
 
 # If already cloned without submodules, initialize PATT payload library
 git submodule update --init
@@ -143,7 +143,7 @@ Access the web interface at **http://localhost:8000** (production build) or **ht
 ## Architecture
 
 ```
-NeuroSploit/
+sploit.ai/
 ├── backend/                         # FastAPI Backend
 │   ├── api/v1/                      # REST API (19 routers)
 │   │   ├── scans.py                 # Scan CRUD + pause/resume/stop
@@ -290,7 +290,7 @@ NeuroSploit/
 ├── tools/
 │   └── benchmark_runner.py          # 104 CTF challenges
 ├── agents/base_agent.py             # BaseAgent class
-├── neurosploit.py                   # CLI entry point
+├── sploitai.py                   # CLI entry point
 └── requirements.txt
 ```
 
@@ -668,7 +668,7 @@ Each new type includes full AI testing prompts, proof-of-execution requirements,
 
 ## PayloadsAllTheThings Integration
 
-NeuroSploit integrates [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings) (PATT) as a git submodule, providing 33,500+ community-maintained payloads across 61 mapped categories.
+sploit.ai integrates [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings) (PATT) as a git submodule, providing 33,500+ community-maintained payloads across 61 mapped categories.
 
 ### Setup
 
@@ -682,7 +682,7 @@ python -m backend.core.vuln_engine.patt.cli update
 
 ### How It Works
 
-- **61 PATT categories** mapped to NeuroSploit vuln types (1:1, 1:N fan-out, and 19 new types)
+- **61 PATT categories** mapped to sploit.ai vuln types (1:1, 1:N fan-out, and 19 new types)
 - **Parser pipeline** extracts payloads from Intruder wordlists and Markdown code blocks, filtering out prose, language-tagged code examples, and duplicates
 - **Merge strategy**: curated payloads come first in ordering, PATT payloads are appended (deduplicated), available at all scan depths
 - **Dynamic diminishing returns**: strategy adapter scales testing thresholds based on available payload pool size
@@ -752,15 +752,15 @@ Installed automatically inside the container when first requested:
 
 ```
 ContainerPool (global coordinator, max 5 concurrent)
-  ├── KaliSandbox(scan_id="abc") → docker: neurosploit-abc
-  ├── KaliSandbox(scan_id="def") → docker: neurosploit-def
-  └── KaliSandbox(scan_id="ghi") → docker: neurosploit-ghi
+  ├── KaliSandbox(scan_id="abc") → docker: sploitai-abc
+  ├── KaliSandbox(scan_id="def") → docker: sploitai-def
+  └── KaliSandbox(scan_id="ghi") → docker: sploitai-ghi
 ```
 
 - **TTL enforcement** - Containers auto-destroyed after 60 min
 - **Orphan cleanup** - Stale containers removed on server startup
 - **Graceful fallback** - Falls back to shared container if Docker unavailable
-- **Network** - All containers on `neurosploit-network` for inter-container communication
+- **Network** - All containers on `sploitai-network` for inter-container communication
 
 ---
 
@@ -807,7 +807,7 @@ Self-hosted out-of-band (OOB) interaction server for detecting blind vulnerabili
 docker compose --profile oob up -d
 ```
 
-The stealth opsec profile automatically routes `interactsh-client` to the self-hosted server (`-server http://neurosploit-interactsh`) instead of public servers. Balanced and aggressive profiles use the default public interactsh infrastructure.
+The stealth opsec profile automatically routes `interactsh-client` to the self-hosted server (`-server http://sploitai-interactsh`) instead of public servers. Balanced and aggressive profiles use the default public interactsh infrastructure.
 
 Configure the domain via the `INTERACTSH_DOMAIN` environment variable (defaults to `interact.local`).
 
@@ -815,7 +815,7 @@ Configure the domain via the `INTERACTSH_DOMAIN` environment variable (defaults 
 
 ## Anti-Hallucination & Validation
 
-NeuroSploit uses a multi-layered validation pipeline to eliminate false positives:
+sploit.ai uses a multi-layered validation pipeline to eliminate false positives:
 
 ### Validation Pipeline
 
@@ -1149,7 +1149,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 LMSTUDIO_BASE_URL=http://localhost:1234
 
 # Database
-DATABASE_URL=sqlite+aiosqlite:///./data/neurosploit.db
+DATABASE_URL=sqlite+aiosqlite:///./data/sploitai.db
 
 # Server
 HOST=0.0.0.0
@@ -1184,7 +1184,7 @@ Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock
     "mode": "per_scan",
     "kali": {
       "enabled": true,
-      "image": "neurosploit-kali:latest",
+      "image": "sploitai-kali:latest",
       "max_concurrent": 5,
       "container_ttl_minutes": 60
     }
@@ -1194,7 +1194,7 @@ Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock
     "profiles_file": "config/opsec_profiles.json"
   },
   "mcp_servers": {
-    "neurosploit_tools": {
+    "sploitai_tools": {
       "transport": "stdio",
       "command": "python3",
       "args": ["-m", "core.mcp_server"]
@@ -1286,4 +1286,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-**NeuroSploit v3** - *AI-Powered Autonomous Penetration Testing Platform*
+**sploit.ai v3** - *AI-Powered Autonomous Penetration Testing Platform*

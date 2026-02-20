@@ -135,7 +135,7 @@ Submission strategy -- tries multiple JSON body formats in order:
 
 For each attempt:
 - POST to `submit_url` with `ssl=False` and 5-second timeout
-- Headers: `User-Agent: NeuroSploit/3.0` + optional `Authorization: Bearer <token>`
+- Headers: `User-Agent: sploit.ai/3.0` + optional `Authorization: Bearer <token>`
 
 **Success detection**:
 - HTTP 200/201 with response body containing any of: "correct", "success", "accepted", "solved", "already"

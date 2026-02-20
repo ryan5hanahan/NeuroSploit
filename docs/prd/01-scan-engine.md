@@ -2,7 +2,7 @@
 
 ## Overview
 
-The scan engine is the primary workflow in NeuroSploit. Users create scans targeting URLs, which progress through sequential phases: reconnaissance, AI analysis, vulnerability testing, and report generation. The engine orchestrates real security tools (nmap, nuclei, httpx, subfinder, etc.) combined with LLM-driven analysis to discover, test, and verify vulnerabilities. Scans run as background asyncio tasks and provide real-time progress updates via WebSocket.
+The scan engine is the primary workflow in sploit.ai. Users create scans targeting URLs, which progress through sequential phases: reconnaissance, AI analysis, vulnerability testing, and report generation. The engine orchestrates real security tools (nmap, nuclei, httpx, subfinder, etc.) combined with LLM-driven analysis to discover, test, and verify vulnerabilities. Scans run as background asyncio tasks and provide real-time progress updates via WebSocket.
 
 ## User Stories
 
