@@ -110,6 +110,16 @@ class SettingsUpdate(BaseModel):
     censys_api_secret: Optional[str] = None
     virustotal_api_key: Optional[str] = None
     builtwith_api_key: Optional[str] = None
+    securitytrails_api_key: Optional[str] = None
+    fofa_email: Optional[str] = None
+    fofa_api_key: Optional[str] = None
+    zoomeye_api_key: Optional[str] = None
+    github_token: Optional[str] = None
+    dehashed_email: Optional[str] = None
+    dehashed_api_key: Optional[str] = None
+    hibp_api_key: Optional[str] = None
+    grayhat_api_key: Optional[str] = None
+    publicwww_api_key: Optional[str] = None
     # Per-tier model selection (used when model routing is enabled)
     model_fast: Optional[str] = None
     model_balanced: Optional[str] = None
@@ -174,6 +184,14 @@ class SettingsResponse(BaseModel):
     has_censys_key: bool = False
     has_virustotal_key: bool = False
     has_builtwith_key: bool = False
+    has_securitytrails_key: bool = False
+    has_fofa_key: bool = False
+    has_zoomeye_key: bool = False
+    has_github_token: bool = False
+    has_dehashed_key: bool = False
+    has_hibp_key: bool = False
+    has_grayhat_key: bool = False
+    has_publicwww_key: bool = False
     # Tracing & memory
     enable_tracing: bool = False
     enable_persistent_memory: bool = True
@@ -280,6 +298,16 @@ def _load_settings_from_env() -> dict:
         "censys_api_secret": os.getenv("CENSYS_API_SECRET", ""),
         "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
         "builtwith_api_key": os.getenv("BUILTWITH_API_KEY", ""),
+        "securitytrails_api_key": os.getenv("SECURITYTRAILS_API_KEY", ""),
+        "fofa_email": os.getenv("FOFA_EMAIL", ""),
+        "fofa_api_key": os.getenv("FOFA_API_KEY", ""),
+        "zoomeye_api_key": os.getenv("ZOOMEYE_API_KEY", ""),
+        "github_token": os.getenv("GITHUB_TOKEN", ""),
+        "dehashed_email": os.getenv("DEHASHED_EMAIL", ""),
+        "dehashed_api_key": os.getenv("DEHASHED_API_KEY", ""),
+        "hibp_api_key": os.getenv("HIBP_API_KEY", ""),
+        "grayhat_api_key": os.getenv("GRAYHAT_API_KEY", ""),
+        "publicwww_api_key": os.getenv("PUBLICWWW_API_KEY", ""),
         # Tracing & memory
         "enable_tracing": _env_bool("ENABLE_TRACING", False),
         "enable_persistent_memory": _env_bool("ENABLE_PERSISTENT_MEMORY", True),
@@ -346,6 +374,20 @@ async def get_settings():
         ),
         has_virustotal_key=bool(_settings.get("virustotal_api_key") or os.getenv("VIRUSTOTAL_API_KEY")),
         has_builtwith_key=bool(_settings.get("builtwith_api_key") or os.getenv("BUILTWITH_API_KEY")),
+        has_securitytrails_key=bool(_settings.get("securitytrails_api_key") or os.getenv("SECURITYTRAILS_API_KEY")),
+        has_fofa_key=bool(
+            (_settings.get("fofa_email") or os.getenv("FOFA_EMAIL"))
+            and (_settings.get("fofa_api_key") or os.getenv("FOFA_API_KEY"))
+        ),
+        has_zoomeye_key=bool(_settings.get("zoomeye_api_key") or os.getenv("ZOOMEYE_API_KEY")),
+        has_github_token=bool(_settings.get("github_token") or os.getenv("GITHUB_TOKEN")),
+        has_dehashed_key=bool(
+            (_settings.get("dehashed_email") or os.getenv("DEHASHED_EMAIL"))
+            and (_settings.get("dehashed_api_key") or os.getenv("DEHASHED_API_KEY"))
+        ),
+        has_hibp_key=bool(_settings.get("hibp_api_key") or os.getenv("HIBP_API_KEY")),
+        has_grayhat_key=bool(_settings.get("grayhat_api_key") or os.getenv("GRAYHAT_API_KEY")),
+        has_publicwww_key=bool(_settings.get("publicwww_api_key") or os.getenv("PUBLICWWW_API_KEY")),
         enable_tracing=_settings["enable_tracing"],
         enable_persistent_memory=_settings["enable_persistent_memory"],
         enable_bugbounty_integration=_settings["enable_bugbounty_integration"],
@@ -530,6 +572,16 @@ async def update_settings(settings_data: SettingsUpdate):
         ("censys_api_secret", "CENSYS_API_SECRET"),
         ("virustotal_api_key", "VIRUSTOTAL_API_KEY"),
         ("builtwith_api_key", "BUILTWITH_API_KEY"),
+        ("securitytrails_api_key", "SECURITYTRAILS_API_KEY"),
+        ("fofa_email", "FOFA_EMAIL"),
+        ("fofa_api_key", "FOFA_API_KEY"),
+        ("zoomeye_api_key", "ZOOMEYE_API_KEY"),
+        ("github_token", "GITHUB_TOKEN"),
+        ("dehashed_email", "DEHASHED_EMAIL"),
+        ("dehashed_api_key", "DEHASHED_API_KEY"),
+        ("hibp_api_key", "HIBP_API_KEY"),
+        ("grayhat_api_key", "GRAYHAT_API_KEY"),
+        ("publicwww_api_key", "PUBLICWWW_API_KEY"),
         ("hackerone_api_token", "HACKERONE_API_TOKEN"),
         ("hackerone_username", "HACKERONE_USERNAME"),
         ("nvd_api_key", "NVD_API_KEY"),

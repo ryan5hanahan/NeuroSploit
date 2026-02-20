@@ -650,6 +650,7 @@ async def handle_get_payloads(args: Dict[str, Any], context: ExecutionContext) -
     ctx = args.get("context", {})
     xss_context = args.get("xss_context")
     filter_bypass = args.get("filter_bypass")
+    include_polyglot = args.get("include_polyglot", False)
 
     pg = _get_payload_generator()
 
@@ -702,11 +703,19 @@ async def handle_get_payloads(args: Dict[str, Any], context: ExecutionContext) -
                 seen.add(p)
                 merged.append(p)
 
-    # 7. WAF bypass variants
+    # 7. Polyglot payloads (multi-context probing)
+    if include_polyglot:
+        polyglot_payloads = pg.get_polyglot_payloads(max_count=10)
+        for p in polyglot_payloads:
+            if p not in seen:
+                seen.add(p)
+                merged.append(p)
+
+    # 8. WAF bypass variants
     if ctx.get("waf_detected"):
         merged = pg._add_waf_bypasses(merged, canonical)
 
-    # 8. Depth-based limiting
+    # 9. Depth-based limiting
     depth = ctx.get("depth", "standard")
     depth_limits = {"quick": 3, "standard": 10, "thorough": 20, "exhaustive": 0}
     limit = depth_limits.get(depth, 10)

@@ -14,6 +14,14 @@ from backend.core.osint.shodan_client import ShodanClient
 from backend.core.osint.censys_client import CensysClient
 from backend.core.osint.virustotal_client import VirusTotalClient
 from backend.core.osint.builtwith_client import BuiltWithClient
+from backend.core.osint.securitytrails import SecurityTrailsClient
+from backend.core.osint.fofa import FOFAClient
+from backend.core.osint.zoomeye import ZoomEyeClient
+from backend.core.osint.github_dork import GitHubDorkClient
+from backend.core.osint.dehashed import DehashedClient
+from backend.core.osint.hibp import HIBPClient
+from backend.core.osint.grayhat_warfare import GrayhatWarfareClient
+from backend.core.osint.publicwww import PublicWWWClient
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,40 @@ class OSINTAggregator:
         bw_key = os.getenv("BUILTWITH_API_KEY", "")
         if bw_key:
             self.clients.append(BuiltWithClient(bw_key))
+
+        st_key = os.getenv("SECURITYTRAILS_API_KEY", "")
+        if st_key:
+            self.clients.append(SecurityTrailsClient(st_key))
+
+        fofa_email = os.getenv("FOFA_EMAIL", "")
+        fofa_key = os.getenv("FOFA_API_KEY", "")
+        if fofa_email and fofa_key:
+            self.clients.append(FOFAClient(fofa_email, fofa_key))
+
+        zoomeye_key = os.getenv("ZOOMEYE_API_KEY", "")
+        if zoomeye_key:
+            self.clients.append(ZoomEyeClient(zoomeye_key))
+
+        github_token = os.getenv("GITHUB_TOKEN", "")
+        if github_token:
+            self.clients.append(GitHubDorkClient(github_token))
+
+        dehashed_email = os.getenv("DEHASHED_EMAIL", "")
+        dehashed_key = os.getenv("DEHASHED_API_KEY", "")
+        if dehashed_email and dehashed_key:
+            self.clients.append(DehashedClient(dehashed_email, dehashed_key))
+
+        hibp_key = os.getenv("HIBP_API_KEY", "")
+        if hibp_key:
+            self.clients.append(HIBPClient(hibp_key))
+
+        grayhat_key = os.getenv("GRAYHAT_API_KEY", "")
+        if grayhat_key:
+            self.clients.append(GrayhatWarfareClient(grayhat_key))
+
+        publicwww_key = os.getenv("PUBLICWWW_API_KEY", "")
+        if publicwww_key:
+            self.clients.append(PublicWWWClient(publicwww_key))
 
         if self.clients:
             names = [c.SERVICE_NAME for c in self.clients]
@@ -85,6 +127,10 @@ class OSINTAggregator:
         all_technologies = []
         all_vulns = []
         all_subdomains = set()
+        all_breaches = []
+        all_exposed_buckets = []
+        all_code_leaks = []
+        all_dns_history = []
 
         for client, result in zip(self.clients, results):
             merged[client.SERVICE_NAME] = result
@@ -103,18 +149,32 @@ class OSINTAggregator:
                     for svc in host.get("services", []):
                         if svc.get("port"):
                             all_ports.add(svc["port"])
+            if "breaches" in result:
+                all_breaches.extend(result["breaches"])
+            if "exposed_buckets" in result:
+                all_exposed_buckets.extend(result["exposed_buckets"])
+            if "code_leaks" in result:
+                all_code_leaks.extend(result["code_leaks"])
+            if "dns_history" in result:
+                all_dns_history.extend(result["dns_history"])
 
         merged["summary"] = {
             "ports": sorted(all_ports),
             "technologies": all_technologies,
             "known_vulns": all_vulns[:50],
             "subdomains": sorted(all_subdomains),
+            "breaches": all_breaches[:50],
+            "exposed_buckets": all_exposed_buckets[:50],
+            "code_leaks": all_code_leaks[:50],
+            "dns_history": all_dns_history[:50],
         }
 
         logger.info(
             f"OSINT aggregation for {clean_domain}: "
             f"{len(all_ports)} ports, {len(all_technologies)} techs, "
-            f"{len(all_vulns)} vulns, {len(all_subdomains)} subdomains"
+            f"{len(all_vulns)} vulns, {len(all_subdomains)} subdomains, "
+            f"{len(all_breaches)} breaches, {len(all_exposed_buckets)} buckets, "
+            f"{len(all_code_leaks)} code leaks"
         )
         return merged
 
