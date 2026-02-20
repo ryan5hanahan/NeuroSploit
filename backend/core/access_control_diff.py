@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Access Control Differential Testing Engine
+sploit.ai - Access Control Differential Testing Engine
 
 Compares HTTP responses across multiple authenticated contexts to detect:
   - BOLA (Broken Object Level Authorization)

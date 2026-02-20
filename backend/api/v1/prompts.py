@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Prompts API Endpoints
+sploit.ai - Prompts API Endpoints
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File

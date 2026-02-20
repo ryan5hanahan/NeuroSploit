@@ -1,4 +1,4 @@
-# NeuroSploit v3 - LITE Dockerfile (Fast Build)
+# sploit.ai - LITE Dockerfile (Fast Build)
 # Minimal image without external security tools
 # Use this for development or when you don't need the recon tools
 

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Reports API Endpoints
+sploit.ai - Reports API Endpoints
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException

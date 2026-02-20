@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Vulnerability Registry
+sploit.ai - Vulnerability Registry
 
 Registry of all vulnerability types and their testers.
 Provides metadata, severity info, and tester classes.

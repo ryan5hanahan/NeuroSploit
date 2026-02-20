@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Advanced Injection Vulnerability Testers
+sploit.ai - Advanced Injection Vulnerability Testers
 
 Testers for LDAP, XPath, GraphQL, CRLF, Header, Email, EL, Log, HTML, CSV, and ORM injection.
 """
@@ -183,7 +183,7 @@ class CrlfInjectionTester(BaseTester):
             return True, 0.95, f"CRLF injection confirmed: X-Injected header present"
 
         # Check for Set-Cookie injection
-        if "set-cookie" in headers_lower and "neurosploit" in str(headers_lower.get("set-cookie", "")).lower():
+        if "set-cookie" in headers_lower and "sploitai" in str(headers_lower.get("set-cookie", "")).lower():
             return True, 0.9, "CRLF injection: injected Set-Cookie header detected"
 
         # Check if payload characters are reflected unencoded in Location header
@@ -214,7 +214,7 @@ class HeaderInjectionTester(BaseTester):
         body_lower = response_body.lower()
 
         # Check if injected host value appears in response links
-        evil_markers = ["evil.com", "attacker.com", "neurosploit.test"]
+        evil_markers = ["evil.com", "attacker.com", "sploitai.test"]
         for marker in evil_markers:
             if marker in payload.lower():
                 if marker in body_lower:
@@ -361,17 +361,17 @@ class LogInjectionTester(BaseTester):
         if "\n" in payload or "%0a" in payload.lower() or "\\n" in payload:
             # Check if response includes log-format lines with our injected content
             log_patterns = [
-                r"\[\d{4}-\d{2}-\d{2}.*\].*neurosploit",
-                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*neurosploit",
-                r"(?:INFO|WARN|ERROR|DEBUG)\s+.*neurosploit",
+                r"\[\d{4}-\d{2}-\d{2}.*\].*sploitai",
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*sploitai",
+                r"(?:INFO|WARN|ERROR|DEBUG)\s+.*sploitai",
             ]
             for pattern in log_patterns:
                 if re.search(pattern, response_body, re.IGNORECASE):
                     return True, 0.7, "Log injection: injected content appears in log-format output"
 
         # Generic log forging check
-        if "neurosploit" in payload and response_status == 200:
-            if re.search(r"(?:log|audit|event).*neurosploit", response_body, re.IGNORECASE):
+        if "sploitai" in payload and response_status == 200:
+            if re.search(r"(?:log|audit|event).*sploitai", response_body, re.IGNORECASE):
                 return True, 0.5, "Injected marker appears in log/audit output"
 
         return False, 0.0, None
@@ -398,15 +398,15 @@ class HtmlInjectionTester(BaseTester):
 
         # Check for injected HTML tags rendered in response
         html_tests = [
-            (r"<b>neurosploit</b>", "Bold tag rendered"),
-            (r"<i>neurosploit</i>", "Italic tag rendered"),
-            (r"<u>neurosploit</u>", "Underline tag rendered"),
-            (r'<a\s+href=["\']?[^"\']*["\']?>neurosploit</a>', "Anchor tag rendered"),
+            (r"<b>sploitai</b>", "Bold tag rendered"),
+            (r"<i>sploitai</i>", "Italic tag rendered"),
+            (r"<u>sploitai</u>", "Underline tag rendered"),
+            (r'<a\s+href=["\']?[^"\']*["\']?>sploitai</a>', "Anchor tag rendered"),
             (r'<img\s+src=["\']?[^"\']*["\']?', "Image tag rendered"),
             (r'<form\s+[^>]*action=', "Form tag rendered"),
             (r'<iframe\s+', "IFrame tag rendered"),
             (r'<marquee>', "Marquee tag rendered"),
-            (r'<h1>neurosploit</h1>', "H1 tag rendered"),
+            (r'<h1>sploitai</h1>', "H1 tag rendered"),
             (r'<div\s+style=', "Styled div rendered"),
         ]
 

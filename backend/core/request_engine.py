@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Resilient Request Engine
+sploit.ai - Resilient Request Engine
 
 Wraps aiohttp session with retry, rate limiting, circuit breaker, 
 and error classification for autonomous pentesting.

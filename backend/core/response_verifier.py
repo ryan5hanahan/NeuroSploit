@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - XBOW-Inspired Response Verification Framework
+sploit.ai - XBOW-Inspired Response Verification Framework
 
 Multi-signal verification system that confirms vulnerabilities
 through 4 independent signals, reducing false positives dramatically.

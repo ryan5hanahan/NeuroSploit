@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Unified Governance Facade
+sploit.ai - Unified Governance Facade
 
 Single interface combining scope enforcement (GovernanceAgent) with
 phase-action enforcement (GovernanceGate). All downstream code interacts

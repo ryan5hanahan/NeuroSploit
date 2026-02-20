@@ -1,5 +1,5 @@
 """
-PATT Category Map — Maps PayloadsAllTheThings directories to NeuroSploit vuln_type keys.
+PATT Category Map — Maps PayloadsAllTheThings directories to sploit.ai vuln_type keys.
 
 Three data structures:
 - PATT_CATEGORY_MAP: directory name -> list of vuln_type keys

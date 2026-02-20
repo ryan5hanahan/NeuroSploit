@@ -20,7 +20,7 @@ Defaults to `ReportConfig()` if no config provided.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `company_name` | str | `"NeuroSploit Security"` | Company name in header/footer |
+| `company_name` | str | `"sploit.ai Security"` | Company name in header/footer |
 | `logo_base64` | Optional[str] | None | Base64-encoded logo image |
 | `include_executive_summary` | bool | True | Include executive summary section |
 | `include_methodology` | bool | True | Include methodology section |
@@ -154,7 +154,7 @@ Static four-phase grid:
 4. Verification -- manual verification of critical findings
 
 ### 10. Footer (`_generate_footer`)
-- NeuroSploit branding
+- sploit.ai branding
 - Generation timestamp (UTC)
 - Confidentiality notice
 

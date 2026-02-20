@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Bug Bounty Integration (MVP)
+sploit.ai - Bug Bounty Integration (MVP)
 
 Read-only HackerOne integration + scope parsing + duplicate detection.
 No auto-submission.

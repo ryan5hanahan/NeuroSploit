@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Targets API Endpoints
+sploit.ai - Targets API Endpoints
 """
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File

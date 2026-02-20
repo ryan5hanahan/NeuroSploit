@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Kali Linux Per-Scan Sandbox
+sploit.ai - Kali Linux Per-Scan Sandbox
 
 Each scan gets its own Docker container based on kalilinux/kali-rolling.
 Tools installed on-demand the first time they are requested.
@@ -36,7 +36,7 @@ class KaliSandbox(BaseSandbox):
     """Per-scan Docker container based on Kali Linux.
     
     Lifecycle: create -> install tools on demand -> execute -> destroy.
-    Each instance owns exactly one container named 'neurosploit-{scan_id}'.
+    Each instance owns exactly one container named 'sploitai-{scan_id}'.
     """
 
     DEFAULT_TIMEOUT = 300
@@ -45,13 +45,13 @@ class KaliSandbox(BaseSandbox):
     def __init__(
         self,
         scan_id: str,
-        image: str = "neurosploit-kali:latest",
+        image: str = "sploitai-kali:latest",
         memory_limit: str = "2g",
         cpu_limit: float = 2.0,
-        network_mode: str = "neurosploit-network",
+        network_mode: str = "sploitai-network",
     ):
         self.scan_id = scan_id
-        self.container_name = f"neurosploit-{scan_id}"
+        self.container_name = f"sploitai-{scan_id}"
         self.image = image
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
@@ -94,7 +94,7 @@ class KaliSandbox(BaseSandbox):
         except NotFound:
             return False, (
                 f"Kali sandbox image '{self.image}' not found. "
-                "Build with: docker build -f docker/Dockerfile.kali -t neurosploit-kali:latest docker/"
+                "Build with: docker build -f docker/Dockerfile.kali -t sploitai-kali:latest docker/"
             )
 
         # Create container
@@ -121,8 +121,8 @@ class KaliSandbox(BaseSandbox):
                 security_opt=["no-new-privileges:true"],
                 volumes=volumes,
                 labels={
-                    "neurosploit.scan_id": self.scan_id,
-                    "neurosploit.type": "kali-sandbox",
+                    "sploitai.scan_id": self.scan_id,
+                    "sploitai.type": "kali-sandbox",
                 },
             )
             self._available = True

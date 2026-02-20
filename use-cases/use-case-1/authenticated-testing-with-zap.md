@@ -1,8 +1,8 @@
-# Authenticated Vulnerability Testing with NeuroSploitv2 and OWASP ZAP
+# Authenticated Vulnerability Testing with sploit.ai and OWASP ZAP
 
 ## Table of Contents
 1. [Introduction](#introduction)
-2. [Overview of NeuroSploitv2](#overview-of-neurosploitv2)
+2. [Overview of sploit.ai](#overview-of-sploitai)
 3. [Understanding Authenticated Testing](#understanding-authenticated-testing)
 4. [OWASP ZAP Integration](#owasp-zap-integration)
 5. [Obtaining Session Cookies](#obtaining-session-cookies)
@@ -17,7 +17,7 @@
 
 ## Introduction
 
-This document provides a comprehensive guide on how to leverage **NeuroSploitv2** for authenticated web application vulnerability testing using **OWASP ZAP** and session cookies. Authenticated testing is crucial for discovering vulnerabilities that only exist in protected areas of applications, such as:
+This document provides a comprehensive guide on how to leverage **sploit.ai** for authenticated web application vulnerability testing using **OWASP ZAP** and session cookies. Authenticated testing is crucial for discovering vulnerabilities that only exist in protected areas of applications, such as:
 
 - Insecure Direct Object References (IDOR)
 - Broken Access Control
@@ -27,11 +27,11 @@ This document provides a comprehensive guide on how to leverage **NeuroSploitv2*
 
 ---
 
-## Overview of NeuroSploitv2
+## Overview of sploit.ai
 
-### What is NeuroSploitv2?
+### What is sploit.ai?
 
-NeuroSploitv2 is an AI-powered penetration testing framework that:
+sploit.ai is an AI-powered penetration testing framework that:
 
 - **Orchestrates Security Tools**: Uses AI agents to intelligently select and execute security tools
 - **Automates Workflows**: Chains multiple tools together based on findings
@@ -90,7 +90,7 @@ Most web applications have two security layers:
 **OWASP ZAP (Zed Attack Proxy)** is the perfect tool for authenticated testing because:
 
 ✅ **100% Free and Open Source**  
-✅ **Excellent CLI Support** - Works seamlessly with NeuroSploitv2  
+✅ **Excellent CLI Support** - Works seamlessly with sploit.ai  
 ✅ **Strong Authentication Features** - Supports multiple auth methods  
 ✅ **Comprehensive Scanning** - Active and passive vulnerability scanning  
 ✅ **Session Management** - Handles cookies and tokens automatically  
@@ -247,7 +247,7 @@ Use browser extensions to export cookies:
 ### Prerequisites
 
 1. **Python 3.8+** installed
-2. **NeuroSploitv2** framework installed
+2. **sploit.ai** framework installed
 3. **OWASP ZAP** installed
 4. **zap-cli** (optional but recommended)
 
@@ -287,7 +287,7 @@ pip install zapcli
 zap-cli --version
 ```
 
-### Step 3: Configure NeuroSploitv2
+### Step 3: Configure sploit.ai
 
 Edit `config/config.json`:
 
@@ -363,7 +363,7 @@ zap-cli quick-scan --start-options '-config api.disablekey=true' https://example
    ↓
 2. Start ZAP Daemon
    ↓
-3. Configure NeuroSploitv2
+3. Configure sploit.ai
    ↓
 4. Run Authenticated Scan
    ↓
@@ -400,15 +400,15 @@ ZAP is running
 
 #### Step 3: Prepare Your Test Command
 
-You'll provide the session cookie and target information to NeuroSploitv2.
+You'll provide the session cookie and target information to sploit.ai.
 
 #### Step 4: Run Authenticated Scan
 
 ##### Option A: Interactive Mode (Recommended)
 
 ```bash
-# Start NeuroSploitv2 in interactive mode
-python neurosploit.py -i
+# Start sploit.ai in interactive mode
+python sploitai.py -i
 
 # Run authenticated scan
 > run_agent bug_bounty_hunter "Perform authenticated vulnerability scan on https://myapp.com. Session cookie: PHPSESSID=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6. Test authenticated endpoints: /api/users, /admin/dashboard, /profile/settings. Focus on IDOR, privilege escalation, and broken access control vulnerabilities."
@@ -417,7 +417,7 @@ python neurosploit.py -i
 ##### Option B: Command Line
 
 ```bash
-python neurosploit.py \
+python sploitai.py \
   --agent-role bug_bounty_hunter \
   --input "Authenticated vulnerability scan on https://myapp.com. Session cookie: PHPSESSID=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6. Test endpoints: /api/*, /admin/*, /user/profile"
 ```
@@ -465,7 +465,7 @@ xdg-open reports/report_*.html  # Linux
 
 **Command**:
 ```bash
-python neurosploit.py \
+python sploitai.py \
   --agent-role bug_bounty_hunter \
   --input "Authenticated scan on https://myapp.com with session cookie PHPSESSID=abc123xyz789"
 ```
@@ -488,7 +488,7 @@ PHPSESSID=abc123xyz789; csrf_token=def456uvw012; user_pref=theme=dark
 
 **Command**:
 ```bash
-python neurosploit.py \
+python sploitai.py \
   --agent-role owasp_expert \
   --input "OWASP Top 10 scan on https://myapp.com. Cookies: PHPSESSID=abc123xyz789; csrf_token=def456uvw012. Test authenticated areas for injection, broken auth, and sensitive data exposure."
 ```
@@ -499,7 +499,7 @@ python neurosploit.py \
 
 **Command**:
 ```bash
-python neurosploit.py -i
+python sploitai.py -i
 
 > run_agent bug_bounty_hunter "Test authenticated API endpoints on https://api.myapp.com. Session cookie: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9. Test endpoints: /api/v1/users, /api/v1/admin/settings, /api/v1/profile. Look for IDOR, broken access control, and API authentication bypass."
 ```
@@ -510,7 +510,7 @@ python neurosploit.py -i
 
 **Command**:
 ```bash
-python neurosploit.py \
+python sploitai.py \
   --agent-role pentest_generalist \
   --input "Comprehensive authenticated penetration test on https://myapp.com. Authentication: Session cookie PHPSESSID=abc123xyz789. Scope: All authenticated endpoints. Focus areas: 1) IDOR vulnerabilities in user profiles and API endpoints, 2) Privilege escalation in admin functions, 3) Broken access control in /admin/* paths, 4) Session management issues, 5) CSRF in authenticated forms. Use ZAP for automated scanning and provide detailed exploitation steps for each finding."
 ```
@@ -521,7 +521,7 @@ If you prefer form-based authentication instead of cookies:
 
 **Command**:
 ```bash
-python neurosploit.py \
+python sploitai.py \
   --agent-role bug_bounty_hunter \
   --input "Authenticated scan on https://myapp.com using form authentication. Login URL: https://myapp.com/login, Username: testuser, Password: testpass123. Test authenticated endpoints for vulnerabilities."
 ```
@@ -818,7 +818,7 @@ nuclei -u https://myapp.com -H "Cookie: PHPSESSID=abc123" -t ~/nuclei-templates/
 # 4. Copy: session_id=abc123xyz789
 ```
 
-#### Step 2: Configure NeuroSploitv2
+#### Step 2: Configure sploit.ai
 
 ```json
 {
@@ -833,7 +833,7 @@ nuclei -u https://myapp.com -H "Cookie: PHPSESSID=abc123" -t ~/nuclei-templates/
 #### Step 3: Run Authenticated Scan
 
 ```bash
-python neurosploit.py -i
+python sploitai.py -i
 
 > run_agent bug_bounty_hunter "Perform authenticated vulnerability assessment on https://shop.example.com. Session cookie: session_id=abc123xyz789. Test endpoints: /dashboard, /orders, /profile, /api/user/*. Focus on: 1) IDOR in order history (accessing other users' orders), 2) Broken access control in profile settings, 3) SQL injection in search functionality, 4) XSS in user comments, 5) CSRF in order cancellation. Provide detailed exploitation steps for each vulnerability found."
 ```
@@ -867,7 +867,7 @@ open reports/report_*.html
 
 This guide has covered:
 
-✅ **NeuroSploitv2 Overview**: Understanding the AI-powered framework  
+✅ **sploit.ai Overview**: Understanding the AI-powered framework  
 ✅ **Authenticated Testing**: Why it's crucial for security testing  
 ✅ **OWASP ZAP Integration**: How to use ZAP for authenticated scanning  
 ✅ **Session Cookie Extraction**: Multiple methods to obtain cookies  
@@ -881,14 +881,14 @@ This guide has covered:
 
 1. **Session cookies are essential** for authenticated testing
 2. **ZAP is a powerful free alternative** to Burp Suite Professional
-3. **NeuroSploitv2 AI orchestrates** the entire testing process
+3. **sploit.ai AI orchestrates** the entire testing process
 4. **Multiple cookie extraction methods** are available
 5. **Proper configuration** ensures successful scans
 
 ### Next Steps
 
 1. Install and configure ZAP
-2. Update NeuroSploitv2 configuration
+2. Update sploit.ai configuration
 3. Obtain a session cookie from your test application
 4. Run your first authenticated scan
 5. Review and analyze the results
@@ -899,7 +899,7 @@ This guide has covered:
 
 - **OWASP ZAP Documentation**: https://www.zaproxy.org/docs/
 - **ZAP CLI Documentation**: https://github.com/Grunny/zap-cli
-- **NeuroSploitv2 GitHub**: [Repository URL]
+- **sploit.ai GitHub**: [Repository URL]
 - **OWASP Testing Guide**: https://owasp.org/www-project-web-security-testing-guide/
 
 ---
@@ -944,19 +944,19 @@ PHPSESSID=abc123xyz789; csrf_token=def456uvw012
 session_id=abc123; Path=/; Domain=.example.com
 ```
 
-### NeuroSploitv2 Command Templates
+### sploit.ai Command Templates
 
 ```bash
 # Basic authenticated scan
-python neurosploit.py --agent-role bug_bounty_hunter \
+python sploitai.py --agent-role bug_bounty_hunter \
   --input "Authenticated scan on {URL} with cookie {COOKIE}"
 
 # OWASP Top 10 focused
-python neurosploit.py --agent-role owasp_expert \
+python sploitai.py --agent-role owasp_expert \
   --input "OWASP Top 10 scan on {URL} with cookie {COOKIE}"
 
 # Comprehensive test
-python neurosploit.py --agent-role pentest_generalist \
+python sploitai.py --agent-role pentest_generalist \
   --input "Full authenticated penetration test on {URL} with cookie {COOKIE}"
 ```
 
@@ -964,5 +964,5 @@ python neurosploit.py --agent-role pentest_generalist \
 
 **Document Version**: 1.0  
 **Last Updated**: 2024  
-**Author**: NeuroSploitv2 Documentation Team
+**Author**: sploit.ai Documentation Team
 

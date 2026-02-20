@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NeuroSploitv2 Setup and Installation Script
+SploitAI Setup and Installation Script
 Automatically sets up the framework with all dependencies
 """
 
@@ -35,7 +35,7 @@ BANNER = """
 """
 
 
-class NeuroSploitSetup:
+class sploit.aiSetup:
     """Setup and installation manager"""
     
     def __init__(self):
@@ -68,7 +68,7 @@ class NeuroSploitSetup:
     def run(self):
         """Run complete setup"""
         print(BANNER)
-        print("[*] Starting NeuroSploitv2 setup...")
+        print("[*] Starting SploitAI setup...")
         
         # Check Python version
         if not self.check_python_version():
@@ -208,7 +208,7 @@ class NeuroSploitSetup:
         
         example_agent = '''#!/usr/bin/env python3
 """
-Example Custom Agent for NeuroSploitv2
+Example Custom Agent for SploitAI
 This demonstrates how to create custom agents for specific tasks
 """
 
@@ -348,8 +348,8 @@ Response in JSON format.
    - Update tool paths in config/config.json if needed
 
 3. Test Installation:
-   - Run: python neurosploit.py -i (interactive mode)
-   - Run: python neurosploit.py -t <target> -m full
+   - Run: python sploitai.py -i (interactive mode)
+   - Run: python sploitai.py -t <target> -m full
 
 4. Create Custom Agents:
    - Check custom_agents/example_agent.py for template
@@ -365,21 +365,21 @@ Response in JSON format.
 
 Example Usage:
   # Interactive mode
-  python neurosploit.py -i
+  python sploitai.py -i
 
   # Scan target
-  python neurosploit.py -t 192.168.1.0/24 -m network
+  python sploitai.py -t 192.168.1.0/24 -m network
 
   # Web application test
-  python neurosploit.py -t https://example.com -m web
+  python sploitai.py -t https://example.com -m web
 
   # Active Directory test
-  python neurosploit.py -t domain.local -m ad
+  python sploitai.py -t domain.local -m ad
 
-For help: python neurosploit.py --help
+For help: python sploitai.py --help
 """)
 
 
 if __name__ == "__main__":
-    setup = NeuroSploitSetup()
+    setup = sploit.aiSetup()
     setup.run()

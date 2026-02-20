@@ -2,7 +2,7 @@
 
 ## Overview
 
-NeuroSploit supports multiple LLM providers through a unified interface (`LLMManager`). The system can route requests to different models based on task type, allowing operators to optimize cost, latency, and capability per workload.
+sploit.ai supports multiple LLM providers through a unified interface (`LLMManager`). The system can route requests to different models based on task type, allowing operators to optimize cost, latency, and capability per workload.
 
 ## Supported Providers
 
@@ -91,7 +91,7 @@ Retry sequence: 1s, 2s, 4s.
 
 - `LLMManager(config)` takes the full config dictionary (not just the `llm` subsection) since the model routing wiring was added.
 - `LLMManager()` with no arguments works; config defaults to `{}`.
-- `neurosploit.py` passes `self.config` (full config) to LLMManager.
+- `sploitai.py` passes `self.config` (full config) to LLMManager.
 - The Settings API persists provider configuration to both in-memory dict and `.env` file via `PUT /api/v1/settings`.
 
 ## Limitations

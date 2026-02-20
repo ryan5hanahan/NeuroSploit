@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Authorization Vulnerability Testers
+sploit.ai - Authorization Vulnerability Testers
 
 Testers for IDOR, BOLA, Privilege Escalation
 """

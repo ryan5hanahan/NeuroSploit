@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Agent Task Schemas
+sploit.ai - Agent Task Schemas
 """
 from datetime import datetime
 from typing import Optional, List

@@ -1,6 +1,6 @@
-# NeuroSploit v3 - Quick Start Guide
+# sploit.ai v3 - Quick Start Guide
 
-Get NeuroSploit running in under 5 minutes.
+Get sploit.ai running in under 5 minutes.
 
 ---
 
@@ -20,8 +20,8 @@ Get NeuroSploit running in under 5 minutes.
 ## Step 1: Clone & Configure
 
 ```bash
-git clone https://github.com/your-org/NeuroSploitv2.git
-cd NeuroSploitv2
+git clone https://github.com/your-org/sploitai.git
+cd sploitai
 
 # Create your environment file
 cp .env.example .env
@@ -70,11 +70,11 @@ The Kali sandbox enables isolated tool execution (Nuclei, Nmap, SQLMap, etc.) in
 
 This builds a Kali Linux image with 28 pre-installed security tools. Takes ~5 min on first build.
 
-> **No Docker?** NeuroSploit works without it -- the agent uses HTTP-only testing. Docker adds tool-based scanning (Nuclei, Nmap, etc.).
+> **No Docker?** sploit.ai works without it -- the agent uses HTTP-only testing. Docker adds tool-based scanning (Nuclei, Nmap, etc.).
 
 ---
 
-## Step 4: Start NeuroSploit
+## Step 4: Start sploit.ai
 
 ### Option A: Development Mode (hot reload)
 
@@ -123,7 +123,7 @@ Expected response:
 ```json
 {
   "status": "healthy",
-  "app": "NeuroSploit",
+  "app": "sploit.ai",
   "version": "3.0.0",
   "llm": {
     "status": "configured",
@@ -286,4 +286,4 @@ Production: ensure `frontend/dist/` exists (`cd frontend && npm run build`).
 
 ---
 
-**NeuroSploit v3** - *AI-Powered Autonomous Penetration Testing Platform*
+**sploit.ai v3** - *AI-Powered Autonomous Penetration Testing Platform*

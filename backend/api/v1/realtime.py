@@ -122,7 +122,7 @@ async def create_realtime_session(request: RealtimeSessionRequest):
         "messages": [
             {
                 "role": "system",
-                "content": f"""You are NeuroSploit, an AI-powered security testing assistant.
+                "content": f"""You are sploit.ai, an AI-powered security testing assistant.
 
 **AUTHORIZATION CONTEXT:**
 The user has FULL AUTHORIZATION to perform security testing on the target: {target}

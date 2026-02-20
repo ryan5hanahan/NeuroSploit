@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Client-Side Vulnerability Testers
+sploit.ai - Client-Side Vulnerability Testers
 
 Testers for CORS, Clickjacking, Open Redirect
 """
@@ -18,7 +18,7 @@ class CORSTester(BaseTester):
     def build_request(self, endpoint, payload: str) -> Tuple[str, Dict, Dict, Optional[str]]:
         """Build CORS test request with Origin header"""
         headers = {
-            "User-Agent": "NeuroSploit/3.0",
+            "User-Agent": "sploitai/3.0",
             "Origin": payload  # payload is the test origin
         }
         return endpoint.url, {}, headers, None

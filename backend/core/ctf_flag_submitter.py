@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - CTF Flag Submitter
+sploit.ai - CTF Flag Submitter
 
 Auto-submit captured flags to a CTF platform's submission endpoint.
 Supports common CTF platform APIs (CTFd, HTB, THM, etc.) by trying
@@ -25,7 +25,7 @@ class CTFFlagSubmitter:
         if not self.submit_url:
             return {"success": False, "message": "No submit URL configured", "flag_value": flag_value}
 
-        headers = {"User-Agent": "NeuroSploit/3.0"}
+        headers = {"User-Agent": "sploitai/3.0"}
         if self.platform_token:
             headers["Authorization"] = f"Bearer {self.platform_token}"
 

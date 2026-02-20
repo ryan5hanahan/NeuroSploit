@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Output Sanitizer
+sploit.ai - Output Sanitizer
 
 Sanitizes tool outputs before they are returned to the LLM context.
 Redacts sensitive data patterns and detects prompt injection attempts.

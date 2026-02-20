@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tool Installer - Installs required pentest tools for NeuroSploitv2
+Tool Installer - Installs required pentest tools for SploitAI
 """
 
 import subprocess

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Exploit Chain Engine
+sploit.ai - Exploit Chain Engine
 
 Finding correlation, derived target generation, and attack graph
 construction for autonomous pentesting. When a vulnerability is

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Dashboard API Endpoints
+sploit.ai - Dashboard API Endpoints
 """
 import os
 from typing import List, Optional

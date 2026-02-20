@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Agent Memory Management
+sploit.ai - Agent Memory Management
 
 Bounded, deduplicated memory architecture for the autonomous agent.
 Replaces ad-hoc self.findings / self.tested_payloads with structured,

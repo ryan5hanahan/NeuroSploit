@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - ProjectDiscovery Tool MCP Handlers
+sploit.ai - ProjectDiscovery Tool MCP Handlers
 
 Dedicated async handlers for the extended ProjectDiscovery suite:
   cvemap, tlsx, asnmap, mapcidr, alterx, shuffledns,

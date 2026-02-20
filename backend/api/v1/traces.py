@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Trace API Endpoints
+sploit.ai - Trace API Endpoints
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query

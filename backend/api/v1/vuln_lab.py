@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Vulnerability Lab API Endpoints
+sploit.ai - Vulnerability Lab API Endpoints
 
 Isolated vulnerability testing against labs, CTFs, and PortSwigger challenges.
 Test individual vuln types one at a time and track results.

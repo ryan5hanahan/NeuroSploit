@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Proof of Execution Framework
+sploit.ai - Proof of Execution Framework
 
 Per-vulnerability-type verification that a payload was actually PROCESSED
 by the application, not just reflected or ignored. Each vuln type has specific

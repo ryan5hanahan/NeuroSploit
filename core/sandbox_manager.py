@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-NeuroSploit Security Sandbox Manager
+sploit.ai Security Sandbox Manager
 
 Manages Docker-based security tool execution in an isolated container.
 Provides high-level API for running Nuclei, Naabu, and other tools.
 
 Architecture:
-  - Persistent sandbox container (neurosploit-sandbox) stays running
+  - Persistent sandbox container (sploitai-sandbox) stays running
   - Tools executed via `docker exec` for sub-second startup
   - Output collected from container stdout + output files
   - Resource limits enforced (2GB RAM, 2 CPU)
@@ -57,7 +57,7 @@ async def _get_proxy_env(opsec_profile: Optional[str] = None) -> str:
 
     Returns env var prefix string or empty string.
     The proxy env is set unconditionally when the profile requires it —
-    the sandbox container is on neurosploit-network and can resolve the hostname.
+    the sandbox container is on sploitai-network and can resolve the hostname.
     Tools that don't honor HTTP_PROXY will simply ignore it.
     """
     opsec = _get_opsec()
@@ -68,15 +68,15 @@ async def _get_proxy_env(opsec_profile: Optional[str] = None) -> str:
 
     # Check if mitmproxy container exists on the Docker network.
     # We probe from the host side as a best-effort check; even if this
-    # fails, the sandbox container on neurosploit-network can reach it.
+    # fails, the sandbox container on sploitai-network can reach it.
     try:
         import docker as _docker
         client = _docker.from_env()
-        container = client.containers.get("neurosploit-mitmproxy")
+        container = client.containers.get("sploitai-mitmproxy")
         if container.status == "running":
             return (
-                "HTTP_PROXY=http://neurosploit-mitmproxy:8081 "
-                "HTTPS_PROXY=http://neurosploit-mitmproxy:8081 "
+                "HTTP_PROXY=http://sploitai-mitmproxy:8081 "
+                "HTTPS_PROXY=http://sploitai-mitmproxy:8081 "
             )
     except Exception:
         pass
@@ -238,8 +238,8 @@ class SandboxManager(BaseSandbox):
     Used by MCP server and terminal API (no scan_id context).
     """
 
-    SANDBOX_IMAGE = "neurosploit-sandbox:latest"
-    SANDBOX_CONTAINER = "neurosploit-sandbox"
+    SANDBOX_IMAGE = "sploitai-sandbox:latest"
+    SANDBOX_CONTAINER = "sploitai-sandbox"
     DEFAULT_TIMEOUT = 300  # 5 minutes
     MAX_OUTPUT = 2 * 1024 * 1024  # 2MB
 
@@ -307,7 +307,7 @@ class SandboxManager(BaseSandbox):
                 name=self.SANDBOX_CONTAINER,
                 detach=True,
                 restart_policy={"Name": "unless-stopped"},
-                network_mode="neurosploit-network",
+                network_mode="sploitai-network",
                 mem_limit="2g",
                 cpu_period=100000,
                 cpu_quota=200000,  # 2 CPUs

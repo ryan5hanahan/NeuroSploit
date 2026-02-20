@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Vulnerability Enrichment API
+sploit.ai - Vulnerability Enrichment API
 
 Provides manual enrichment triggers and enrichment data retrieval.
 """

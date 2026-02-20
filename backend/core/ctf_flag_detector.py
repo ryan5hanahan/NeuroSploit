@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - CTF Flag Detector
+sploit.ai - CTF Flag Detector
 
 Centralized pattern registry for detecting CTF flags across platforms:
 NetWars, HackTheBox, TryHackMe, PortSwigger, PicoCTF, and generic formats.

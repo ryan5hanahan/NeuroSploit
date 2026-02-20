@@ -243,7 +243,7 @@ class BaseAgent:
             }
 
         print(f"\n{'='*70}")
-        print(f"  NEUROSPLOIT AUTONOMOUS AGENT - {self.agent_name.upper()}")
+        print(f"  SPLOIT.AI AUTONOMOUS AGENT - {self.agent_name.upper()}")
         print(f"{'='*70}")
         print(f"  Mode: Adaptive AI-Driven Testing")
         print(f"  Targets: {len(targets)}")
@@ -294,7 +294,7 @@ class BaseAgent:
         target = recon_context.get('target', {}).get('primary_target', 'Unknown')
 
         print(f"\n{'='*70}")
-        print(f"  NEUROSPLOIT ADAPTIVE AI - {self.agent_name.upper()}")
+        print(f"  SPLOIT.AI ADAPTIVE AI - {self.agent_name.upper()}")
         print(f"{'='*70}")
         print(f"  Mode: Adaptive (LLM + Tools when needed)")
         print(f"  Target: {target}")

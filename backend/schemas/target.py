@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Target Schemas
+sploit.ai - Target Schemas
 """
 from datetime import datetime
 from typing import Optional, List

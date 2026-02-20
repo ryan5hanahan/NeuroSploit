@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NeuroSploit MCP Server — Exposes pentest tools via Model Context Protocol.
+sploit.ai MCP Server — Exposes pentest tools via Model Context Protocol.
 
 Tools (Core):
   - screenshot_capture, payload_delivery, dns_lookup, port_scan,
@@ -1016,7 +1016,7 @@ def create_mcp_server() -> "Server":
     if not HAS_MCP:
         raise RuntimeError("MCP package not installed. Install with: pip install 'mcp>=1.0.0'")
 
-    server = Server("neurosploit-tools")
+    server = Server("sploitai-tools")
 
     @server.list_tools()
     async def list_tools() -> list:

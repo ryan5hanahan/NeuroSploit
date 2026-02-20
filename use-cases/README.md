@@ -1,6 +1,6 @@
-# NeuroSploitv2 Use Cases
+# sploit.ai Use Cases
 
-This directory contains practical use cases and guides for leveraging NeuroSploitv2 in various security testing scenarios.
+This directory contains practical use cases and guides for leveraging sploit.ai in various security testing scenarios.
 
 ## Available Use Cases
 
@@ -8,10 +8,10 @@ This directory contains practical use cases and guides for leveraging NeuroSploi
 
 **Location**: `use-case-1/authenticated-testing-with-zap.md`
 
-**Description**: Comprehensive guide on performing authenticated web application vulnerability testing using NeuroSploitv2 and OWASP ZAP with session cookies.
+**Description**: Comprehensive guide on performing authenticated web application vulnerability testing using sploit.ai and OWASP ZAP with session cookies.
 
 **Key Topics Covered**:
-- Overview of NeuroSploitv2 framework
+- Overview of sploit.ai framework
 - Understanding authenticated testing requirements
 - OWASP ZAP integration and configuration
 - Multiple methods to obtain session cookies
@@ -30,7 +30,7 @@ This directory contains practical use cases and guides for leveraging NeuroSploi
 - Need guidance on session cookie extraction and management
 
 **Prerequisites**:
-- NeuroSploitv2 installed and configured
+- sploit.ai installed and configured
 - OWASP ZAP installed
 - Valid credentials or session cookies for target application
 - Python 3.8+
@@ -76,7 +76,7 @@ To add a new use case:
 ## Quick Links
 
 - [Use Case 1: Authenticated Testing with ZAP](./use-case-1/authenticated-testing-with-zap.md)
-- [Main NeuroSploitv2 README](../README.md)
+- [Main sploit.ai README](../README.md)
 - [Quick Start Guide](../QUICKSTART.md)
 
 ---

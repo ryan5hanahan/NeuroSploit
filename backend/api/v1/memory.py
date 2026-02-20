@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Persistent Memory API Endpoints
+sploit.ai - Persistent Memory API Endpoints
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query

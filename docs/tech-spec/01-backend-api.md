@@ -6,7 +6,7 @@ FastAPI application serving REST API and WebSocket endpoints. 16 routers mounted
 ## Application Setup
 - **Entry point**: `backend/main.py`
 - **Configuration**: `backend/config.py` -- Pydantic `BaseSettings` class, reads from env vars and `.env` file
-- **Database**: SQLite via aiosqlite, URL default `sqlite+aiosqlite:///./data/neurosploit.db`
+- **Database**: SQLite via aiosqlite, URL default `sqlite+aiosqlite:///./data/sploitai.db`
 - **Lifespan handler** (`@asynccontextmanager`):
   1. `init_db()` -- create tables via async SQLAlchemy
   2. `seed_builtin_tradecraft(db)` -- populate built-in TTP library

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Request Forgery Vulnerability Testers
+sploit.ai - Request Forgery Vulnerability Testers
 
 Testers for SSRF and CSRF
 """

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example Custom Agent for NeuroSploitv2
+Example Custom Agent for SploitAI
 This demonstrates how to create custom agents for specific tasks
 """
 

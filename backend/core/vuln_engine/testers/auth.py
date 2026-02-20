@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Authentication Vulnerability Testers
+sploit.ai - Authentication Vulnerability Testers
 
 Testers for Auth Bypass, JWT, Session Fixation
 """

@@ -1,11 +1,11 @@
-# NeuroSploit v3 - Kali Linux Security Sandbox
+# sploit.ai - Kali Linux Security Sandbox
 # Per-scan container with essential tools pre-installed + on-demand install support.
 #
 # Build:
-#   docker build -f docker/Dockerfile.kali -t neurosploit-kali:latest docker/
+#   docker build -f docker/Dockerfile.kali -t sploitai-kali:latest docker/
 #
 # Rebuild (no cache):
-#   docker build --no-cache -f docker/Dockerfile.kali -t neurosploit-kali:latest docker/
+#   docker build --no-cache -f docker/Dockerfile.kali -t sploitai-kali:latest docker/
 #
 # Or via compose:
 #   docker compose -f docker/docker-compose.kali.yml build
@@ -56,10 +56,10 @@ RUN go install -v github.com/projectdiscovery/notify/cmd/notify@latest
 # ---- Stage 2: Kali Linux runtime ----
 FROM kalilinux/kali-rolling
 
-LABEL maintainer="NeuroSploit Team"
-LABEL description="NeuroSploit Kali Sandbox - Per-scan isolated tool execution"
-LABEL neurosploit.version="3.0"
-LABEL neurosploit.type="kali-sandbox"
+LABEL maintainer="sploit.ai Team"
+LABEL description="sploit.ai Kali Sandbox - Per-scan isolated tool execution"
+LABEL sploitai.version="3.0"
+LABEL sploitai.type="kali-sandbox"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

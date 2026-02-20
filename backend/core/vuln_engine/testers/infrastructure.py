@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Infrastructure Vulnerability Testers
+sploit.ai - Infrastructure Vulnerability Testers
 
 Testers for Security Headers, SSL/TLS, HTTP Methods
 """
@@ -115,7 +115,7 @@ class HTTPMethodsTester(BaseTester):
     def build_request(self, endpoint, payload: str) -> Tuple[str, Dict, Dict, Optional[str]]:
         """Build OPTIONS request to check allowed methods"""
         headers = {
-            "User-Agent": "NeuroSploit/3.0"
+            "User-Agent": "sploitai/3.0"
         }
         # payload is the HTTP method to test
         return endpoint.url, {}, headers, None

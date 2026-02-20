@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Injection Vulnerability Testers
+sploit.ai - Injection Vulnerability Testers
 
 Testers for XSS, SQL Injection, Command Injection, SSTI, etc.
 """
@@ -16,7 +16,7 @@ class XSSReflectedTester(BaseTester):
         self.name = "xss_reflected"
         # Unique markers for detection
         self.markers = [
-            "neurosploit",
+            "sploitai",
             "xsstest123",
             "alert(1)"
         ]
@@ -250,7 +250,7 @@ class SQLiUnionTester(BaseTester):
     ) -> Tuple[bool, float, Optional[str]]:
         """Check for union-based SQLi indicators"""
         # Look for injected data markers
-        union_markers = ["neurosploit", "uniontest", "concat(", "version()"]
+        union_markers = ["sploitai", "uniontest", "concat(", "version()"]
 
         for marker in union_markers:
             if marker in payload.lower() and marker in response_body.lower():
@@ -360,7 +360,7 @@ class CommandInjectionTester(BaseTester):
                 return True, 0.95, f"Command output detected: {match.group(0)[:100]}"
 
         # Check for our marker
-        if "neurosploit" in payload and "neurosploit" in response_body:
+        if "sploitai" in payload and "sploitai" in response_body:
             return True, 0.8, "Command injection marker echoed"
 
         return False, 0.0, None

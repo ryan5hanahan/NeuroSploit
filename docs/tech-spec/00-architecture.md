@@ -1,7 +1,7 @@
 # System Architecture
 
 ## Overview
-NeuroSploit follows a layered architecture with clear separation between frontend, API, services, core modules, and external integrations.
+sploit.ai follows a layered architecture with clear separation between frontend, API, services, core modules, and external integrations.
 
 ## System Layers
 

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Autonomous Scanner
+sploit.ai - Autonomous Scanner
 
 This module performs autonomous endpoint discovery and vulnerability testing
 when reconnaissance finds little or nothing. It actively:
@@ -368,7 +368,7 @@ class AutonomousScanner:
         info = {"technologies": [], "headers": {}, "server": ""}
 
         try:
-            async with self.session.get(url, headers={"User-Agent": "NeuroSploit/3.0"}) as resp:
+            async with self.session.get(url, headers={"User-Agent": "sploitai/3.0"}) as resp:
                 info["headers"] = dict(resp.headers)
                 info["status"] = resp.status
                 body = await resp.text()
@@ -444,7 +444,7 @@ class AutonomousScanner:
         try:
             async with self.session.get(
                 url,
-                headers={"User-Agent": "NeuroSploit/3.0"},
+                headers={"User-Agent": "sploitai/3.0"},
                 allow_redirects=False
             ) as resp:
                 exists = resp.status < 400 and resp.status != 404
@@ -556,7 +556,7 @@ class AutonomousScanner:
         try:
             async with self.session.get(
                 url,
-                headers={"User-Agent": "NeuroSploit/3.0"}
+                headers={"User-Agent": "sploitai/3.0"}
             ) as resp:
                 body = await resp.text()
 
@@ -618,7 +618,7 @@ class AutonomousScanner:
             try:
                 async with self.session.get(
                     test_url,
-                    headers={"User-Agent": "NeuroSploit/3.0"}
+                    headers={"User-Agent": "sploitai/3.0"}
                 ) as resp:
                     body = await resp.text()
                     # Check if parameter is reflected or changes response
@@ -755,7 +755,7 @@ class AutonomousScanner:
 
             async with self.session.get(
                 test_url,
-                headers={"User-Agent": "NeuroSploit/3.0"},
+                headers={"User-Agent": "sploitai/3.0"},
                 allow_redirects=False
             ) as resp:
                 body = await resp.text()
@@ -991,7 +991,7 @@ class AutonomousScanner:
                 try:
                     async with self.session.get(
                         test_url,
-                        headers={"User-Agent": "NeuroSploit/3.0"},
+                        headers={"User-Agent": "sploitai/3.0"},
                         allow_redirects=False
                     ) as resp:
                         if resp.status in [301, 302, 303, 307, 308]:

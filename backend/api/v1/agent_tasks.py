@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Agent Tasks API Endpoints
+sploit.ai - Agent Tasks API Endpoints
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException

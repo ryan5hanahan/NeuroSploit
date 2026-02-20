@@ -2,12 +2,12 @@
 
 ## Overview
 
-NeuroSploit generates professional HTML security assessment reports automatically at scan completion. When a scan finishes (either by completing all phases or being stopped early), the `HTMLReportGenerator` produces a self-contained HTML document with styled sections covering the full assessment. Partial reports are generated when scans are stopped mid-execution, preserving findings discovered up to that point.
+sploit.ai generates professional HTML security assessment reports automatically at scan completion. When a scan finishes (either by completing all phases or being stopped early), the `HTMLReportGenerator` produces a self-contained HTML document with styled sections covering the full assessment. Partial reports are generated when scans are stopped mid-execution, preserving findings discovered up to that point.
 
 ## Report Sections
 
 ### Header
-Company branding (name and optional base64-encoded logo), scan metadata (target name, date range, scan type), and report title. The company name defaults to "NeuroSploit Security" and is configurable via `ReportConfig`.
+Company branding (name and optional base64-encoded logo), scan metadata (target name, date range, scan type), and report title. The company name defaults to "sploit.ai Security" and is configurable via `ReportConfig`.
 
 ### Executive Summary
 High-level overview of key findings and risk assessment. Summarizes the total number of vulnerabilities by severity (critical, high, medium, low, info), highlights the most significant findings, and provides an overall risk level assessment. Can be excluded via `include_executive_summary` config option.
@@ -56,7 +56,7 @@ Aggregated remediation guidance based on all findings. Groups recommendations by
 Description of the testing approach used during the assessment. Covers the phases (recon, analysis, testing), tools used, and testing standards referenced (OWASP WSTG, OWASP Top 10, etc.). Can be excluded via `include_methodology` config option.
 
 ### Footer
-Report generation timestamp and NeuroSploit branding.
+Report generation timestamp and sploit.ai branding.
 
 ## Report Generation
 
@@ -112,7 +112,7 @@ The `ReportConfig` dataclass controls report generation behavior:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `company_name` | `str` | `"NeuroSploit Security"` | Company name in header and branding |
+| `company_name` | `str` | `"sploit.ai Security"` | Company name in header and branding |
 | `logo_base64` | `str` | `None` | Base64-encoded logo image for header |
 | `include_executive_summary` | `bool` | `True` | Include executive summary section |
 | `include_methodology` | `bool` | `True` | Include methodology section |

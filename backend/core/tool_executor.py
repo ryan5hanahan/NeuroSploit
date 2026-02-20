@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Docker Tool Executor
+sploit.ai - Docker Tool Executor
 Executes security tools in isolated Docker containers
 """
 
@@ -156,7 +156,7 @@ class SecurityTool:
 class DockerToolExecutor:
     """Execute security tools in Docker containers"""
 
-    DOCKER_IMAGE = "neurosploit-tools:latest"
+    DOCKER_IMAGE = "sploitai-tools:latest"
     DEFAULT_TIMEOUT = 300  # 5 minutes
     MAX_OUTPUT_SIZE = 1024 * 1024  # 1MB max output
 

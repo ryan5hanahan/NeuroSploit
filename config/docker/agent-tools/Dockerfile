@@ -1,7 +1,7 @@
 # Docker image for LLM-driven agent's shell tool execution.
 # Includes common pentesting tools pre-installed for fast execution.
 #
-# Build: docker build -t neurosploit-agent-tools -f config/docker/agent-tools/Dockerfile .
+# Build: docker build -t sploitai-agent-tools -f config/docker/agent-tools/Dockerfile .
 # Usage: Used by shell_tool.py for sandboxed command execution.
 
 # -- Stage 1: Go tool compilation --

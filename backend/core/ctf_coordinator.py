@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Multi-Agent CTF Pipeline Coordinator
+sploit.ai - Multi-Agent CTF Pipeline Coordinator
 
 Orchestrates a pipeline of specialized agents for CTF challenges:
   Phase 1: Recon Agent (1 agent, runs to completion)
@@ -708,7 +708,7 @@ class CTFCoordinator:
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ssl=False, limit=20),
             timeout=aiohttp.ClientTimeout(total=10),
-            headers={**self.auth_headers, "User-Agent": "Mozilla/5.0 NeuroSploit/3.0"},
+            headers={**self.auth_headers, "User-Agent": "Mozilla/5.0 sploitai/3.0"},
         ) as session:
             probes = []
 
@@ -1153,7 +1153,7 @@ class CTFCoordinator:
             ]
             api_paths = [p for p in endpoints if any(k in p.lower() for k in ("/api/", "/rest/", "/v1/", "/v2/"))]
 
-        merged_headers = {**self.auth_headers, **self._harvested_auth_headers, "User-Agent": "Mozilla/5.0 NeuroSploit/3.0"}
+        merged_headers = {**self.auth_headers, **self._harvested_auth_headers, "User-Agent": "Mozilla/5.0 sploitai/3.0"}
 
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ssl=False, limit=20),

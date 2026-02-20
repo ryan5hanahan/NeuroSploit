@@ -98,10 +98,10 @@ Two-stage build:
 |---------|-------|
 | Build context | `.` (project root) |
 | Dockerfile | `docker/Dockerfile.backend` |
-| Container name | `neurosploit-backend` |
+| Container name | `sploitai-backend` |
 | env_file | `.env` |
 | Environment overrides | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`, `ENABLE_BROWSER_VALIDATION` |
-| Volumes | `neurosploit-data:/app/data`, `/var/run/docker.sock:/var/run/docker.sock` |
+| Volumes | `sploitai-data:/app/data`, `/var/run/docker.sock:/var/run/docker.sock` |
 | Ports | `8000:8000` |
 | Restart | `unless-stopped` |
 | Healthcheck | `curl -f http://localhost:8000/api/health` every 30s, timeout 10s, 3 retries |
@@ -114,7 +114,7 @@ The Docker socket mount enables the sandbox manager to create/exec into sandbox 
 |---------|-------|
 | Build context | `.` (project root) |
 | Dockerfile | `docker/Dockerfile.frontend` |
-| Container name | `neurosploit-frontend` |
+| Container name | `sploitai-frontend` |
 | Ports | `8080:80` |
 | Depends on | `backend` (condition: `service_healthy`) |
 | Restart | `unless-stopped` |
@@ -124,7 +124,7 @@ The Docker socket mount enables the sandbox manager to create/exec into sandbox 
 | Setting | Value |
 |---------|-------|
 | Image | `mitmproxy/mitmproxy:latest` |
-| Container name | `neurosploit-mitmproxy` |
+| Container name | `sploitai-mitmproxy` |
 | Profile | `proxy` (only starts with `--profile proxy`) |
 | Entrypoint | `mitmweb --web-host 0.0.0.0 --web-port 8082 --listen-port 8081 --set web_open_browser=false --set flow_detail=2` |
 | Ports | `8081:8081` (proxy), `8082:8082` (web UI) |
@@ -137,7 +137,7 @@ The Docker socket mount enables the sandbox manager to create/exec into sandbox 
 | Setting | Value |
 |---------|-------|
 | Image | `projectdiscovery/interactsh-server:latest` |
-| Container name | `neurosploit-interactsh` |
+| Container name | `sploitai-interactsh` |
 | Profile | `oob` (only starts with `--profile oob`) |
 | Command | `-domain ${INTERACTSH_DOMAIN:-interact.local} -ip 0.0.0.0` |
 | Ports | `8083:80`, `8084:443` |
@@ -147,7 +147,7 @@ The Docker socket mount enables the sandbox manager to create/exec into sandbox 
 
 | Volume | Purpose |
 |--------|---------|
-| `neurosploit-data` | Persistent SQLite database and scan data (`/app/data`) |
+| `sploitai-data` | Persistent SQLite database and scan data (`/app/data`) |
 | `mitmproxy-data` | mitmproxy TLS certificates |
 | `mitmproxy-captures` | Captured HTTP traffic |
 
@@ -156,10 +156,10 @@ The Docker socket mount enables the sandbox manager to create/exec into sandbox 
 ```yaml
 networks:
   default:
-    name: neurosploit-network
+    name: sploitai-network
 ```
 
-All services share `neurosploit-network`. Sandbox containers are also attached to this network for inter-container communication (e.g., sandbox -> mitmproxy proxy routing).
+All services share `sploitai-network`. Sandbox containers are also attached to this network for inter-container communication (e.g., sandbox -> mitmproxy proxy routing).
 
 ## Build Commands
 
@@ -192,7 +192,7 @@ docker compose build backend && docker compose up -d
 ```
 frontend (nginx:80) --depends_on--> backend (uvicorn:8000)
                                       |
-                                      |--(docker.sock)--> sandbox containers (neurosploit-kali)
+                                      |--(docker.sock)--> sandbox containers (sploitai-kali)
                                       |--(HTTP_PROXY)---> mitmproxy (8081) [when proxy profile active]
                                       |--(poll)---------> interactsh (80) [when oob profile active]
 ```

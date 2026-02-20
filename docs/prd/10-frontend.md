@@ -2,7 +2,7 @@
 
 ## Overview
 
-React/TypeScript single-page application providing the web UI for NeuroSploit. Built with Vite, styled with Tailwind CSS, and connected to the FastAPI backend via REST API and WebSocket.
+React/TypeScript single-page application providing the web UI for sploit.ai. Built with Vite, styled with Tailwind CSS, and connected to the FastAPI backend via REST API and WebSocket.
 
 ## Pages
 

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - File Access Vulnerability Testers
+sploit.ai - File Access Vulnerability Testers
 
 Testers for LFI, RFI, Path Traversal, XXE, File Upload
 """
@@ -72,7 +72,7 @@ class RFITester(BaseTester):
     ) -> Tuple[bool, float, Optional[str]]:
         """Check for RFI indicators"""
         # Check if our remote content was included
-        if "neurosploit_rfi_test" in response_body:
+        if "sploitai_rfi_test" in response_body:
             return True, 0.95, "RFI confirmed: Remote content executed"
 
         # Check for URL-related errors
@@ -128,7 +128,7 @@ class XXETester(BaseTester):
     def build_request(self, endpoint, payload: str) -> Tuple[str, Dict, Dict, Optional[str]]:
         """Build XXE request with XML body"""
         headers = {
-            "User-Agent": "NeuroSploit/3.0",
+            "User-Agent": "sploitai/3.0",
             "Content-Type": "application/xml"
         }
         return endpoint.url, {}, headers, payload

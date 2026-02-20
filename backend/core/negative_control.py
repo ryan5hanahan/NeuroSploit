@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Negative Control Engine
+sploit.ai - Negative Control Engine
 
 Sends benign/control payloads and compares responses to detect false positives
 from same-behavior patterns. If the application responds the same way to a

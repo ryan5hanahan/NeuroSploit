@@ -1,4 +1,4 @@
-# NeuroSploit v3 - Security Sandbox Container
+# sploit.ai - Security Sandbox Container
 # Kali-based container with real penetration testing tools
 # Provides Nuclei, Naabu, and other ProjectDiscovery tools via isolated execution
 
@@ -25,8 +25,8 @@ RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
 # Final runtime image - Debian-based for compatibility
 FROM debian:bookworm-slim
 
-LABEL maintainer="NeuroSploit Team"
-LABEL description="NeuroSploit Security Sandbox - Isolated tool execution environment"
+LABEL maintainer="sploit.ai Team"
+LABEL description="sploit.ai Security Sandbox - Isolated tool execution environment"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

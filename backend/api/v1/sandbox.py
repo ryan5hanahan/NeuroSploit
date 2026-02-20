@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Sandbox Container Management API
+sploit.ai - Sandbox Container Management API
 
 Real-time monitoring and management of per-scan Kali Linux containers.
 """
@@ -30,7 +30,7 @@ async def list_sandboxes():
             "pool": {
                 "active": 0,
                 "max_concurrent": 0,
-                "image": "neurosploit-kali:latest",
+                "image": "sploitai-kali:latest",
                 "container_ttl_minutes": 60,
                 "docker_available": _docker_available(),
             },

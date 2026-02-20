@@ -52,7 +52,7 @@
                 },
                 "interactsh-client": {
                     "poll-interval": 30,
-                    "server": "http://neurosploit-interactsh"
+                    "server": "http://sploitai-interactsh"
                 },
                 "subfinder": {
                     "rate-limit": 5

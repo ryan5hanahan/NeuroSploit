@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Bug Bounty API Endpoints
+sploit.ai - Bug Bounty API Endpoints
 
 HackerOne integration: test connection, list programs, scope checking,
 duplicate detection, and draft report generation.

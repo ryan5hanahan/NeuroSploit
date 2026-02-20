@@ -50,7 +50,7 @@ BaseAgent's LLMManager uses `task_type` parameter in `generate()` calls. Child L
 - **Docker socket mount**: `/var/run/docker.sock:/var/run/docker.sock` in docker-compose.yml
 - **Python SDK**: `docker` package (guarded import -- sandbox features disabled when unavailable)
 - **Container images**:
-  - `neurosploit-kali:latest` -- Sandbox container with security tools
+  - `sploitai-kali:latest` -- Sandbox container with security tools
   - `mitmproxy/mitmproxy:latest` -- OPSEC proxy
   - `projectdiscovery/interactsh-server:latest` -- OOB interaction detection
 - **Container pool**: max 5 concurrent sandbox containers, auto-cleanup orphans on startup
@@ -134,8 +134,8 @@ BaseAgent's LLMManager uses `task_type` parameter in `generate()` calls. Child L
 
 - **Driver**: `aiosqlite` (async SQLite adapter)
 - **ORM**: SQLAlchemy 2.0 with `async_sessionmaker` and `AsyncSession`
-- **Database file**: `data/neurosploit.db` (mounted via Docker volume `neurosploit-data:/app/data`)
-- **Connection string**: `sqlite+aiosqlite:///./data/neurosploit.db`
+- **Database file**: `data/sploitai.db` (mounted via Docker volume `sploitai-data:/app/data`)
+- **Connection string**: `sqlite+aiosqlite:///./data/sploitai.db`
 - **Session config**: `expire_on_commit=False`
 - **Schema management**: 13 model files defining tables, runtime `ALTER TABLE ADD COLUMN` migrations
 - **No migration framework** (no Alembic) -- purely additive column additions via `PRAGMA table_info` checks

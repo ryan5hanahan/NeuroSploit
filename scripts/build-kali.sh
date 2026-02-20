@@ -1,5 +1,5 @@
 #!/bin/bash
-# NeuroSploit v3 - Build Kali Linux Sandbox Image
+# sploit.ai - Build Kali Linux Sandbox Image
 #
 # Usage:
 #   ./scripts/build-kali.sh          # Normal build (uses cache)
@@ -10,12 +10,12 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-IMAGE_NAME="neurosploit-kali:latest"
+IMAGE_NAME="sploitai-kali:latest"
 
 cd "$PROJECT_DIR"
 
 echo "================================================"
-echo " NeuroSploit Kali Sandbox Builder"
+echo " sploit.ai Kali Sandbox Builder"
 echo "================================================"
 echo ""
 
@@ -76,6 +76,6 @@ fi
 echo ""
 echo "================================================"
 echo " Build complete! To use:"
-echo "   - Start NeuroSploit backend (it auto-creates containers per scan)"
+echo "   - Start sploit.ai backend (it auto-creates containers per scan)"
 echo "   - Monitor via Sandbox Dashboard: http://localhost:8000/sandboxes"
 echo "================================================"

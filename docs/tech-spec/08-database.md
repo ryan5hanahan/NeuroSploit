@@ -10,7 +10,7 @@ File: `backend/db/database.py`
 
 ```python
 engine = create_async_engine(
-    settings.DATABASE_URL,  # "sqlite+aiosqlite:///./data/neurosploit.db"
+    settings.DATABASE_URL,  # "sqlite+aiosqlite:///./data/sploitai.db"
     echo=settings.DEBUG,
     future=True
 )

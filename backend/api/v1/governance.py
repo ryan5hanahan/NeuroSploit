@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Governance API Endpoints
+sploit.ai - Governance API Endpoints
 
 Query governance violations and enforcement stats for a scan.
 Export governance audit trail. List global governance overview.

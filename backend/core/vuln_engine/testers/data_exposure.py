@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Data Exposure Vulnerability Testers
+sploit.ai - Data Exposure Vulnerability Testers
 
 Testers for sensitive data exposure, information disclosure, API key exposure,
 source code disclosure, backup file exposure, and version disclosure.

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Execution History
+sploit.ai - Execution History
 
 Tracks attack success/failure patterns across scans to learn what works.
 Records technology-to-vulnerability-type mappings with success rates.

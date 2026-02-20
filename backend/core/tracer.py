@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Scan Tracer
+sploit.ai - Scan Tracer
 
 Structured tracing for agent execution. Each scan gets a trace_id,
 and phases/tools/LLM calls get nested spans.

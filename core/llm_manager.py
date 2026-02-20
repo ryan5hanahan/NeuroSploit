@@ -763,8 +763,8 @@ Identify any potential hallucinations, inconsistencies, or areas where the respo
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/neurosploit",
-            "X-Title": "NeuroSploit"
+            "HTTP-Referer": "https://github.com/sploitai",
+            "X-Title": "sploit.ai"
         }
 
         messages = []

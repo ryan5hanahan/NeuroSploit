@@ -2,7 +2,7 @@
 
 ## Overview
 
-NeuroSploit uses a two-layer configuration system:
+sploit.ai uses a two-layer configuration system:
 
 1. **Static configuration** (`config/config.json`): Defines LLM profiles, agent roles, methodologies, tool paths, MCP server configuration, OPSEC profiles, sandbox settings, and model routing rules. Read at startup and used as structural configuration.
 
@@ -69,16 +69,16 @@ File system paths to security tools: `nmap`, `metasploit`, `burpsuite`, `sqlmap`
 
 ### mcp_servers
 
-MCP (Model Context Protocol) server configuration. The `neurosploit_tools` server exposes pentest tools via direct transport:
+MCP (Model Context Protocol) server configuration. The `sploitai_tools` server exposes pentest tools via direct transport:
 
 ```json
 {
   "enabled": true,
   "servers": {
-    "neurosploit_tools": {
+    "sploitai_tools": {
       "transport": "direct",
       "args": ["-m", "core.mcp_server"],
-      "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite, mitmproxy integration, opsec profiles"
+      "description": "sploit.ai pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, sandbox execution, full ProjectDiscovery suite, mitmproxy integration, opsec profiles"
     }
   }
 }
@@ -101,7 +101,7 @@ Docker-based security tool sandbox configuration:
 
 | Setting | Description |
 |---------|-------------|
-| `kali.image` | Docker image name (`neurosploit-kali:latest`) |
+| `kali.image` | Docker image name (`sploitai-kali:latest`) |
 | `kali.max_concurrent` | Maximum concurrent containers (5) |
 | `kali.container_ttl_minutes` | Container lifetime before auto-cleanup (60 min) |
 | `kali.auto_cleanup_orphans` | Auto-remove orphaned containers |

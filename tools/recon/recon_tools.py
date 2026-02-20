@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NeuroSploit Advanced Reconnaissance Module
+sploit.ai Advanced Reconnaissance Module
 Deep enumeration with multiple tools and techniques
 """
 
@@ -2075,7 +2075,7 @@ class ScreenshotCapture:
 
     def __init__(self, config: Dict = None):
         self.config = config or {}
-        self.output_dir = config.get('screenshot_dir', '/opt/NeuroSploitv2/results/screenshots')
+        self.output_dir = config.get('screenshot_dir', '/opt/SploitAI/results/screenshots')
 
     def capture(self, targets: List[str]) -> Dict:
         """Capture screenshots of targets."""
@@ -2515,7 +2515,7 @@ class FullReconRunner:
         from core.context_builder import ReconContextBuilder
 
         print(f"\n{'='*70}")
-        print("    NEUROSPLOIT v2 - ADVANCED RECONNAISSANCE ENGINE")
+        print("    SPLOIT.AI - ADVANCED RECONNAISSANCE ENGINE")
         print(f"{'='*70}")
         print(f"\n[*] Target: {target}")
         print(f"[*] Type: {target_type}")

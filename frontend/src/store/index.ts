@@ -178,7 +178,7 @@ export const useScanStore = create<ScanState>()(
       }
     }),
     {
-      name: 'neurosploit-scan-store',
+      name: 'sploitai-scan-store',
       partialize: (state) => ({
         scanDataCache: state.scanDataCache,
         scans: state.scans

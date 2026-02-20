@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - XSS Context Analyzer
+sploit.ai - XSS Context Analyzer
 
 Determines whether a payload reflected in HTML is in an executable position
 (auto-executing, interactive, or non-executable text content).

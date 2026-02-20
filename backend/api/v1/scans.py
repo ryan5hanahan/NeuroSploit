@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Scans API Endpoints
+sploit.ai - Scans API Endpoints
 """
 import asyncio
 from typing import List, Optional

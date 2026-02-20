@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Anti-Hallucination System Prompts
+sploit.ai - Anti-Hallucination System Prompts
 
 11 composable anti-hallucination prompts that are injected into all AI call sites.
 Each prompt enforces a specific principle to prevent false positives, hallucinated
