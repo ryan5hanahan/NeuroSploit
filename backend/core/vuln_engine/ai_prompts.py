@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Per-Vulnerability AI Decision Prompts
+sploit.ai - Per-Vulnerability AI Decision Prompts
 
 100 vulnerability types, each with structured prompt templates for:
 - Detection strategy, test methodology, payload selection
@@ -501,7 +501,7 @@ VULN_AI_PROMPTS: Dict[str, dict] = {
             "(Angular CDN for unsafe-eval, base tag injection, prefetch). "
             "7. VERIFY: Confirm JavaScript execution via alert/confirm/prompt or verify unescaped payload in executable context."
         ),
-        "payload_selection": "Start with probe: neurosploit{{RANDOM_ID}} then context-specific: HTML body: <script>alert(document.domain)</script> Attribute: \" onmouseover=alert(1) x=\" JS string: ';alert(1)// Event handler: <img src=x onerror=alert(1)> SVG: <svg onload=alert(1)>",
+        "payload_selection": "Start with probe: sploitai{{RANDOM_ID}} then context-specific: HTML body: <script>alert(document.domain)</script> Attribute: \" onmouseover=alert(1) x=\" JS string: ';alert(1)// Event handler: <img src=x onerror=alert(1)> SVG: <svg onload=alert(1)>",
         "verification_criteria": "CONFIRMED only if: JavaScript executes (alert fires, DOM modified, cookie accessed), OR unencoded script/event handler appears in HTML source in executable context. Encoded output (&lt;script&gt;) is NOT a finding.",
         "exploitation_guidance": "Demonstrate: document.domain alert, cookie theft via document.cookie, DOM manipulation. Provide working URL with payload.",
         "false_positive_indicators": "Output is HTML-encoded. CSP blocks script execution. Reflection is in non-executable context (HTML comment, textarea). WAF blocks payload.",

