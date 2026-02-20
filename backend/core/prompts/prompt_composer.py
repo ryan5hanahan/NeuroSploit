@@ -55,7 +55,12 @@ def compose_agent_system_prompt(
         Assembled system prompt string.
     """
     system_template = _read_template("agent_system_prompt.md")
-    execution_template = _read_template("execution_prompt_general.md")
+
+    # Select execution prompt based on scope — recon gets focused guidance
+    if governance_context and governance_context.get("scope_profile") == "recon_only":
+        execution_template = _read_template("execution_prompt_recon.md")
+    else:
+        execution_template = _read_template("execution_prompt_general.md")
 
     # Format memory overview section
     if memory_overview:
@@ -208,28 +213,27 @@ def _build_governance_section(governance_context: Dict[str, Any]) -> str:
             "",
             "### RECON ONLY — STRICT ENFORCEMENT",
             "",
-            "You are authorized for **reconnaissance ONLY**. "
-            "The following are **STRICTLY FORBIDDEN** and will be BLOCKED by the governance layer:",
+            "You are authorized for **reconnaissance and OSINT ONLY**.",
             "",
-            "- SQL injection testing (sqlmap, manual payloads, UNION SELECT, etc.)",
-            "- XSS testing (dalfox, manual payloads, script injection, etc.)",
-            "- Password reset or credential testing of any kind",
-            "- Form submission attacks or login attempts",
-            "- Exploitation of any vulnerability",
-            "- Vulnerability scanning tools (nuclei, nikto, etc.)",
-            "- Default credential attempts",
-            "- Command injection testing",
-            "- File inclusion (LFI/RFI) testing",
-            "- Any payload delivery or active exploitation",
+            "**Your mission**: Gather intelligence about the target:",
+            "- DNS records, zone information, MX/NS/TXT records",
+            "- IP addresses, CIDR ranges, hosting provider",
+            "- Geographic location and infrastructure details",
+            "- Technologies, frameworks, and versions in use",
+            "- Subdomains and related domains",
+            "- Endpoints, API paths, and site structure",
+            "- Authentication mechanisms (identify, do NOT test)",
+            "- Forms and input points (map, do NOT submit)",
             "",
-            "**You may ONLY**:",
-            "- Enumerate endpoints and paths (gobuster, ffuf, katana)",
-            "- Fingerprint technologies (httpx, wafw00f)",
-            "- Discover subdomains (subfinder, dnsx)",
-            "- Crawl pages and analyze structure",
-            "- Analyze HTTP headers and responses",
-            "- Port scan (nmap, naabu)",
-            "- Document and map the attack surface",
+            "**STRICTLY FORBIDDEN** (will be BLOCKED by governance):",
+            "- Login attempts or credential testing of ANY kind",
+            "- Password guessing, brute force, or default credential testing",
+            "- Form submission (browser_submit_form is blocked)",
+            "- SQL injection, XSS, or any payload testing",
+            "- Vulnerability scanners (nuclei, nikto, dalfox)",
+            "- Exploitation tools (sqlmap, hydra, commix)",
+            "- Any active exploitation or attack attempts",
+            "- POST requests with credential data to login endpoints",
             "",
             "Any exploitation attempt **WILL BE BLOCKED** by the governance layer. "
             "Do not waste steps attempting actions that will be rejected.",

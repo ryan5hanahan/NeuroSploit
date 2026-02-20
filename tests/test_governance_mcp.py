@@ -106,6 +106,7 @@ class TestMCPGovernanceStrict:
 
     def test_strict_allows_nuclei_in_testing(self):
         gov = _make_gov(governance_mode="strict")
+        gov.set_phase("recon")
         gov.set_phase("testing")
         set_mcp_governance(gov)
 

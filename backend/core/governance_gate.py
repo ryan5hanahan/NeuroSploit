@@ -281,7 +281,7 @@ ACTION_CLASSIFICATION: Dict[str, str] = {
     "browser_navigate": ActionCategory.ACTIVE_RECON,
     "browser_extract_links": ActionCategory.ACTIVE_RECON,
     "browser_extract_forms": ActionCategory.ACTIVE_RECON,
-    "browser_submit_form": ActionCategory.ACTIVE_RECON,
+    "browser_submit_form": ActionCategory.EXPLOITATION,
     "browser_screenshot": ActionCategory.ACTIVE_RECON,
     "browser_execute_js": ActionCategory.ACTIVE_RECON,
     "memory_store": ActionCategory.ANALYSIS,
@@ -289,7 +289,7 @@ ACTION_CLASSIFICATION: Dict[str, str] = {
     "save_artifact": ActionCategory.ANALYSIS,
     "report_finding": ActionCategory.REPORTING,
     "update_plan": ActionCategory.ANALYSIS,
-    "get_payloads": ActionCategory.ANALYSIS,
+    "get_payloads": ActionCategory.VULNERABILITY_SCAN,
     "get_vuln_info": ActionCategory.ANALYSIS,
     "spawn_subagent": ActionCategory.ACTIVE_RECON,
     "create_tool": ActionCategory.ANALYSIS,
@@ -437,9 +437,21 @@ class ActionClassifier:
             if any(ind in combined for ind in exploit_indicators):
                 return ActionCategory.EXPLOITATION
 
+            # Credential/login detection — POST/PUT with password fields
+            method = tool_args.get("method", "GET").upper()
+            if method in ("POST", "PUT", "PATCH"):
+                cred_indicators = [
+                    "password", "passwd", "pass_word",
+                    "\"password\"", "'password'",
+                    "default_password", "admin:admin",
+                    "login", "signin", "authenticate",
+                ]
+                if any(ind in combined for ind in cred_indicators):
+                    return ActionCategory.EXPLOITATION
+
         # browser_submit_form: check for credential testing
         if action == "browser_submit_form":
-            data = tool_args.get("data", {})
+            data = tool_args.get("field_values", {})
             if isinstance(data, dict):
                 field_names = {k.lower() for k in data.keys()}
                 cred_fields = {"password", "passwd", "pass", "pwd"}
@@ -447,6 +459,37 @@ class ActionClassifier:
                     # Form submission with password fields = exploitation attempt
                     if _category_rank(ActionCategory.EXPLOITATION) > _category_rank(base_category):
                         return ActionCategory.EXPLOITATION
+
+        # browser_execute_js: check for exploit patterns in script content
+        if action == "browser_execute_js":
+            script = tool_args.get("script", "").lower()
+            if script:
+                # Exploitation: data exfiltration, cookie theft, external fetch
+                exploit_js_patterns = [
+                    "document.cookie",     # Cookie access/theft
+                    "localstorage",        # Storage exfiltration
+                    "sessionstorage",      # Session data theft
+                    "xmlhttprequest",      # Outbound data exfil
+                    ".fetch(",             # Outbound data exfil
+                    "new image().src",     # Beacon exfiltration
+                    "eval(",               # Dynamic code execution
+                    "function(",           # Dynamic code execution
+                    "atob(",               # Decoding (payload delivery)
+                    "window.location",     # Redirect/navigation hijack
+                    "document.write",      # DOM manipulation attacks
+                ]
+                if any(p in script for p in exploit_js_patterns):
+                    return ActionCategory.EXPLOITATION
+
+                # Vuln scanning: XSS probing, DOM inspection for vulns
+                vuln_js_patterns = [
+                    "alert(", "prompt(", "confirm(",  # XSS proof
+                    "innerhtml",                       # DOM XSS sink
+                    "outerhtml",                       # DOM XSS sink
+                    "insertadjacenthtml",              # DOM XSS sink
+                ]
+                if any(p in script for p in vuln_js_patterns):
+                    return ActionCategory.VULNERABILITY_SCAN
 
         return base_category
 
