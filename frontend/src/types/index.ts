@@ -148,8 +148,9 @@ export interface DashboardStats {
     total: number
   }
   operations?: {
-    total: number
     running: number
+    completed: number
+    stopped: number
   }
   costs?: {
     total_cost_usd: number
