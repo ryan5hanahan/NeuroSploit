@@ -1,6 +1,7 @@
 """
 NeuroSploit v3 - Dashboard API Endpoints
 """
+import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from datetime import datetime, timedelta
 from backend.db.database import get_db
 from backend.models import Scan, Vulnerability, Endpoint, AgentTask, Report
 from backend.models.memory import AgentOperation
+from backend.api.v1.settings import _settings
 
 router = APIRouter()
 
@@ -167,6 +169,15 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             "total_tokens": total_tokens,
             "scan_cost_usd": round(scan_total_cost, 6),
             "operation_cost_usd": round(op_total_cost, 6),
+        },
+        "integrations": {
+            "hackerone": {
+                "enabled": bool(_settings.get("enable_bugbounty_integration")),
+                "configured": bool(
+                    (_settings.get("hackerone_api_token") or os.getenv("HACKERONE_API_TOKEN"))
+                    and (_settings.get("hackerone_username") or os.getenv("HACKERONE_USERNAME"))
+                ),
+            }
         }
     }
 

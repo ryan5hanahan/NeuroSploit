@@ -1,4 +1,5 @@
-import { Activity, AlertTriangle, DollarSign, TrendingUp } from 'lucide-react'
+import { Activity, AlertTriangle, DollarSign, TrendingUp, Bug } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import Card from '../common/Card'
 import type { DashboardStatsExtended } from '../../types'
 
@@ -113,6 +114,25 @@ export default function KeyMetrics({ stats }: KeyMetricsProps) {
               <span className="text-xs text-dark-400 uppercase font-medium">Total Cost</span>
               <span className="text-sm text-white font-medium ml-auto">${stats.trend.total_cost_usd.toFixed(2)}</span>
             </div>
+          </div>
+        )}
+
+        {/* Integrations */}
+        {stats.integrations?.hackerone?.enabled && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Bug className="w-4 h-4 text-dark-400" />
+              <span className="text-xs text-dark-400 uppercase font-medium">Integrations</span>
+            </div>
+            <Link
+              to={stats.integrations.hackerone.configured ? '/bugbounty' : '/settings'}
+              className="flex items-center gap-2 text-xs hover:opacity-80 transition-opacity"
+            >
+              <span className={`w-2 h-2 rounded-full ${stats.integrations.hackerone.configured ? 'bg-green-500' : 'bg-yellow-500'}`} />
+              <span className={stats.integrations.hackerone.configured ? 'text-green-400' : 'text-yellow-400'}>
+                {stats.integrations.hackerone.configured ? 'HackerOne Connected' : 'HackerOne Not Configured'}
+              </span>
+            </Link>
           </div>
         )}
       </div>

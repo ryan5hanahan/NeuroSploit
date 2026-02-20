@@ -665,6 +665,12 @@ export interface DashboardStatsExtended extends DashboardStats {
     stopped: number
   }
   trend?: DashboardTrend
+  integrations?: {
+    hackerone: {
+      enabled: boolean
+      configured: boolean
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -848,4 +854,58 @@ export interface AgentV2Decision {
 export interface AgentV2DecisionsResponse {
   operation_id: string
   decisions: AgentV2Decision[]
+}
+
+// ---------------------------------------------------------------------------
+// Bug Bounty types
+// ---------------------------------------------------------------------------
+
+export interface BugBountyProgram {
+  handle: string
+  name: string
+  offers_bounties: boolean
+  submission_state: string
+  url: string
+}
+
+export interface BugBountyScopeAsset {
+  asset_identifier: string
+  asset_type: string
+  eligible_for_bounty: boolean
+  eligible_for_submission: boolean
+  instruction: string
+  max_severity: string
+}
+
+export interface BugBountyScope {
+  in_scope: BugBountyScopeAsset[]
+  out_of_scope: BugBountyScopeAsset[]
+  in_scope_count: number
+  out_of_scope_count: number
+  bounty_eligible_count: number
+  bounty_eligible_domains: string[]
+}
+
+export interface BugBountyDraft {
+  title: string
+  vulnerability_information: string
+  impact: string
+  severity_rating: string
+  weakness_id: string
+}
+
+export interface BugBountySubmission {
+  id: string
+  vulnerability_id: string | null
+  program_handle: string
+  status: string
+  draft_title: string | null
+  draft_impact: string | null
+  draft_severity_rating: string | null
+  duplicate_check_score: number | null
+  h1_report_id: string | null
+  h1_state: string | null
+  bounty_amount: number | null
+  created_at: string | null
+  updated_at: string | null
 }

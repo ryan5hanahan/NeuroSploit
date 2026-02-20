@@ -62,6 +62,44 @@ class HackerOneClient:
             logger.warning(f"HackerOne API error: {e}")
             return None
 
+    async def test_connection(self, session: aiohttp.ClientSession) -> Dict[str, Any]:
+        """Lightweight connectivity check — fetches one program to verify credentials."""
+        if not self.enabled:
+            return {"success": False, "error": "HackerOne credentials not configured"}
+        try:
+            data = await self._get(
+                "/hackers/programs",
+                session,
+                params={"page[size]": 1},
+            )
+            if data is not None:
+                return {"success": True, "message": "HackerOne connection verified"}
+            return {"success": False, "error": "Authentication failed or API unreachable"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def list_programs(self, session: aiohttp.ClientSession) -> List[Dict]:
+        """List programs the authenticated user has access to."""
+        data = await self._get(
+            "/hackers/programs",
+            session,
+            params={"page[size]": 100},
+        )
+        if not data:
+            return []
+
+        programs = []
+        for item in data.get("data", []):
+            attrs = item.get("attributes", {})
+            programs.append({
+                "handle": attrs.get("handle", ""),
+                "name": attrs.get("name", ""),
+                "offers_bounties": attrs.get("offers_bounties", False),
+                "submission_state": attrs.get("submission_state", ""),
+                "url": attrs.get("url", ""),
+            })
+        return programs
+
     async def get_program(self, handle: str, session: aiohttp.ClientSession) -> Optional[Dict]:
         """Get program info by handle (e.g., 'security')."""
         data = await self._get(f"/hackers/programs/{handle}", session)

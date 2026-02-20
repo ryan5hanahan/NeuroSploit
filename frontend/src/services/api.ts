@@ -9,6 +9,7 @@ import type {
   AgentV2StartRequest, AgentV2StartResponse, AgentV2StatusResponse, AgentV2CredentialSet,
   AgentV2FindingsResponse, AgentV2DecisionsResponse, AgentV2OperationSummary,
   LiveOperation, AttentionFinding, DashboardStatsExtended,
+  BugBountyProgram, BugBountyScope, BugBountyDraft, BugBountySubmission,
 } from '../types'
 
 const api = axios.create({
@@ -735,6 +736,50 @@ export const agentV2Api = {
       })
       return response.data
     },
+  },
+}
+
+// Bug Bounty API
+export const bugBountyApi = {
+  testConnection: async (): Promise<{ success: boolean; error?: string; message?: string }> => {
+    const response = await api.post('/bugbounty/test-connection')
+    return response.data
+  },
+
+  listPrograms: async (): Promise<{ programs: BugBountyProgram[] }> => {
+    const response = await api.get('/bugbounty/programs')
+    return response.data
+  },
+
+  getProgram: async (handle: string): Promise<BugBountyProgram> => {
+    const response = await api.get(`/bugbounty/programs/${handle}`)
+    return response.data
+  },
+
+  getProgramScope: async (handle: string): Promise<BugBountyScope> => {
+    const response = await api.get(`/bugbounty/programs/${handle}/scope`)
+    return response.data
+  },
+
+  checkScope: async (programHandle: string, url: string): Promise<{ url: string; program_handle: string; in_scope: boolean }> => {
+    const response = await api.post('/bugbounty/check-scope', { program_handle: programHandle, url })
+    return response.data
+  },
+
+  checkDuplicate: async (data: { program_handle: string; title: string; vuln_type?: string; endpoint?: string; description?: string }): Promise<{ is_duplicate: boolean; matching_report: any; reports_checked: number }> => {
+    const response = await api.post('/bugbounty/check-duplicate', data)
+    return response.data
+  },
+
+  draftReport: async (vulnerabilityId: string, programHandle?: string): Promise<{ submission_id: string; draft: BugBountyDraft; preview_markdown: string }> => {
+    const response = await api.post('/bugbounty/draft-report', { vulnerability_id: vulnerabilityId, program_handle: programHandle || '' })
+    return response.data
+  },
+
+  listSubmissions: async (limit?: number): Promise<{ submissions: BugBountySubmission[]; total: number }> => {
+    const params = limit ? `?limit=${limit}` : ''
+    const response = await api.get(`/bugbounty/submissions${params}`)
+    return response.data
   },
 }
 

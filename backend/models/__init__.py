@@ -11,6 +11,7 @@ from backend.models.tradecraft import Tradecraft, ScanTradecraft
 from backend.models.memory import AttackPatternMemory, TargetFingerprint, SuccessfulPayload
 from backend.models.trace import TraceSpan
 from backend.models.governance_violation import GovernanceViolationRecord
+from backend.models.bugbounty_submission import BugBountySubmission
 
 __all__ = [
     "Scan",
@@ -30,4 +31,5 @@ __all__ = [
     "SuccessfulPayload",
     "TraceSpan",
     "GovernanceViolationRecord",
+    "BugBountySubmission",
 ]

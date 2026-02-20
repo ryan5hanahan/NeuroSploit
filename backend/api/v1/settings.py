@@ -747,6 +747,105 @@ async def test_llm_connection(
         }
     }
 
+    # --- Bedrock: verify credentials via STS first, then discover valid model ---
+    if provider_ui == "bedrock":
+        region = profile_config.get("region", "us-east-1")
+
+        def _bedrock_test():
+            import boto3
+            from botocore.exceptions import ClientError, NoCredentialsError, BotoCoreError
+
+            start = time.monotonic()
+
+            # Step 1: Verify AWS credentials
+            try:
+                sts = boto3.client("sts", region_name=region)
+                identity = sts.get_caller_identity()
+                account = identity.get("Account", "unknown")
+            except NoCredentialsError:
+                return None, 0, "No AWS credentials found. Configure AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, AWS_PROFILE, or IAM role."
+            except (ClientError, BotoCoreError) as e:
+                return None, 0, f"AWS credential check failed: {e}"
+
+            # Step 2: Try the configured model
+            test_model = model
+            try:
+                client = boto3.client("bedrock-runtime", region_name=region)
+                resp = client.converse(
+                    modelId=test_model,
+                    messages=[{"role": "user", "content": [{"text": "Respond with exactly: CONNECTION_OK"}]}],
+                    inferenceConfig={"maxTokens": 64, "temperature": 0.1},
+                )
+                text = resp["output"]["message"]["content"][0]["text"]
+                elapsed = round((time.monotonic() - start) * 1000)
+                return text, elapsed, None
+            except ClientError as e:
+                code = e.response["Error"]["Code"]
+                msg = e.response["Error"]["Message"]
+                elapsed = round((time.monotonic() - start) * 1000)
+
+                if code == "ValidationException" and "model identifier" in msg.lower():
+                    # Model ID is invalid — discover available models
+                    available = []
+                    try:
+                        bedrock_mgmt = boto3.client("bedrock", region_name=region)
+                        fm_resp = bedrock_mgmt.list_foundation_models(byOutputModality="TEXT")
+                        for m in fm_resp.get("modelSummaries", []):
+                            mid = m.get("modelId", "")
+                            if m.get("modelLifecycleStatus") == "ACTIVE" and "claude" in mid.lower():
+                                available.append(mid)
+                    except Exception:
+                        pass
+
+                    hint = ""
+                    if available:
+                        hint = " Available Claude models: " + ", ".join(available[:5])
+                    return None, elapsed, (
+                        f"AWS credentials valid (account {account}), but model '{test_model}' "
+                        f"is not available in {region}.{hint} "
+                        f"Select a valid model ID in Settings or use the model dropdown."
+                    )
+                elif code == "AccessDeniedException":
+                    return None, elapsed, (
+                        f"AWS credentials valid (account {account}), but access denied for model '{test_model}'. "
+                        f"Enable the model in the AWS Bedrock console for region {region}."
+                    )
+                else:
+                    return None, elapsed, f"Bedrock error ({code}): {msg}"
+            except Exception as e:
+                elapsed = round((time.monotonic() - start) * 1000)
+                return None, elapsed, f"Bedrock test failed: {e}"
+
+        try:
+            response, elapsed_ms, error = await asyncio.to_thread(_bedrock_test)
+            if error:
+                return await _save_and_return(db, {
+                    "success": False,
+                    "provider": provider_ui,
+                    "model": model,
+                    "response_time_ms": elapsed_ms,
+                    "response_preview": "",
+                    "error": error,
+                })
+            return await _save_and_return(db, {
+                "success": True,
+                "provider": provider_ui,
+                "model": model,
+                "response_time_ms": elapsed_ms,
+                "response_preview": response[:500] if response else "",
+                "error": None,
+            })
+        except Exception as e:
+            return await _save_and_return(db, {
+                "success": False,
+                "provider": provider_ui,
+                "model": model,
+                "response_time_ms": 0,
+                "response_preview": "",
+                "error": str(e),
+            })
+
+    # --- Non-Bedrock providers: use LLMManager ---
     def _run_test():
         from core.llm_manager import LLMManager
         mgr = LLMManager(config)

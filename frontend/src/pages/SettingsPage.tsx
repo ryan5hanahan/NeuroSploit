@@ -212,6 +212,11 @@ export default function SettingsPage() {
   // Scan tuning
   const [defaultTimeout, setDefaultTimeout] = useState('30')
   const [maxRequestsPerSecond, setMaxRequestsPerSecond] = useState('10')
+  // Bug bounty credentials
+  const [hackeroneUsername, setHackeroneUsername] = useState('')
+  const [hackeroneApiToken, setHackeroneApiToken] = useState('')
+  const [h1TestResult, setH1TestResult] = useState<{ success: boolean; error?: string; message?: string } | null>(null)
+  const [isTestingH1, setIsTestingH1] = useState(false)
   // Vulnerability enrichment
   const [nvdApiKey, setNvdApiKey] = useState('')
   const [enableVulnEnrichment, setEnableVulnEnrichment] = useState(true)
@@ -371,6 +376,8 @@ export default function SettingsPage() {
           enable_tracing: enableTracing,
           enable_persistent_memory: enablePersistentMemory,
           enable_bugbounty_integration: enableBugbountyIntegration,
+          hackerone_username: hackeroneUsername || undefined,
+          hackerone_api_token: hackeroneApiToken || undefined,
           max_output_tokens: maxOutputTokens ? parseInt(maxOutputTokens) : null,
           // Cost tracking
           cost_budget_per_scan: parseFloat(costBudgetPerScan),
@@ -400,6 +407,9 @@ export default function SettingsPage() {
         setAwsSecretAccessKey('')
         setAwsSessionToken('')
         setNvdApiKey('')
+        setHackeroneUsername('')
+        setHackeroneApiToken('')
+        setH1TestResult(null)
         setMessage({ type: 'success', text: 'Settings saved successfully!' })
       } else {
         setMessage({ type: 'error', text: 'Failed to save settings' })
@@ -916,6 +926,52 @@ export default function SettingsPage() {
             </div>
             <ToggleSwitch enabled={enableBugbountyIntegration} onToggle={() => setEnableBugbountyIntegration(!enableBugbountyIntegration)} />
           </div>
+
+          {enableBugbountyIntegration && (
+            <div className="ml-8 p-4 bg-dark-800/50 border border-dark-700 rounded-lg space-y-4">
+              <Input
+                label="HackerOne Username"
+                placeholder={settings?.has_hackerone_config ? '••••••••••••••••' : 'your-h1-username'}
+                value={hackeroneUsername}
+                onChange={(e) => setHackeroneUsername(e.target.value)}
+                helperText={settings?.has_hackerone_config ? 'Username configured. Enter a new value to update.' : 'Your HackerOne username (for API authentication)'}
+              />
+              <Input
+                label="HackerOne API Token"
+                type="password"
+                placeholder={settings?.has_hackerone_config ? '••••••••••••••••' : 'Enter API token...'}
+                value={hackeroneApiToken}
+                onChange={(e) => setHackeroneApiToken(e.target.value)}
+                helperText={settings?.has_hackerone_config ? 'API token configured. Enter a new value to update.' : 'Generate at HackerOne Settings > API Token'}
+              />
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  setIsTestingH1(true)
+                  setH1TestResult(null)
+                  try {
+                    const response = await fetch('/api/v1/bugbounty/test-connection', { method: 'POST' })
+                    const data = await response.json()
+                    setH1TestResult(data)
+                  } catch {
+                    setH1TestResult({ success: false, error: 'Failed to reach backend' })
+                  } finally {
+                    setIsTestingH1(false)
+                  }
+                }}
+                isLoading={isTestingH1}
+                className="w-full"
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                {isTestingH1 ? 'Testing...' : 'Test HackerOne Connection'}
+              </Button>
+              {h1TestResult && (
+                <div className={`p-3 rounded-lg text-sm ${h1TestResult.success ? 'bg-green-500/15 border border-green-500/30 text-green-400' : 'bg-red-500/15 border border-red-500/30 text-red-400'}`}>
+                  {h1TestResult.success ? h1TestResult.message || 'Connection successful' : h1TestResult.error || 'Connection failed'}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between p-4 bg-dark-900/50 rounded-lg">
             <div className="flex items-center gap-3">
