@@ -64,6 +64,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Sandbox pool init skipped: {e}")
 
+    # Initialize bug bounty platform providers
+    try:
+        from backend.core.bugbounty.registry import init_platforms
+        init_platforms()
+        print("Bug bounty platforms initialized")
+    except Exception as e:
+        print(f"Bug bounty platform init skipped: {e}")
+
     # Start vulnerability enrichment worker
     try:
         from backend.services.vuln_enrichment import VulnEnrichmentService

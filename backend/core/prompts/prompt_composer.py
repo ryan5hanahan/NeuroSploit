@@ -31,6 +31,7 @@ def compose_agent_system_prompt(
     auth_context: str = "",
     additional_targets: Optional[List[str]] = None,
     subdomain_discovery: bool = False,
+    bugbounty_instructions: str = "",
 ) -> str:
     """Compose the full system prompt for the LLM-driven agent.
 
@@ -116,8 +117,18 @@ def compose_agent_system_prompt(
             "Add discovered subdomains to your target list."
         )
 
-    # Append execution guidance, auth context, subdomain section, and budget warning
-    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{subdomain_section}{budget_warning}"
+    # Bug bounty program rules section
+    bugbounty_section = ""
+    if bugbounty_instructions:
+        bugbounty_section = (
+            "\n\n### Bug Bounty Program Rules\n"
+            "**MANDATORY**: You are testing under a bug bounty program. "
+            "Follow these rules strictly — violations may result in account ban.\n\n"
+            f"{bugbounty_instructions}"
+        )
+
+    # Append execution guidance, auth context, subdomain section, bug bounty, and budget warning
+    full_prompt = f"{system_prompt}\n\n---\n\n{execution_template}{auth_section}{subdomain_section}{bugbounty_section}{budget_warning}"
 
     return full_prompt
 

@@ -131,6 +131,19 @@ class Governance:
     def is_url_in_scope(self, url: str) -> bool:
         return self._scope_agent.is_url_in_scope(url)
 
+    def check_finding_severity(self, severity: str, target_url: str) -> tuple:
+        """Check severity against per-asset max_severity limit (bug bounty).
+
+        Returns (within_limit, effective_severity).
+        """
+        within_limit, effective_sev = self._scope_agent.check_finding_severity(severity, target_url)
+        if not within_limit:
+            self._record_scope_violation(
+                "check_finding_severity",
+                f"Severity capped: {severity} -> {effective_sev} for {target_url}",
+            )
+        return within_limit, effective_sev
+
     # ------------------------------------------------------------------
     # Phase-action layer delegation (GovernanceGate)
     # ------------------------------------------------------------------
@@ -259,6 +272,7 @@ _SCOPE_FACTORIES = {
     "full_auto": lambda url, vt: create_full_auto_scope(url),
     "ctf": lambda url, vt: create_ctf_scope(url),
     "recon_only": lambda url, vt: create_recon_only_scope(url),
+    # bug_bounty scopes are built via governance_bridge, not this factory
 }
 
 

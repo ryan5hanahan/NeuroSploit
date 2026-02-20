@@ -782,6 +782,11 @@ export const bugBountyApi = {
     const response = await api.get(`/bugbounty/submissions${params}`)
     return response.data
   },
+
+  listPlatforms: async (): Promise<{ platforms: Array<{ name: string; enabled: boolean }> }> => {
+    const response = await api.get('/bugbounty/platforms')
+    return response.data
+  },
 }
 
 export const governanceApi = {

@@ -62,6 +62,36 @@ class HackerOneClient:
             logger.warning(f"HackerOne API error: {e}")
             return None
 
+    async def _get_all(
+        self,
+        path: str,
+        session: aiohttp.ClientSession,
+        params: Optional[Dict] = None,
+        max_pages: int = 10,
+    ) -> List[Dict]:
+        """Paginated fetch — collects all items across pages.
+
+        Fixes the 100-item truncation bug in the original single-page fetch.
+        """
+        all_items: List[Dict] = []
+        params = dict(params or {})
+        params.setdefault("page[size]", 100)
+
+        for page in range(1, max_pages + 1):
+            params["page[number]"] = page
+            data = await self._get(path, session, params)
+            if not data:
+                break
+            items = data.get("data", [])
+            if not items:
+                break
+            all_items.extend(items)
+            # Stop if no next page link
+            if not data.get("links", {}).get("next"):
+                break
+
+        return all_items
+
     async def test_connection(self, session: aiohttp.ClientSession) -> Dict[str, Any]:
         """Lightweight connectivity check — fetches one program to verify credentials."""
         if not self.enabled:
@@ -101,12 +131,40 @@ class HackerOneClient:
         return programs
 
     async def get_program(self, handle: str, session: aiohttp.ClientSession) -> Optional[Dict]:
-        """Get program info by handle (e.g., 'security')."""
+        """Get program info by handle (e.g., 'security').
+
+        Enriched fields: safe_harbor, open_scope, program_weaknesses (CWE IDs).
+        """
         data = await self._get(f"/hackers/programs/{handle}", session)
         if not data:
             return None
 
-        attrs = data.get("data", {}).get("attributes", {})
+        item = data.get("data", {})
+        attrs = item.get("attributes", {})
+
+        # Extract safe harbor status
+        safe_harbor = ""
+        if attrs.get("gold_standard_safe_harbor_enabled"):
+            safe_harbor = "full"
+        elif attrs.get("safe_harbor_enabled"):
+            safe_harbor = "partial"
+
+        # Extract program weaknesses (CWE IDs) from relationships
+        program_weaknesses: List[str] = []
+        try:
+            weaknesses_data = (
+                item.get("relationships", {})
+                .get("weaknesses", {})
+                .get("data", [])
+            )
+            for w in weaknesses_data:
+                w_attrs = w.get("attributes", {})
+                cwe_id = w_attrs.get("external_id", "")
+                if cwe_id:
+                    program_weaknesses.append(cwe_id)
+        except Exception:
+            pass
+
         return {
             "handle": handle,
             "name": attrs.get("name"),
@@ -115,22 +173,26 @@ class HackerOneClient:
             "submission_state": attrs.get("submission_state"),
             "started_accepting_at": attrs.get("started_accepting_at"),
             "offers_bounties": attrs.get("offers_bounties"),
+            "safe_harbor": safe_harbor,
+            "open_scope": attrs.get("open_scope", False),
+            "program_weaknesses": program_weaknesses,
         }
 
     async def get_scope(self, handle: str, session: aiohttp.ClientSession) -> Dict[str, List]:
-        """Get program scope (in-scope and out-of-scope assets)."""
-        data = await self._get(
+        """Get program scope (in-scope and out-of-scope assets).
+
+        Uses paginated fetch (_get_all) to collect all scope items.
+        Enriched fields: confidentiality/integrity/availability requirements.
+        """
+        items = await self._get_all(
             f"/hackers/programs/{handle}/structured_scopes",
             session,
-            params={"page[size]": 100},
         )
-        if not data:
-            return {"in_scope": [], "out_of_scope": []}
 
         in_scope = []
         out_of_scope = []
 
-        for item in data.get("data", []):
+        for item in items:
             attrs = item.get("attributes", {})
             asset = {
                 "asset_identifier": attrs.get("asset_identifier", ""),
@@ -139,6 +201,10 @@ class HackerOneClient:
                 "eligible_for_submission": attrs.get("eligible_for_submission", True),
                 "instruction": attrs.get("instruction", ""),
                 "max_severity": attrs.get("max_severity", ""),
+                "confidentiality_requirement": attrs.get("confidentiality_requirement", ""),
+                "integrity_requirement": attrs.get("integrity_requirement", ""),
+                "availability_requirement": attrs.get("availability_requirement", ""),
+                "reference": attrs.get("reference", ""),
             }
 
             if attrs.get("eligible_for_submission", True):

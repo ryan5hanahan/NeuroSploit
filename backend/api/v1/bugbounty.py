@@ -93,6 +93,22 @@ class DraftReportRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@router.get("/platforms")
+async def list_platforms():
+    """List registered bug bounty platforms and their enabled status."""
+    from backend.core.bugbounty.registry import get_platform_registry
+
+    registry = get_platform_registry()
+    platforms = []
+    for name in registry.list_platforms():
+        provider = registry.get(name)
+        platforms.append({
+            "name": name,
+            "enabled": provider.enabled if provider else False,
+        })
+    return {"platforms": platforms}
+
+
 @router.post("/test-connection")
 async def test_connection():
     """Verify HackerOne credentials by making a lightweight API call."""

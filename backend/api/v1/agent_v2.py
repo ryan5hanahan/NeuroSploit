@@ -81,6 +81,14 @@ class AgentV2StartRequest(BaseModel):
         default=None,
         description="Task library ID — loads task prompt as objective",
     )
+    bugbounty_platform: Optional[str] = Field(
+        default=None,
+        description="Bug bounty platform (e.g. 'hackerone')",
+    )
+    bugbounty_program: Optional[str] = Field(
+        default=None,
+        description="Bug bounty program handle (e.g. 'security')",
+    )
 
 
 class AgentV2StartResponse(BaseModel):
@@ -270,16 +278,59 @@ async def start_agent(request: AgentV2StartRequest):
     if request.additional_targets:
         all_targets.extend(request.additional_targets)
 
-    # Create governance scope
-    scope_factories = {
-        "full_auto": lambda: create_full_auto_scope(all_targets),
-        "ctf": lambda: create_ctf_scope(all_targets),
-        "recon_only": lambda: create_recon_only_scope(all_targets),
-        "vuln_lab": lambda: create_vuln_lab_scope(request.target, "all"),
-    }
-    scope_factory = scope_factories.get(request.scope_profile, scope_factories["full_auto"])
-    scope = scope_factory()
-    governance = GovernanceAgent(scope)
+    # Create governance scope — bug bounty path or standard factories
+    bugbounty_context = None
+    if request.bugbounty_platform and request.bugbounty_program:
+        # Bug bounty scope: fetch program + scope from platform, build governance scope
+        try:
+            import aiohttp as _aiohttp
+            from backend.core.bugbounty.registry import get_platform_registry
+            from backend.core.bugbounty.governance_bridge import build_scan_scope_from_program
+
+            registry = get_platform_registry()
+            provider = registry.get(request.bugbounty_platform)
+            if not provider:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown bug bounty platform: {request.bugbounty_platform}",
+                )
+            if not provider.enabled:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Platform '{request.bugbounty_platform}' credentials not configured",
+                )
+
+            async with _aiohttp.ClientSession() as bb_session:
+                program = await provider.get_program(request.bugbounty_program, bb_session)
+                if not program:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Program '{request.bugbounty_program}' not found on {request.bugbounty_platform}",
+                    )
+                program_scope = await provider.get_scope(request.bugbounty_program, bb_session)
+
+            scope, bugbounty_context = build_scan_scope_from_program(
+                program, program_scope, request.target,
+            )
+            governance = GovernanceAgent(scope)
+            logger.info(
+                f"Bug bounty scope built for {request.bugbounty_platform}/{request.bugbounty_program}"
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Bug bounty scope creation failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Bug bounty scope creation failed: {e}")
+    else:
+        scope_factories = {
+            "full_auto": lambda: create_full_auto_scope(all_targets),
+            "ctf": lambda: create_ctf_scope(all_targets),
+            "recon_only": lambda: create_recon_only_scope(all_targets),
+            "vuln_lab": lambda: create_vuln_lab_scope(request.target, "all"),
+        }
+        scope_factory = scope_factories.get(request.scope_profile, scope_factories["full_auto"])
+        scope = scope_factory()
+        governance = GovernanceAgent(scope)
 
     # Create event callback for WebSocket broadcasting
     async def on_event(event_type: str, data: dict):
@@ -312,6 +363,7 @@ async def start_agent(request: AgentV2StartRequest):
         custom_headers=request.custom_headers,
         additional_targets=request.additional_targets,
         subdomain_discovery=request.subdomain_discovery,
+        bugbounty_context=bugbounty_context,
     )
 
     operation_id = agent.operation_id

@@ -2,18 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Target, Globe, BookOpen, ChevronDown, ChevronUp, Shield,
-  Sliders,
+  Sliders, Bug,
 } from 'lucide-react'
 import Button from '../common/Button'
 import Input from '../common/Input'
 import Textarea from '../common/Textarea'
 import AuthInputSection, { AuthState } from '../AuthInputSection'
 import CredentialSetsPanel, { CredentialSetEntry } from '../CredentialSetsPanel'
-import { agentV2Api } from '../../services/api'
-import type { AgentTask } from '../../types'
+import { agentV2Api, bugBountyApi } from '../../services/api'
+import type { AgentTask, BugBountyProgram, BugBountyScope } from '../../types'
 
 const SCOPE_OPTIONS = [
   { value: 'full_auto', label: 'Full Auto' },
+  { value: 'bug_bounty', label: 'Bug Bounty' },
   { value: 'vuln_lab', label: 'Vuln Lab' },
   { value: 'ctf', label: 'CTF' },
   { value: 'recon_only', label: 'Recon Only' },
@@ -61,6 +62,15 @@ export default function NewOperationForm() {
   const [auth, setAuth] = useState<AuthState>({ authType: 'none', authValue: '', username: '', password: '' })
   const [credentialSets, setCredentialSets] = useState<CredentialSetEntry[]>([])
 
+  // Bug Bounty
+  const [showBugBounty, setShowBugBounty] = useState(false)
+  const [bbPlatforms, setBbPlatforms] = useState<Array<{ name: string; enabled: boolean }>>([])
+  const [bbPlatform, setBbPlatform] = useState('')
+  const [bbPrograms, setBbPrograms] = useState<BugBountyProgram[]>([])
+  const [bbProgram, setBbProgram] = useState('')
+  const [bbScope, setBbScope] = useState<BugBountyScope | null>(null)
+  const [bbLoading, setBbLoading] = useState(false)
+
   // Advanced
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [maxSteps, setMaxSteps] = useState(100)
@@ -82,6 +92,50 @@ export default function NewOperationForm() {
   useEffect(() => {
     if (showTaskLibrary) fetchTasks(taskCategory)
   }, [showTaskLibrary, taskCategory, fetchTasks])
+
+  // Fetch platforms when bug bounty section opens
+  useEffect(() => {
+    if (showBugBounty && bbPlatforms.length === 0) {
+      bugBountyApi.listPlatforms()
+        .then((data) => setBbPlatforms(data.platforms))
+        .catch(() => setBbPlatforms([]))
+    }
+  }, [showBugBounty, bbPlatforms.length])
+
+  // Fetch programs when platform is selected
+  useEffect(() => {
+    if (bbPlatform) {
+      setBbLoading(true)
+      bugBountyApi.listPrograms()
+        .then((data) => setBbPrograms(data.programs))
+        .catch(() => setBbPrograms([]))
+        .finally(() => setBbLoading(false))
+    } else {
+      setBbPrograms([])
+      setBbProgram('')
+      setBbScope(null)
+    }
+  }, [bbPlatform])
+
+  // Fetch scope when program is selected
+  useEffect(() => {
+    if (bbProgram) {
+      setBbLoading(true)
+      bugBountyApi.getProgramScope(bbProgram)
+        .then((data) => setBbScope(data))
+        .catch(() => setBbScope(null))
+        .finally(() => setBbLoading(false))
+    } else {
+      setBbScope(null)
+    }
+  }, [bbProgram])
+
+  // Auto-switch scope profile when bug bounty program is selected
+  useEffect(() => {
+    if (bbPlatform && bbProgram) {
+      setScopeProfile('bug_bounty')
+    }
+  }, [bbPlatform, bbProgram])
 
   const handleTaskSelect = (task: AgentTask) => {
     setSelectedTask(task)
@@ -133,6 +187,8 @@ export default function NewOperationForm() {
         auth_credentials,
         credential_sets,
         task_id: selectedTask?.id,
+        bugbounty_platform: bbPlatform || undefined,
+        bugbounty_program: bbProgram || undefined,
       })
       navigate(`/agent/${resp.operation_id}`)
     } catch (err: any) {
@@ -312,7 +368,86 @@ export default function NewOperationForm() {
         )}
       </div>
 
-      {/* Section 3: Authentication (accordion) */}
+      {/* Section 3: Bug Bounty Program (accordion) */}
+      <div className="border border-dark-700 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowBugBounty(!showBugBounty)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-dark-900/50 hover:bg-dark-900 transition-colors text-left"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium text-dark-200">
+            <Bug className="w-4 h-4" />
+            Bug Bounty Program
+            {bbProgram && (
+              <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
+                {bbProgram}
+              </span>
+            )}
+          </span>
+          {showBugBounty ? <ChevronUp className="w-4 h-4 text-dark-400" /> : <ChevronDown className="w-4 h-4 text-dark-400" />}
+        </button>
+
+        {showBugBounty && (
+          <div className="p-4 space-y-3 border-t border-dark-700">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-dark-200 mb-1.5">Platform</label>
+                <select
+                  value={bbPlatform}
+                  onChange={(e) => { setBbPlatform(e.target.value); setBbProgram(''); setBbScope(null) }}
+                  className="w-full px-4 py-2.5 bg-dark-900 border border-dark-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select platform...</option>
+                  {bbPlatforms.map((p) => (
+                    <option key={p.name} value={p.name} disabled={!p.enabled}>
+                      {p.name}{!p.enabled ? ' (not configured)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-200 mb-1.5">Program</label>
+                <select
+                  value={bbProgram}
+                  onChange={(e) => setBbProgram(e.target.value)}
+                  disabled={!bbPlatform || bbLoading}
+                  className="w-full px-4 py-2.5 bg-dark-900 border border-dark-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+                >
+                  <option value="">{bbLoading ? 'Loading...' : 'Select program...'}</option>
+                  {bbPrograms.map((p) => (
+                    <option key={p.handle} value={p.handle}>{p.name || p.handle}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {bbScope && (
+              <div className="p-3 bg-dark-800 rounded-lg border border-dark-700 space-y-2">
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-green-400">In-scope: {bbScope.in_scope_count}</span>
+                  <span className="text-red-400">Out-of-scope: {bbScope.out_of_scope_count}</span>
+                  <span className="text-yellow-400">Bounty eligible: {bbScope.bounty_eligible_count}</span>
+                </div>
+                {bbScope.bounty_eligible_domains && bbScope.bounty_eligible_domains.length > 0 && (
+                  <div className="text-xs text-dark-400">
+                    Domains: {bbScope.bounty_eligible_domains.slice(0, 5).join(', ')}
+                    {bbScope.bounty_eligible_domains.length > 5 && ` +${bbScope.bounty_eligible_domains.length - 5} more`}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {bbPlatform && bbProgram && (
+              <p className="text-xs text-dark-400">
+                Scope profile auto-set to Bug Bounty. Agent will respect program scope, per-asset severity limits, and testing instructions.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Section 4: Authentication (accordion) */}
       <div className="border border-dark-700 rounded-lg overflow-hidden">
         <button
           type="button"

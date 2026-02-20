@@ -355,6 +355,16 @@ class ToolExecutor:
                     is_error=True,
                 )
 
+        # Max severity enforcement for bug bounty programs
+        if tool_call.name == "report_finding" and self.governance:
+            if hasattr(self.governance, 'check_finding_severity'):
+                sev = tool_call.arguments.get("severity", "")
+                endpoint = tool_call.arguments.get("endpoint", self.context.target)
+                within_limit, effective_sev = self.governance.check_finding_severity(sev, endpoint)
+                if not within_limit:
+                    tool_call.arguments["_original_severity"] = sev
+                    tool_call.arguments["severity"] = effective_sev
+
         # Find handler
         handler = self._handlers.get(tool_call.name)
         if not handler:
@@ -545,6 +555,15 @@ async def handle_report_finding(args: Dict[str, Any], context: ExecutionContext)
         f"Finding #{len(context.findings)} recorded: {args['title']} "
         f"(severity: {severity}, status: {validation_status}). Saved to {finding_file}"
     )
+
+    # Note severity cap if bug bounty program enforced it
+    original_severity = args.get("_original_severity")
+    if original_severity and original_severity != severity:
+        result += (
+            f" NOTE: Severity capped from {original_severity} to {severity} "
+            f"per bug bounty program's per-asset max_severity limit."
+        )
+
     return result + proof_warning
 
 

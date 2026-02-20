@@ -75,6 +75,7 @@ class ScopeProfile(str, Enum):
     FULL_AUTO = "full_auto"
     RECON_ONLY = "recon_only"
     CTF = "ctf"
+    BUG_BOUNTY = "bug_bounty"
     CUSTOM = "custom"
 
 
@@ -91,6 +92,7 @@ class ScanScope:
     nuclei_template_tags: Optional[str] = None
     include_subdomains: bool = True      # *.example.com in scope if example.com allowed
     allowed_cidrs: FrozenSet[str] = frozenset()  # CIDR ranges (e.g. "192.168.1.0/24")
+    bugbounty_context: Any = None  # Optional BugBountyContext (not frozen — dataclass ref)
 
 
 @dataclass
@@ -251,6 +253,30 @@ class GovernanceAgent:
             return False
         except Exception:
             return False
+
+    def check_finding_severity(self, severity: str, target_url: str) -> tuple:
+        """Check if a finding severity is within per-asset max_severity limit.
+
+        Only active for BUG_BOUNTY scope profiles with bugbounty_context.
+
+        Returns:
+            (within_limit: bool, effective_severity: str)
+        """
+        if not self.scope.bugbounty_context:
+            return True, severity
+
+        from backend.core.bugbounty.governance_bridge import check_severity_against_limit
+        within_limit, effective_sev = check_severity_against_limit(
+            severity,
+            target_url,
+            self.scope.bugbounty_context.asset_severity_limits,
+        )
+        if not within_limit:
+            self._record(
+                "check_finding_severity",
+                f"Severity capped: {severity} -> {effective_sev} for {target_url}",
+            )
+        return within_limit, effective_sev
 
     # ------------------------------------------------------------------
     # Audit / reporting

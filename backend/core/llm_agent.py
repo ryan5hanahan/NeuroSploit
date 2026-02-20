@@ -108,9 +108,11 @@ class LLMDrivenAgent:
         custom_headers: Optional[Dict[str, str]] = None,
         additional_targets: Optional[List[str]] = None,
         subdomain_discovery: bool = False,
+        bugbounty_context=None,
     ):
         self.target = target
         self.objective = objective
+        self.bugbounty_context = bugbounty_context
         self.max_steps = max_steps
         self.additional_targets = additional_targets or []
         self.subdomain_discovery = subdomain_discovery
@@ -406,6 +408,11 @@ class LLMDrivenAgent:
                 header_names = ", ".join(self.context.custom_headers.keys())
                 auth_context += f"\nCustom headers also injected: {header_names}"
 
+            # Extract bug bounty testing instructions
+            bugbounty_instructions = ""
+            if self.bugbounty_context and hasattr(self.bugbounty_context, "testing_instructions"):
+                bugbounty_instructions = self.bugbounty_context.testing_instructions
+
             # Compose fresh system prompt with current state
             system_prompt = compose_agent_system_prompt(
                 target=self.target,
@@ -418,6 +425,7 @@ class LLMDrivenAgent:
                 auth_context=auth_context,
                 additional_targets=self.additional_targets,
                 subdomain_discovery=self.subdomain_discovery,
+                bugbounty_instructions=bugbounty_instructions,
             )
 
             # Snapshot findings count before this step (for decision records)

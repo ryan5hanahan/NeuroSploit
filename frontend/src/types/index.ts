@@ -701,6 +701,8 @@ export interface AgentV2StartRequest {
   credential_sets?: AgentV2CredentialSet[]
   custom_headers?: Record<string, string>
   task_id?: string
+  bugbounty_platform?: string
+  bugbounty_program?: string
 }
 
 export interface AgentV2StartResponse {
