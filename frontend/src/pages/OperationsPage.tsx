@@ -433,6 +433,14 @@ export default function OperationsPage() {
                   </div>
                 </div>
 
+                {/* Cost */}
+                {op.total_cost_usd != null && op.total_cost_usd > 0 && (
+                  <div className="flex-shrink-0 text-right w-20">
+                    <p className="text-purple-400 font-bold">${op.total_cost_usd.toFixed(4)}</p>
+                    <p className="text-xs text-dark-500">cost</p>
+                  </div>
+                )}
+
                 {/* Findings count */}
                 <div className="flex-shrink-0 text-right w-16">
                   <p className="text-white font-bold">{op.findings_count}</p>

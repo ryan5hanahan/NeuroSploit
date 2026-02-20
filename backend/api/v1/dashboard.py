@@ -86,12 +86,6 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         )
         findings_by_day.append(day_result.scalar() or 0)
 
-    # Total cost from agent operations
-    cost_result = await db.execute(
-        select(func.coalesce(func.sum(AgentOperation.total_cost_usd), 0.0))
-    )
-    total_cost = cost_result.scalar() or 0.0
-
     # Agent operation counts
     agent_running_result = await db.execute(
         select(func.count()).select_from(AgentOperation).where(AgentOperation.status == "running")
@@ -109,6 +103,31 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         )
     )
     agent_stopped = agent_stopped_result.scalar() or 0
+
+    # Cost aggregation from AgentOperation table (LLM-driven agent)
+    op_cost_result = await db.execute(
+        select(
+            func.coalesce(func.sum(AgentOperation.total_cost_usd), 0),
+            func.coalesce(func.sum(AgentOperation.total_tokens), 0),
+        ).select_from(AgentOperation)
+    )
+    op_cost_row = op_cost_result.one()
+    op_total_cost = float(op_cost_row[0])
+    op_total_tokens = int(op_cost_row[1])
+
+    # Cost aggregation from Scan table (AutonomousAgent)
+    scan_cost_result = await db.execute(
+        select(
+            func.coalesce(func.sum(Scan.total_cost_usd), 0),
+            func.coalesce(func.sum(Scan.total_tokens), 0),
+        ).select_from(Scan)
+    )
+    scan_cost_row = scan_cost_result.one()
+    scan_total_cost = float(scan_cost_row[0])
+    scan_total_tokens = int(scan_cost_row[1])
+
+    total_cost = op_total_cost + scan_total_cost
+    total_tokens = op_total_tokens + scan_total_tokens
 
     return {
         "scans": {
@@ -142,6 +161,12 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             "findings_by_day": findings_by_day,
             "net_new_findings": sum(findings_by_day),
             "total_cost_usd": round(total_cost, 4),
+        },
+        "costs": {
+            "total_cost_usd": round(total_cost, 6),
+            "total_tokens": total_tokens,
+            "scan_cost_usd": round(scan_total_cost, 6),
+            "operation_cost_usd": round(op_total_cost, 6),
         }
     }
 

@@ -630,6 +630,11 @@ async def list_operations():
 
     for op_id, agent in _running_agents.items():
         seen_ids.add(op_id)
+        live_cost = 0.0
+        try:
+            live_cost = agent.llm.cost_tracker.report().get("total_cost_usd", 0)
+        except Exception:
+            pass
         operations.append({
             "operation_id": op_id,
             "status": "running",
@@ -638,11 +643,16 @@ async def list_operations():
             "steps_used": agent.context.current_step,
             "max_steps": agent.max_steps,
             "findings_count": len(agent.context.findings),
+            "total_cost_usd": live_cost,
         })
 
     for op_id, result in _agent_results.items():
         if op_id not in seen_ids:
             seen_ids.add(op_id)
+            result_cost = 0.0
+            cr = result.get("cost_report")
+            if cr:
+                result_cost = cr.get("total_cost_usd", 0)
             operations.append({
                 "operation_id": op_id,
                 "status": result.get("status", "unknown"),
@@ -651,6 +661,7 @@ async def list_operations():
                 "steps_used": result.get("steps_used", 0),
                 "max_steps": result.get("max_steps", 0),
                 "findings_count": result.get("findings_count", 0),
+                "total_cost_usd": result_cost,
             })
 
     # DB fallback — include operations not in memory
@@ -676,6 +687,7 @@ async def list_operations():
                         "steps_used": op.steps_used or 0,
                         "max_steps": op.max_steps or 0,
                         "findings_count": op.findings_count or 0,
+                        "total_cost_usd": op.total_cost_usd or 0.0,
                     })
     except Exception as e:
         logger.error(f"DB fallback failed for list_operations: {e}")

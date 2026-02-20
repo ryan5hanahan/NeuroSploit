@@ -147,6 +147,16 @@ export interface DashboardStats {
   endpoints: {
     total: number
   }
+  operations?: {
+    total: number
+    running: number
+  }
+  costs?: {
+    total_cost_usd: number
+    total_tokens: number
+    scan_cost_usd: number
+    operation_cost_usd: number
+  }
 }
 
 // WebSocket message types
@@ -798,6 +808,7 @@ export interface AgentV2OperationSummary {
   steps_used: number
   max_steps: number
   findings_count: number
+  total_cost_usd?: number
 }
 
 export interface AgentV2WSStep {
