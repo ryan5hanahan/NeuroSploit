@@ -18,13 +18,13 @@ sploit.ai v3 is a security assessment platform built around a single LLM-driven 
 
 ## Provenance
 
-sploit.ai is a fork of [**NeuroSploit**](https://github.com/CyberSecurityUP/NeuroSploit) by **Joas Antonio dos Santos** (CyberSecurityUP). The original project was created on **August 17, 2025** and reached **v3.1** with 57 commits by February 11, 2026.
+sploit.ai is a fork of [**NeuroSploit**](https://github.com/CyberSecurityUP/NeuroSploit) by **Joas Antonio dos Santos** (CyberSecurityUP). The original project was created on **August 17, 2025** and reached **v3.0** by February 2026.
 
-This fork was created on **February 13, 2026** from the v3.1 state. Since then, **148 commits** across **25 pull requests** have been made over 9 days, changing **331 files** with **56,675 insertions** and **13,503 deletions** (~43,000 net new lines of code). The codebase was rebranded from NeuroSploit to **sploit.ai**.
+This fork was created on **February 13, 2026** from the v3.0 release. Since then, **148 commits** across **25 pull requests** have been made, changing **331 files** with **56,675 insertions** and **13,503 deletions** (~43,000 net new lines of code). The codebase was rebranded from NeuroSploit to **sploit.ai**.
 
 The two codebases have fully diverged and are not merge-compatible.
 
-### What the Original NeuroSploit v3.1 Shipped
+### What the Original NeuroSploit v3.0 Shipped
 
 The upstream project provided a working foundation:
 
