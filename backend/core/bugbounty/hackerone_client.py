@@ -215,6 +215,67 @@ class HackerOneClient:
         logger.info(f"HackerOne scope for {handle}: {len(in_scope)} in, {len(out_of_scope)} out")
         return {"in_scope": in_scope, "out_of_scope": out_of_scope}
 
+    async def create_report(
+        self,
+        program_handle: str,
+        report_data: Dict[str, Any],
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> Dict[str, Any]:
+        """Submit a report to HackerOne.
+
+        SAFETY: This method only sends pre-approved drafts. The
+        SubmissionPipeline ensures human approval before calling this.
+
+        Args:
+            program_handle: The H1 program handle (e.g., "security").
+            report_data: Dict with keys matching H1 POST /reports schema:
+                title, vulnerability_information, impact, severity_rating,
+                weakness_id.
+            session: Optional aiohttp session; caller must provide one.
+
+        Returns:
+            Dict with "id" of the created report on success.
+
+        Raises:
+            ValueError: If no session or credentials are available.
+            aiohttp.ClientError: On HTTP transport failures.
+        """
+        if not self.enabled:
+            raise ValueError("HackerOne credentials not configured")
+        if session is None:
+            raise ValueError("An aiohttp.ClientSession is required for submission")
+
+        payload = {
+            "data": {
+                "type": "report",
+                "attributes": {
+                    "team_handle": program_handle,
+                    "title": report_data.get("title", ""),
+                    "vulnerability_information": report_data.get("vulnerability_information", ""),
+                    "impact": report_data.get("impact", ""),
+                    "severity_rating": report_data.get("severity_rating", "none"),
+                    "weakness_id": report_data.get("weakness_id", ""),
+                },
+            }
+        }
+
+        url = f"{self.BASE_URL}/hackers/reports"
+        async with session.post(
+            url,
+            headers=self._headers(),
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status in (200, 201):
+                data = await resp.json()
+                report_id = data.get("data", {}).get("id", "")
+                logger.info(f"Report created on H1: {report_id} for {program_handle}")
+                return {"id": report_id, "status": "new", "data": data}
+            body = await resp.text()
+            raise aiohttp.ClientError(
+                f"HackerOne report creation failed ({resp.status}): {body}"
+            )
+
     async def get_reports(
         self, handle: str, session: aiohttp.ClientSession, limit: int = 50
     ) -> List[Dict]:

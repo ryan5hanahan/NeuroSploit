@@ -33,7 +33,20 @@ weasyprint>=60.0; platform_system != "Windows"
 # Scheduling
 apscheduler>=3.10.0
 
+# Browser stealth (optional, guarded by try/except)
+playwright-stealth>=1.0.0
+
+# YAML support (techniques library)
+pyyaml>=6.0
+
+# Browser stealth (optional, guarded by try/except)
+playwright-stealth>=1.0.0
+
+# YAML support
+pyyaml>=6.0.0
+
 # Development
 httpx>=0.26.0
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0

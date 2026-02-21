@@ -58,6 +58,7 @@ results/
 reports/
 data/
 models/
+benchmark/results/
 !vendor/
 
 # Database

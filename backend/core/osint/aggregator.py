@@ -22,6 +22,8 @@ from backend.core.osint.dehashed import DehashedClient
 from backend.core.osint.hibp import HIBPClient
 from backend.core.osint.grayhat_warfare import GrayhatWarfareClient
 from backend.core.osint.publicwww import PublicWWWClient
+from backend.core.osint.vulners_client import VulnersClient
+from backend.core.osint.google_dorking import GoogleDorkClient
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,15 @@ class OSINTAggregator:
         publicwww_key = os.getenv("PUBLICWWW_API_KEY", "")
         if publicwww_key:
             self.clients.append(PublicWWWClient(publicwww_key))
+
+        vulners_key = os.getenv("VULNERS_API_KEY", "")
+        if vulners_key:
+            self.clients.append(VulnersClient(vulners_key))
+
+        google_cse_key = os.getenv("GOOGLE_CSE_API_KEY", "")
+        google_cse_cx = os.getenv("GOOGLE_CSE_CX", "")
+        if google_cse_key:
+            self.clients.append(GoogleDorkClient(google_cse_key, google_cse_cx))
 
         if self.clients:
             names = [c.SERVICE_NAME for c in self.clients]

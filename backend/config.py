@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     ENABLE_PERSISTENT_MEMORY: bool = True
     ENABLE_TRACING: bool = False
     ENABLE_BUGBOUNTY_INTEGRATION: bool = False
+    ENABLE_AUTONOMOUS_MODE: bool = False
+    ENABLE_BROWSER_STEALTH: bool = True
+    ENABLE_TECHNIQUE_LIBRARY: bool = True
+    ENABLE_BUGBOUNTY_SUBMISSION: bool = False
+    BUGBOUNTY_AUTO_SUBMIT: bool = False
 
     # Bug Bounty API
     HACKERONE_API_TOKEN: Optional[str] = os.getenv("HACKERONE_API_TOKEN")
@@ -68,11 +73,44 @@ class Settings(BaseSettings):
     CENSYS_API_SECRET: Optional[str] = os.getenv("CENSYS_API_SECRET")
     VIRUSTOTAL_API_KEY: Optional[str] = os.getenv("VIRUSTOTAL_API_KEY")
     BUILTWITH_API_KEY: Optional[str] = os.getenv("BUILTWITH_API_KEY")
+    VULNERS_API_KEY: Optional[str] = os.getenv("VULNERS_API_KEY")
+    GOOGLE_CSE_API_KEY: Optional[str] = os.getenv("GOOGLE_CSE_API_KEY")
+    GOOGLE_CSE_CX: Optional[str] = os.getenv("GOOGLE_CSE_CX")
+
+    # Benchmark
+    BENCHMARK_RESULTS_DIR: str = "data/benchmark_results"
+
+    # Techniques Library
+    TECHNIQUE_CUSTOM_DIR: Optional[str] = None
 
     # Cost Tracking
     COST_BUDGET_PER_SCAN: float = 5.00
     COST_WARN_AT_PCT: float = 80.0
     ENABLE_COST_TRACKING: bool = True
+
+    # Benchmark
+    BENCHMARK_RESULTS_DIR: str = "data/benchmark_results"
+
+    # Autonomous Mode (Phase 2)
+    ENABLE_AUTONOMOUS_MODE: bool = False
+
+    # Browser Stealth (Phase 2)
+    ENABLE_BROWSER_STEALTH: bool = True
+
+    # Vulners API (Phase 2)
+    VULNERS_API_KEY: Optional[str] = os.getenv("VULNERS_API_KEY")
+
+    # Google Dorking (Phase 2)
+    GOOGLE_CSE_API_KEY: Optional[str] = os.getenv("GOOGLE_CSE_API_KEY")
+    GOOGLE_CSE_CX: Optional[str] = os.getenv("GOOGLE_CSE_CX")
+
+    # Bug Bounty Submission (Phase 3)
+    ENABLE_BUGBOUNTY_SUBMISSION: bool = False
+    BUGBOUNTY_AUTO_SUBMIT: bool = False
+
+    # Techniques Library (Phase 5)
+    ENABLE_TECHNIQUE_LIBRARY: bool = True
+    TECHNIQUE_CUSTOM_DIR: Optional[str] = None
 
     # Security Testing
     ENABLE_WAF_EVASION: bool = True

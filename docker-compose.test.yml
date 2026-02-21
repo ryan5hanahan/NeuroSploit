@@ -1,0 +1,64 @@
+# sploit.ai - Test Orchestration
+#
+# Unit tests (fast, no targets):
+#   docker compose -f docker-compose.test.yml run --rm test-runner tests/ -m "not integration and not benchmark"
+#
+# Integration tests (starts Juice Shop + DVWA):
+#   docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test-runner
+#
+# Benchmark suite:
+#   docker compose -f docker-compose.test.yml run --rm test-runner -m benchmark benchmark/
+
+services:
+  test-runner:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tests:/app/tests
+      - ./backend:/app/backend
+      - ./benchmark:/app/benchmark
+      - ./techniques:/app/techniques
+      - test-results:/app/results
+    environment:
+      - TESTING=true
+      - DATABASE_URL=sqlite+aiosqlite:///tmp/test.db
+      - JUICE_SHOP_URL=http://juice-shop:3000
+      - DVWA_URL=http://dvwa:80
+    networks:
+      - test-net
+    depends_on:
+      juice-shop:
+        condition: service_healthy
+      dvwa:
+        condition: service_healthy
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+
+networks:
+  test-net:
+    driver: bridge
+
+volumes:
+  test-results:

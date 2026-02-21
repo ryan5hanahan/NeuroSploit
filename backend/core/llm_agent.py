@@ -43,6 +43,8 @@ from backend.core.prompts.prompt_composer import (
     compose_agent_system_prompt,
     compose_reflection_prompt,
 )
+from backend.core.agent_interface import AgentInterface
+from backend.core.prompts.context_refresher import ContextRefresher
 from backend.core.tools.browser_tool import (
     close_browser_session,
     handle_browser_execute_js,
@@ -81,7 +83,7 @@ class AgentResult:
     error: str = ""
 
 
-class LLMDrivenAgent:
+class LLMDrivenAgent(AgentInterface):
     """LLM-driven autonomous pentesting agent.
 
     The LLM controls the entire execution loop:
@@ -111,11 +113,22 @@ class LLMDrivenAgent:
         additional_targets: Optional[List[str]] = None,
         subdomain_discovery: bool = False,
         bugbounty_context=None,
+        autonomous: bool = False,
     ):
         self.target = target
         self.objective = objective
         self.bugbounty_context = bugbounty_context
+        self.autonomous = autonomous
+
+        # Autonomous mode overrides
+        if autonomous:
+            max_steps = max(max_steps, 200)
+            self.skip_checkpoints = True
+        else:
+            self.skip_checkpoints = False
+
         self.max_steps = max_steps
+        self.scope_profile = "full_auto"
         self.additional_targets = additional_targets or []
         self.subdomain_discovery = subdomain_discovery
         self.operation_id = operation_id or str(uuid.uuid4())
@@ -215,6 +228,9 @@ class LLMDrivenAgent:
         self._paused = False
         self._pause_event = asyncio.Event()
         self._pause_event.set()  # Starts unpaused (event is set)
+
+        # Context refresher for dynamic prompt updates
+        self._context_refresher = ContextRefresher(refresh_interval=15)
 
         # Custom prompt injection queue
         self._prompt_queue: asyncio.Queue = asyncio.Queue()
@@ -546,8 +562,8 @@ class LLMDrivenAgent:
             )
             self.context.decision_records.append(decision)
 
-            # Check for checkpoint
-            if self.plan_manager.should_checkpoint(
+            # Check for checkpoint (skip in autonomous mode)
+            if not self.autonomous and self.plan_manager.should_checkpoint(
                 self.context.current_step, self.max_steps
             ):
                 reflection = compose_reflection_prompt(
@@ -565,6 +581,17 @@ class LLMDrivenAgent:
                     max_steps=self.max_steps,
                     findings_count=len(self.context.findings),
                 )
+
+            # Context refresher — inject updated findings/state every N steps
+            if self._context_refresher.should_refresh(self.context.current_step):
+                context_update = self._context_refresher.generate_context_update(
+                    current_step=self.context.current_step,
+                    max_steps=self.max_steps,
+                    findings=self.context.findings,
+                    plan_snapshot=self.plan_manager.get_snapshot(),
+                    memory_overview=self.memory.get_overview(max_entries=5),
+                )
+                conv.add_user(context_update)
 
             # Check if stop was called
             if self.context.is_stopped:
@@ -817,6 +844,24 @@ class LLMDrivenAgent:
         self._paused = False
         self._pause_event.set()
         logger.info(f"[Agent {self.operation_id[:8]}] Resume requested")
+
+    @property
+    def status(self) -> str:
+        """Current agent status."""
+        if self._cancelled:
+            return "cancelled"
+        if self._paused:
+            return "paused"
+        if self.context.is_stopped:
+            return "completed"
+        if self._start_time is not None:
+            return "running"
+        return "idle"
+
+    @property
+    def findings(self) -> list:
+        """Current list of findings."""
+        return self.context.findings
 
     def add_custom_prompt(self, prompt: str) -> None:
         """Queue a custom operator prompt for injection into the conversation."""

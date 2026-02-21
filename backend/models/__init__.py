@@ -13,6 +13,7 @@ from backend.models.trace import TraceSpan
 from backend.models.governance_violation import GovernanceViolationRecord
 from backend.models.governance_profile import GovernanceProfileRecord
 from backend.models.bugbounty_submission import BugBountySubmission
+from backend.models.bugbounty_outcome import BugBountyOutcome
 
 __all__ = [
     "Scan",
@@ -34,4 +35,5 @@ __all__ = [
     "GovernanceViolationRecord",
     "GovernanceProfileRecord",
     "BugBountySubmission",
+    "BugBountyOutcome",
 ]

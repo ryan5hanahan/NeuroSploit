@@ -177,11 +177,13 @@ class PayloadGenerator:
     - Context-aware payload selection (WAF bypass, encoding)
     - Dynamic payload generation based on target info
     - PATT (PayloadsAllTheThings) integration for extended payloads
+    - YAML technique library integration for user-extensible payloads
     """
 
     def __init__(self):
         self.payload_libraries = self._load_payload_libraries()
         self._patt = None
+        self._technique_loader = None
 
     @property
     def patt(self):
@@ -197,6 +199,24 @@ class PayloadGenerator:
                     def get_payloads(self, _): return []
                 self._patt = _Stub()
         return self._patt
+
+    @property
+    def technique_loader(self):
+        """Lazy-loaded TechniqueLoader instance for YAML technique library."""
+        if self._technique_loader is None:
+            try:
+                from techniques.loader import TechniqueLoader
+                from backend.config import settings
+                custom_dir = getattr(settings, "TECHNIQUE_CUSTOM_DIR", None)
+                enabled = getattr(settings, "ENABLE_TECHNIQUE_LIBRARY", True)
+                if enabled:
+                    self._technique_loader = TechniqueLoader(custom_dir=custom_dir)
+                else:
+                    self._technique_loader = None
+            except ImportError:
+                logger.debug("Technique library not available")
+                self._technique_loader = None
+        return self._technique_loader
 
     def _load_payload_libraries(self) -> Dict[str, List[str]]:
         """Load comprehensive payload libraries"""
@@ -1279,6 +1299,18 @@ class PayloadGenerator:
             existing = set(base_payloads)
             base_payloads = base_payloads + [p for p in patt_payloads if p not in existing]
 
+        # Merge YAML technique library payloads
+        if self.technique_loader is not None:
+            depth = context.get("depth", "standard")
+            technique_payloads = self.technique_loader.get_payloads(
+                vuln_type=canonical,
+                technology=context.get("detected_technology"),
+                waf_detected=context.get("waf_detected", False),
+                depth=depth,
+            )
+            existing = set(base_payloads)
+            base_payloads = base_payloads + [p for p in technique_payloads if p not in existing]
+
         # Limit payloads based on scan depth (applied to combined pool)
         depth = context.get("depth", "standard")
         limits = {
@@ -1292,7 +1324,7 @@ class PayloadGenerator:
         return base_payloads[:limit]
 
     def get_all_payloads(self, vuln_type: str) -> List[str]:
-        """Return all curated + PATT payloads for a vuln type (no depth limit).
+        """Return all curated + PATT + technique library payloads (no depth limit).
 
         Used by autonomous agent in deep exploitation phases and by
         strategy_adapter for dynamic threshold scaling.
@@ -1302,6 +1334,12 @@ class PayloadGenerator:
             patt_payloads = self.patt.get_payloads(vuln_type)
             existing = set(base)
             base = base + [p for p in patt_payloads if p not in existing]
+        if self.technique_loader is not None:
+            technique_payloads = self.technique_loader.get_payloads(
+                vuln_type=vuln_type, depth="thorough",
+            )
+            existing = set(base)
+            base = base + [p for p in technique_payloads if p not in existing]
         return base
 
     async def get_exploitation_payloads(

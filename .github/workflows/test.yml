@@ -1,0 +1,111 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly benchmark at 2am UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test runner
+        run: docker compose -f docker-compose.test.yml build test-runner
+
+      - name: Run unit tests
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            test-runner tests/ \
+            -m "not integration and not benchmark" \
+            --junitxml=/app/results/unit.xml \
+            --tb=short \
+            -v
+
+      - name: Copy test results
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            -v $(pwd)/test-results:/out \
+            test-runner bash -c "cp -r /app/results/* /out/ 2>/dev/null || true"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: test-results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test infrastructure
+        run: docker compose -f docker-compose.test.yml build
+
+      - name: Run integration tests
+        run: |
+          docker compose -f docker-compose.test.yml up \
+            --abort-on-container-exit \
+            --exit-code-from test-runner
+
+      - name: Copy test results
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            -v $(pwd)/test-results:/out \
+            test-runner bash -c "cp -r /app/results/* /out/ 2>/dev/null || true"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: test-results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  benchmark:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build test infrastructure
+        run: docker compose -f docker-compose.test.yml build
+
+      - name: Run benchmark suite
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            test-runner -m benchmark benchmark/ \
+            --junitxml=/app/results/benchmark.xml \
+            -v
+
+      - name: Copy benchmark results
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml run --rm \
+            -v $(pwd)/benchmark-results:/out \
+            test-runner bash -c "cp -r /app/results/* /out/ 2>/dev/null || true"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmark-results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

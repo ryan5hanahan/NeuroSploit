@@ -52,6 +52,17 @@ RUN go install -v github.com/projectdiscovery/asnmap/cmd/asnmap@latest
 RUN go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest
 RUN go install -v github.com/projectdiscovery/cloudlist/cmd/cloudlist@latest
 RUN go install -v github.com/projectdiscovery/notify/cmd/notify@latest
+RUN go install -v github.com/projectdiscovery/cdncheck/cmd/cdncheck@latest
+
+# Extended Go tools (Phase 2 expansion: 28 -> 50+)
+RUN go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest
+RUN go install -v github.com/hakluke/hakrawler@latest
+RUN go install -v github.com/tomnomnom/gf@latest
+RUN go install -v github.com/tomnomnom/qsreplace@latest
+RUN go install -v github.com/lc/gau/v2/cmd/gau@latest
+RUN go install -v github.com/d3mondev/puredns/v2@latest
+RUN go install -v github.com/jaeles-project/gospider@latest
+RUN go install -v github.com/sensepost/gowitness@latest
 
 # ---- Stage 2: Kali Linux runtime ----
 FROM kalilinux/kali-rolling
@@ -90,6 +101,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     masscan \
     whatweb \
     massdns \
+    wfuzz \
+    hydra \
+    john \
+    sslscan \
+    testssl.sh \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy ALL pre-compiled Go binaries from builder
@@ -113,6 +129,15 @@ COPY --from=go-builder /go/bin/asnmap /usr/local/bin/
 COPY --from=go-builder /go/bin/tlsx /usr/local/bin/
 COPY --from=go-builder /go/bin/cloudlist /usr/local/bin/
 COPY --from=go-builder /go/bin/notify /usr/local/bin/
+COPY --from=go-builder /go/bin/cdncheck /usr/local/bin/
+COPY --from=go-builder /go/bin/chaos /usr/local/bin/
+COPY --from=go-builder /go/bin/hakrawler /usr/local/bin/
+COPY --from=go-builder /go/bin/gf /usr/local/bin/
+COPY --from=go-builder /go/bin/qsreplace /usr/local/bin/
+COPY --from=go-builder /go/bin/gau /usr/local/bin/
+COPY --from=go-builder /go/bin/puredns /usr/local/bin/
+COPY --from=go-builder /go/bin/gospider /usr/local/bin/
+COPY --from=go-builder /go/bin/gowitness /usr/local/bin/
 
 # Go environment for on-demand tool compilation
 ENV GOPATH=/root/go
@@ -135,6 +160,15 @@ RUN wget -q https://raw.githubusercontent.com/danielmiessler/SecLists/master/Dis
 RUN wget -q https://raw.githubusercontent.com/trickest/resolvers/main/resolvers-trusted.txt \
     -O /opt/wordlists/resolvers.txt 2>/dev/null || \
     printf '8.8.8.8\n8.8.4.4\n1.1.1.1\n1.0.0.1\n9.9.9.9\n' > /opt/wordlists/resolvers.txt
+
+# Layer 3: Python-based security tools (Phase 2 expansion)
+RUN pip3 install --break-system-packages --no-cache-dir \
+    commix \
+    arjun \
+    linkfinder \
+    pyjwt[crypto] \
+    dirsearch \
+    2>/dev/null || true
 
 # Update Nuclei templates
 RUN nuclei -update-templates -silent 2>/dev/null || true

