@@ -5,42 +5,36 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 ![React](https://img.shields.io/badge/React-18-61dafb)
-![Vuln Types](https://img.shields.io/badge/Vuln%20Types-119-red)
+![Vuln Types](https://img.shields.io/badge/Vuln%20Types-100+%20(119%20w%2F%20PATT)-red)
+![LLM Agent](https://img.shields.io/badge/LLM%20Agent-18%20Tools-purple)
 ![Payloads](https://img.shields.io/badge/Payloads-34K+-orange)
 ![Docker](https://img.shields.io/badge/Docker-Kali%20Sandbox-informational)
-![LLM Agent](https://img.shields.io/badge/LLM%20Agent-13%20Tools-purple)
 
 **AI-Powered Autonomous Penetration Testing Platform**
 
-sploit.ai v3 is an advanced security assessment platform that combines AI-driven autonomous agents with an LLM-driven agent (13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory), 119 vulnerability types, 34,000+ payloads (665 curated + 33,500 from PayloadsAllTheThings), 3-tier LLM model routing (fast/balanced/deep), governance scope enforcement (5 profiles), NVD & ExploitDB vulnerability enrichment, per-scan isolated Kali Linux containers, configurable opsec profiles (stealth/balanced/aggressive), the full ProjectDiscovery tool suite (20 tools), opt-in mitmproxy traffic inspection, false-positive hardening with decision confidence scoring, exploit chaining, DB-specific payload selection, composite WAF evasion, and a modern React web interface with real-time monitoring.
+sploit.ai v3 is a security assessment platform built around a single LLM-driven autonomous agent with 18 tools and a KNOW/THINK/TEST/VALIDATE cognitive framework. The agent operates inside per-scan isolated Kali Linux containers, governed by 2-layer scope and phase-action enforcement (6 profiles, 3 modes). It supports 3-tier LLM model routing across 6 providers, 100+ vulnerability types with 34,000+ payloads, 14 OSINT API clients, swarm sub-agents for parallel recon, runtime dynamic tool creation, anti-hallucination validation, exploit chaining, and a 21-page React dashboard with WebSocket real-time updates.
 
 ---
 
 ## Highlights
 
-- **119 Vulnerability Types** across 11 categories with AI-driven testing prompts
-- **34,000+ Payloads** - 665 curated + 33,500 from PayloadsAllTheThings (PATT), merged at all scan depths
-- **3-Tier LLM Routing** - Fast (Haiku) / Balanced (Sonnet) / Deep (Opus) with 18 mapped call sites, per-tier cost tracking
-- **5 Agent Modes** - Full auto, auto pentest, recon-only (with AI analysis), prompt-only, analyze-only
-- **Opsec Profiles** - Stealth/balanced/aggressive profiles controlling rate limits, jitter, proxy routing, and DNS-over-HTTPS per tool
-- **Full ProjectDiscovery Suite** - 20 Go tools pre-compiled (nuclei, httpx, katana, subfinder, tlsx, asnmap, cvemap, and more)
-- **LLM-Driven Agent** - Autonomous reasoning agent with 13 tools, KNOW/THINK/TEST/VALIDATE cognitive cycle, persistent memory, plan lifecycle, and quality scoring
-- **Governance Scoping** - 5 scope profiles (full_auto/vuln_lab/ctf/recon_only/custom) with immutable enforcement across 4 layers
-- **NVD & ExploitDB Enrichment** - Automated CVE lookup and exploit cross-reference for findings via rate-limited queue processing
-- **Quality Scoring** - 5-dimension post-operation quality evaluation (coverage, efficiency, evidence, methodology, reporting)
-- **34+ MCP Tools** - Scanning, reconnaissance, proxy control, and ProjectDiscovery tool handlers via MCP protocol
-- **Per-Scan Kali Containers** - Each scan runs in its own isolated Docker container
-- **mitmproxy Integration** - Opt-in HTTP/HTTPS traffic interception, flow capture, replay, and export
-- **Self-Hosted OOB Server** - Optional interactsh-server for out-of-band vulnerability testing
-- **Anti-Hallucination Pipeline** - Negative controls, proof-of-execution, decision confidence scoring with adaptive pivoting
-- **Exploit Chain Engine** - Automatically chains findings (SSRF->internal, SQLi->DB-specific, etc.)
-- **WAF Detection & Bypass** - 16 WAF signatures, 13 bypass techniques, composite WAF-specific evasion
-- **DB-Specific Payloads** - Auto-detect database type from error signatures, select MySQL/Postgres/MSSQL/Oracle/SQLite/MongoDB payloads
-- **Smart Strategy Adaptation** - Dead endpoint detection, dynamic diminishing returns (scales with payload pool size), confidence-based pivoting, priority recomputation
-- **Multi-Provider LLM** - Claude, GPT, Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter
-- **Tradecraft Library** - 35 built-in TTP entries including 23 LOLBin techniques with MITRE ATT&CK mapping and detection profiles
-- **Real-Time Dashboard** - WebSocket-powered live scan progress, findings, and reports
-- **Sandbox Dashboard** - Monitor running Kali containers, tools, health checks in real-time
+- **100 vulnerability types** (+ 19 PATT-conditional, totaling 119) across **12 tester categories**
+- **34,000+ payloads** — 665 curated + 33,500 from PayloadsAllTheThings, merged at all scan depths
+- **18-tool LLM-driven agent** with KNOW/THINK/TEST/VALIDATE cognitive cycle
+- **Swarm sub-agents** (`spawn_subagent`) for parallel FAST-tier recon (max 3 concurrent, 120s timeout)
+- **Runtime dynamic tool creation** (`create_tool`) with AST validation and blocked module enforcement
+- **3-tier LLM routing** (fast/balanced/deep) across **6 providers** with per-tier cost tracking
+- **2-layer governance** — scope enforcement + phase-action gating, **6 profiles**, **3 modes** (strict/warn/off)
+- **14 OSINT API clients** — Shodan, Censys, VirusTotal, SecurityTrails, BuiltWith, NVD, ExploitDB, ZoomEye, FOFA, PublicWWW, GitHub Dork, GrayhatWarfare, HIBP, DeHashed
+- **Per-scan isolated Kali containers** — 38 pre-installed + 28 on-demand tools, 60-min TTL, auto-cleanup
+- **Opsec profiles** — stealth/balanced/aggressive controlling rate limits, jitter, proxy routing, DNS-over-HTTPS
+- **TF-IDF vector memory** — per-target cross-engagement persistence, 6 categories, no external dependencies
+- **Exploit chain engine** — 10 rules, max depth 3 (SSRF→internal, SQLi→DB-specific, LFI→config, etc.)
+- **Anti-hallucination pipeline** — negative controls, proof-of-execution, confidence scoring, validation judge
+- **Bug bounty program support** — BUG_BOUNTY scope profile, submission tracking, agent prompt injection
+- **21-page React dashboard** with WebSocket real-time updates
+- **34+ MCP tools** — scanning, reconnaissance, proxy control, ProjectDiscovery suite
+- **mitmproxy + interactsh OOB** — opt-in traffic interception and out-of-band testing
 
 ---
 
@@ -48,21 +42,22 @@ sploit.ai v3 is an advanced security assessment platform that combines AI-driven
 
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Autonomous Agent](#autonomous-agent)
 - [LLM-Driven Agent](#llm-driven-agent)
 - [Governance](#governance)
 - [Opsec Profiles](#opsec-profiles)
+- [OSINT Integration](#osint-integration)
 - [MCP Server & Tools](#mcp-server--tools)
 - [Prompt & Task Library](#prompt--task-library)
-- [119 Vulnerability Types](#119-vulnerability-types)
+- [Vulnerability Engine](#vulnerability-engine)
 - [PayloadsAllTheThings Integration](#payloadsallthethings-integration)
 - [Kali Sandbox System](#kali-sandbox-system)
-- [mitmproxy Integration](#mitmproxy-integration)
-- [interactsh OOB Server](#interactsh-oob-server)
 - [Anti-Hallucination & Validation](#anti-hallucination--validation)
 - [Unified LLM Layer](#unified-llm-layer)
+- [mitmproxy Integration](#mitmproxy-integration)
+- [interactsh OOB Server](#interactsh-oob-server)
 - [Vulnerability Enrichment](#vulnerability-enrichment)
 - [Tradecraft Library](#tradecraft-library)
+- [Bug Bounty Support](#bug-bounty-support)
 - [Web GUI](#web-gui)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
@@ -91,6 +86,8 @@ nano .env  # Add an LLM API key or configure AWS Bedrock credentials
 docker compose up -d
 ```
 
+Access the web interface at **http://localhost:8080** (Docker) or **http://localhost:5173** (dev mode).
+
 ### Option 2: Manual Setup
 
 ```bash
@@ -104,7 +101,7 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 # Frontend (new terminal)
 cd frontend
 npm install
-npm run dev
+npm run dev   # Dev server at http://localhost:5173
 ```
 
 ### Build Kali Sandbox Image
@@ -136,284 +133,230 @@ docker compose --profile oob up -d
 docker compose --profile proxy --profile oob up -d
 ```
 
-Access the web interface at **http://localhost:8000** (production build) or **http://localhost:5173** (dev mode).
-
 ---
 
 ## Architecture
 
 ```
 sploit.ai/
-├── backend/                         # FastAPI Backend
-│   ├── api/v1/                      # REST API (19 routers)
-│   │   ├── scans.py                 # Scan CRUD + pause/resume/stop
-│   │   ├── agent.py                 # AI Agent control (V1)
-│   │   ├── agent_v2.py              # LLM-Driven Agent (13 endpoints + WebSocket)
-│   │   ├── agent_tasks.py           # Scan task tracking
-│   │   ├── dashboard.py             # Stats + activity feed
-│   │   ├── enrichment.py            # NVD/ExploitDB vulnerability enrichment
-│   │   ├── governance.py            # Governance scope violations + stats
-│   │   ├── reports.py               # Report generation (HTML/PDF/JSON)
-│   │   ├── scheduler.py             # Cron/interval scheduling
-│   │   ├── vuln_lab.py              # Per-type vulnerability lab
-│   │   ├── terminal.py              # Terminal agent (10 endpoints)
-│   │   ├── sandbox.py               # Sandbox container monitoring
-│   │   ├── targets.py               # Target validation
-│   │   ├── prompts.py               # Preset prompts
-│   │   ├── vulnerabilities.py       # Vulnerability management
-│   │   ├── tradecraft.py            # TTP tradecraft library (35 entries)
-│   │   ├── memory.py                # Agent memory management
-│   │   ├── traces.py                # LLM call tracing
-│   │   └── settings.py              # Runtime settings
+├── backend/                             # FastAPI Backend
+│   ├── api/v1/                          # REST API (21 routers)
+│   │   ├── agent_v2.py                  # LLM-Driven Agent (start/stop/status/findings/ws)
+│   │   ├── agent_tasks.py               # Scan task tracking
+│   │   ├── bugbounty.py                 # Bug bounty submission tracking
+│   │   ├── dashboard.py                 # Stats + activity feed
+│   │   ├── enrichment.py                # NVD/ExploitDB vulnerability enrichment
+│   │   ├── governance.py                # Governance scope violations + stats
+│   │   ├── memory.py                    # Agent memory management
+│   │   ├── prompts.py                   # Preset prompts
+│   │   ├── realtime.py                  # Realtime interactive sessions
+│   │   ├── reports.py                   # Report generation (HTML/PDF/JSON)
+│   │   ├── sandbox.py                   # Sandbox container monitoring
+│   │   ├── scans.py                     # Scan CRUD + pause/resume/stop
+│   │   ├── scheduler.py                 # Cron/interval scheduling
+│   │   ├── settings.py                  # Runtime settings + per-tier model config
+│   │   ├── targets.py                   # Target validation
+│   │   ├── task_library.py              # Task library CRUD
+│   │   ├── terminal.py                  # Terminal agent (10 endpoints)
+│   │   ├── traces.py                    # LLM call tracing
+│   │   ├── tradecraft.py                # TTP tradecraft library (35 entries)
+│   │   ├── vulnerabilities.py           # Vulnerability management
+│   │   └── vuln_lab.py                  # Per-type vulnerability lab
 │   ├── core/
-│   │   ├── autonomous_agent.py      # Main AI agent (~7600 lines)
-│   │   ├── llm_agent.py             # LLM-Driven Agent (full LLM execution control)
-│   │   ├── llm_agent_tools.py       # 13 tool schemas for LLM agent
-│   │   ├── governance.py            # Governance scope enforcement (5 profiles)
-│   │   ├── llm/                     # Unified LLM layer (3-tier routing)
-│   │   │   ├── client.py            # UnifiedLLMClient (generate, generate_json, generate_with_tools)
-│   │   │   ├── router.py            # 3-tier ModelRouter (fast/balanced/deep)
-│   │   │   ├── providers/           # 6 provider implementations
-│   │   │   ├── prompt_composer.py   # Tier-aware system prompt composition
-│   │   │   ├── tool_adapter.py      # MCP-to-provider tool format conversion
-│   │   │   ├── conversation.py      # Multi-turn message history
-│   │   │   ├── cost_tracker.py      # Per-tier token/cost tracking with budget enforcement
-│   │   │   ├── meta_tools.py        # 7 structured decision schemas
-│   │   │   └── tool_executor.py     # Tool dispatch for LLM agent with governance
-│   │   ├── tools/                   # LLM agent tool implementations
-│   │   │   ├── shell_tool.py        # Docker sandbox shell execution
-│   │   │   ├── browser_tool.py      # Playwright browser automation
-│   │   │   ├── http_tool.py         # HTTP request handler
-│   │   │   └── parallel_executor.py # Parallel tool execution (asyncio.gather)
-│   │   ├── memory/                  # Persistent memory system
-│   │   │   ├── vector_memory.py     # TF-IDF semantic search, per-target persistence
-│   │   │   └── plan_manager.py      # Plan lifecycle with checkpoints
-│   │   ├── prompts/                 # Cognitive prompt framework
-│   │   │   ├── agent_system_prompt.md # KNOW/THINK/TEST/VALIDATE cognitive framework
-│   │   │   ├── execution_prompt_general.md # Web pentest execution guidance
-│   │   │   └── prompt_composer.py   # Dynamic prompt assembly with plan/memory injection
-│   │   ├── observability/           # Operation metrics
-│   │   │   ├── operation_tracker.py # Token/cost/tool metrics tracking
-│   │   │   └── quality_evaluator.py # Post-op quality scoring (5 dimensions)
-│   │   ├── vuln_engine/             # 119-type vulnerability engine
-│   │   │   ├── registry.py          # 119 VULNERABILITY_INFO entries (100 base + 19 PATT)
-│   │   │   ├── payload_generator.py # 34K+ payloads (665 curated + PATT merge)
-│   │   │   ├── injection_context.py # DB type detection from error signatures
-│   │   │   ├── ai_prompts.py        # Per-vuln AI decision prompts (119 types)
-│   │   │   ├── system_prompts.py    # 17 composable prompts, 8 task contexts
-│   │   │   ├── patt/               # PayloadsAllTheThings integration
-│   │   │   │   ├── category_map.py  # 61 PATT category mappings
-│   │   │   │   ├── parser.py        # Intruder wordlist + markdown parsers
-│   │   │   │   ├── loader.py        # PATTLoader with lazy loading + caching
-│   │   │   │   └── cli.py           # PATT CLI (status/parse/dump/update)
-│   │   │   └── testers/             # 10 category tester modules
-│   │   ├── validation/              # False-positive hardening
-│   │   │   ├── negative_control.py  # Benign request control engine
-│   │   │   ├── proof_of_execution.py # Per-type proof checks (25+ methods)
-│   │   │   ├── confidence_scorer.py # Numeric 0-100 scoring
-│   │   │   └── validation_judge.py  # Sole authority for finding approval
-│   │   ├── request_engine.py        # Retry, rate limit, circuit breaker
-│   │   ├── waf_detector.py          # 16 WAF signatures, 13 techniques + composite evasion
-│   │   ├── strategy_adapter.py      # Mid-scan strategy + confidence-based pivoting
-│   │   ├── chain_engine.py          # 10 exploit chain rules
-│   │   ├── auth_manager.py          # Multi-user auth management
-│   │   ├── xss_context_analyzer.py  # 8-context XSS analysis
-│   │   ├── poc_generator.py         # 20+ per-type PoC generators
-│   │   ├── execution_history.py     # Cross-scan learning
-│   │   ├── access_control_learner.py # Adaptive BOLA/BFLA/IDOR learning
-│   │   ├── response_verifier.py     # 4-signal response verification
-│   │   ├── agent_memory.py          # Bounded dedup agent memory
-│   │   ├── recon_integration.py     # 40+ tool recon orchestration (3 depth levels)
-│   │   ├── ai_prompt_processor.py   # LLM-based prompt analysis
-│   │   ├── task_library.py          # Task/prompt lifecycle management
-│   │   └── report_engine/           # OHVR report generator
-│   ├── models/                      # SQLAlchemy ORM models
-│   ├── db/                          # Database layer
-│   ├── config.py                    # Pydantic settings
-│   └── main.py                      # FastAPI app entry
+│   │   ├── llm_agent.py                 # LLMDrivenAgent — the sole autonomous agent
+│   │   ├── llm_agent_tools.py           # 18 tool schemas (MCP format)
+│   │   ├── governance.py                # Layer 1: Scope enforcement (6 profiles)
+│   │   ├── governance_gate.py           # Layer 2: Phase-action gating (7 categories × 9 phases)
+│   │   ├── governance_facade.py         # Unified governance interface
+│   │   ├── llm/                         # Unified LLM layer
+│   │   │   ├── client.py                # UnifiedLLMClient (generate, generate_json, generate_with_tools)
+│   │   │   ├── router.py                # 3-tier ModelRouter (fast/balanced/deep)
+│   │   │   ├── providers/               # 6 providers (anthropic, openai, gemini, bedrock, ollama, lmstudio)
+│   │   │   ├── tool_executor.py         # Tool dispatch with governance + payload/vuln-info handlers
+│   │   │   ├── cost_tracker.py          # Per-tier token/cost tracking with budget enforcement
+│   │   │   ├── prompt_composer.py       # Tier-aware system prompt composition
+│   │   │   ├── tool_adapter.py          # MCP-to-provider tool format conversion
+│   │   │   ├── conversation.py          # Multi-turn message history
+│   │   │   └── meta_tools.py            # 7 structured decision schemas
+│   │   ├── tools/                       # 6 LLM agent tool implementations
+│   │   │   ├── shell_tool.py            # Docker sandbox shell execution
+│   │   │   ├── browser_tool.py          # Playwright browser automation
+│   │   │   ├── http_tool.py             # HTTP request handler
+│   │   │   ├── parallel_executor.py     # Parallel tool execution (asyncio.gather)
+│   │   │   ├── dynamic_tool.py          # Runtime tool creation with AST validation
+│   │   │   └── swarm_tool.py            # Sub-agent spawning (FAST-tier swarm)
+│   │   ├── osint/                       # 14 OSINT API clients
+│   │   │   ├── shodan_client.py         # Shodan host/port/vuln search
+│   │   │   ├── censys_client.py         # Censys hosts, certificates, search
+│   │   │   ├── virustotal_client.py     # VirusTotal URL/domain scan
+│   │   │   ├── securitytrails.py        # SecurityTrails subdomains, DNS history
+│   │   │   ├── builtwith_client.py      # BuiltWith technology profiling
+│   │   │   ├── nvd_client.py            # NVD CVE data
+│   │   │   ├── exploitdb_client.py      # ExploitDB known exploits
+│   │   │   ├── zoomeye.py               # ZoomEye port/banner search
+│   │   │   ├── fofa.py                  # FOFA open port/service search
+│   │   │   ├── publicwww.py             # PublicWWW code search
+│   │   │   ├── github_dork.py           # GitHub code leak detection
+│   │   │   ├── grayhat_warfare.py       # GrayhatWarfare exposed buckets
+│   │   │   ├── hibp.py                  # Have I Been Pwned breach data
+│   │   │   ├── dehashed.py              # DeHashed credential breach search
+│   │   │   ├── base.py                  # Base client class
+│   │   │   └── aggregator.py            # Parallel multi-source queries
+│   │   ├── memory/                      # Persistent memory system
+│   │   │   ├── vector_memory.py         # TF-IDF semantic search, per-target persistence
+│   │   │   └── plan_manager.py          # Plan lifecycle with checkpoints
+│   │   ├── prompts/                     # Cognitive prompt framework
+│   │   │   ├── agent_system_prompt.md   # KNOW/THINK/TEST/VALIDATE cognitive framework
+│   │   │   ├── execution_prompt_general.md  # Web pentest execution guidance
+│   │   │   ├── execution_prompt_recon.md    # Recon-specific execution guidance
+│   │   │   └── prompt_composer.py       # Dynamic prompt assembly with plan/memory injection
+│   │   ├── observability/               # Operation metrics
+│   │   │   ├── operation_tracker.py     # Token/cost/tool metrics tracking
+│   │   │   └── quality_evaluator.py     # Post-op quality scoring (5 dimensions)
+│   │   ├── vuln_engine/                 # Vulnerability engine
+│   │   │   ├── registry.py              # 100 VULNERABILITY_INFO entries (+ 19 PATT)
+│   │   │   ├── payload_generator.py     # 34K+ payloads (665 curated + PATT merge)
+│   │   │   ├── injection_context.py     # DB type detection from error signatures
+│   │   │   ├── ai_prompts.py            # Per-vuln AI decision prompts
+│   │   │   ├── system_prompts.py        # 17 composable prompts, 8 task contexts
+│   │   │   ├── patt/                    # PayloadsAllTheThings integration
+│   │   │   │   ├── category_map.py      # 61 PATT category mappings
+│   │   │   │   ├── parser.py            # Intruder wordlist + markdown parsers
+│   │   │   │   ├── loader.py            # PATTLoader with lazy loading + caching
+│   │   │   │   └── cli.py              # PATT CLI (status/parse/dump/update)
+│   │   │   └── testers/                 # 12 category tester modules
+│   │   │       ├── injection.py         # SQLi, NoSQLi, LDAP, XPath, command injection
+│   │   │       ├── advanced_injection.py # SSTI, CRLF, header, log, GraphQL injection
+│   │   │       ├── auth.py              # Auth bypass, session fixation, credential stuffing
+│   │   │       ├── authorization.py     # BOLA, BFLA, IDOR, privilege escalation
+│   │   │       ├── client_side.py       # XSS, CORS, clickjacking, open redirect, DOM clobbering
+│   │   │       ├── cloud_supply.py      # Cloud metadata, S3 misconfig, dependency confusion
+│   │   │       ├── data_exposure.py     # Info disclosure, debug endpoints, source code exposure
+│   │   │       ├── deserialization.py   # Insecure deserialization, Java RMI, GWT
+│   │   │       ├── file_access.py       # LFI, RFI, path traversal, file upload, XXE
+│   │   │       ├── infrastructure.py    # SSL/TLS, HTTP methods, subdomain takeover
+│   │   │       ├── logic.py             # Business logic, race conditions, JWT, OAuth
+│   │   │       └── request_forgery.py   # SSRF, CSRF, DNS rebinding
+│   │   ├── validation/                  # False-positive hardening
+│   │   │   ├── negative_control.py      # Benign request control engine
+│   │   │   ├── proof_of_execution.py    # Per-type proof checks (25+ methods)
+│   │   │   ├── confidence_scorer.py     # Numeric 0-100 scoring
+│   │   │   └── validation_judge.py      # Sole authority for finding approval
+│   │   ├── request_engine.py            # Retry, rate limit, circuit breaker
+│   │   ├── waf_detector.py              # 16 WAF signatures, 13 techniques + composite evasion
+│   │   ├── strategy_adapter.py          # Mid-scan strategy + confidence-based pivoting
+│   │   ├── chain_engine.py              # 10 exploit chain rules
+│   │   ├── auth_manager.py              # Multi-user auth management
+│   │   ├── xss_context_analyzer.py      # 8-context XSS analysis
+│   │   ├── poc_generator.py             # 20+ per-type PoC generators
+│   │   ├── autonomous_scanner.py        # AutonomousScanner (fallback for <10 endpoints)
+│   │   ├── recon_integration.py         # 40+ tool recon orchestration (3 depth levels)
+│   │   └── report_engine/               # OHVR report generator
+│   ├── models/                          # 15 SQLAlchemy model files (21 model classes)
+│   │   ├── scan.py                      # Scan
+│   │   ├── vulnerability.py             # Vulnerability, VulnerabilityTest
+│   │   ├── memory.py                    # AgentMemoryEntry, AgentOperation, AgentOperationPlan, AttackPatternMemory, TargetFingerprint, SuccessfulPayload
+│   │   ├── bugbounty_submission.py      # BugBountySubmission
+│   │   ├── governance_profile.py        # GovernanceProfileRecord
+│   │   ├── governance_violation.py      # GovernanceViolationRecord
+│   │   ├── report.py                    # Report
+│   │   ├── endpoint.py                  # Endpoint
+│   │   ├── target.py                    # Target
+│   │   ├── prompt.py                    # Prompt
+│   │   ├── agent_task.py                # AgentTask
+│   │   ├── llm_test_result.py           # LlmTestResult
+│   │   ├── trace.py                     # TraceSpan
+│   │   ├── tradecraft.py                # Tradecraft, ScanTradecraft
+│   │   └── vuln_lab.py                  # VulnLabChallenge
+│   ├── services/
+│   │   └── scan_service.py              # Scan orchestration (LLMDrivenAgent path)
+│   ├── db/                              # Database layer
+│   ├── config.py                        # Pydantic settings
+│   └── main.py                          # FastAPI app entry
 │
-├── core/                            # Shared core modules
-│   ├── llm_manager.py               # Legacy LLM routing (deprecated, see backend/core/llm/)
-│   ├── sandbox_manager.py           # BaseSandbox ABC + opsec-aware sandbox
-│   ├── kali_sandbox.py              # Per-scan Kali container manager
-│   ├── container_pool.py            # Global container pool coordinator
-│   ├── opsec_manager.py             # Opsec profile system (stealth/balanced/aggressive)
-│   ├── tool_registry.py             # 56 tool install recipes for Kali
-│   ├── mcp_server.py                # MCP server (34+ tools, stdio)
-│   ├── mcp_tools_pd.py              # 9 ProjectDiscovery MCP tool handlers
-│   ├── mcp_tools_proxy.py           # 7 mitmproxy MCP tool handlers
-│   ├── scheduler.py                 # APScheduler scan scheduling
-│   └── browser_validator.py         # Playwright browser validation
+├── core/                                # Shared core modules
+│   ├── mcp_server.py                    # MCP server (34+ tools, stdio)
+│   ├── mcp_tools_pd.py                  # 9 ProjectDiscovery MCP tool handlers
+│   ├── mcp_tools_proxy.py              # 7 mitmproxy MCP tool handlers
+│   ├── sandbox_manager.py               # BaseSandbox ABC + opsec-aware sandbox
+│   ├── kali_sandbox.py                  # Per-scan Kali container manager
+│   ├── container_pool.py                # Global container pool coordinator
+│   ├── opsec_manager.py                 # Opsec profile system (stealth/balanced/aggressive)
+│   ├── tool_registry.py                 # 56 tool install recipes for Kali
+│   ├── scheduler.py                     # APScheduler scan scheduling
+│   └── browser_validator.py             # Playwright browser validation
 │
-├── frontend/                        # React + TypeScript Frontend
+├── frontend/                            # React + TypeScript Frontend
 │   ├── src/
-│   │   ├── pages/
-│   │   │   ├── HomePage.tsx             # Dashboard with stats
-│   │   │   ├── AutoPentestPage.tsx      # 3-stream auto pentest
-│   │   │   ├── VulnLabPage.tsx          # Per-type vulnerability lab
-│   │   │   ├── TerminalAgentPage.tsx    # AI terminal chat
-│   │   │   ├── SandboxDashboardPage.tsx # Container monitoring
-│   │   │   ├── ScanDetailsPage.tsx      # Findings + validation
-│   │   │   ├── SchedulerPage.tsx        # Cron/interval scheduling
-│   │   │   ├── SettingsPage.tsx         # Configuration
-│   │   │   └── ReportsPage.tsx          # Report management
-│   │   ├── components/              # Reusable UI components
-│   │   ├── services/api.ts          # API client layer
-│   │   └── types/index.ts           # TypeScript interfaces
+│   │   ├── pages/                       # 21 page components
+│   │   ├── components/                  # Reusable UI components
+│   │   ├── services/api.ts              # API client layer
+│   │   └── types/index.ts              # TypeScript interfaces
 │   └── package.json
 │
 ├── docker/
-│   ├── Dockerfile.kali              # Multi-stage Kali sandbox (20 Go tools)
-│   ├── Dockerfile.sandbox           # Legacy Debian sandbox
-│   ├── Dockerfile.backend           # Backend container
-│   ├── Dockerfile.frontend          # Frontend container
-│   ├── docker-compose.kali.yml      # Kali sandbox build
-│   └── docker-compose.sandbox.yml   # Legacy sandbox
+│   ├── Dockerfile.kali                  # Multi-stage Kali sandbox (20 Go tools)
+│   ├── Dockerfile.backend               # Backend container
+│   ├── Dockerfile.frontend              # Frontend container
+│   ├── docker-compose.kali.yml          # Kali sandbox build
+│   └── docker-compose.sandbox.yml       # Legacy sandbox
 │
 ├── prompts/
-│   ├── md_library/                  # 16 prompt templates (pentest, recon, OWASP, APT TTPs, etc.)
-│   ├── task_library.json            # 12 preset task definitions
-│   └── library.json                 # Prompt categorization by attack phase
+│   ├── md_library/                      # 16 prompt templates
+│   ├── task_library.json                # 12 preset task definitions
+│   └── library.json                     # Prompt categorization by attack phase
 │
 ├── config/
-│   ├── config.json                  # Profiles, tools, sandbox, MCP, opsec
-│   └── opsec_profiles.json          # Stealth/balanced/aggressive opsec profiles
+│   ├── config.json                      # Profiles, tools, sandbox, MCP, opsec, 3-tier routing
+│   └── opsec_profiles.json              # Stealth/balanced/aggressive opsec profiles
 ├── vendor/
-│   └── PayloadsAllTheThings/        # PATT git submodule (33,500+ payloads)
+│   └── PayloadsAllTheThings/            # PATT git submodule (33,500+ payloads)
 ├── data/
-│   ├── vuln_knowledge_base.json     # 119 vuln type definitions
-│   ├── execution_history.json       # Cross-scan learning data
-│   └── access_control_learning.json # BOLA/BFLA adaptive data
+│   ├── vuln_knowledge_base.json         # Vuln type definitions
+│   ├── execution_history.json           # Cross-scan learning data
+│   └── access_control_learning.json     # BOLA/BFLA adaptive data
 │
 ├── scripts/
-│   └── build-kali.sh               # Build/rebuild Kali image
+│   └── build-kali.sh                    # Build/rebuild Kali image
 ├── tools/
-│   └── benchmark_runner.py          # 104 CTF challenges
-├── agents/base_agent.py             # BaseAgent class
-├── sploitai.py                   # CLI entry point
+│   └── benchmark_runner.py              # 104 CTF challenges
+├── agents/base_agent.py                 # BaseAgent class
+├── sploitai.py                          # CLI entry point
 └── requirements.txt
 ```
 
 ---
 
-## Autonomous Agent
-
-The AI agent (`autonomous_agent.py`) orchestrates security assessments across 5 operation modes.
-
-### Operation Modes
-
-| Mode | Description |
-|------|-------------|
-| **Full Auto** | 5-phase workflow: recon, AI attack surface analysis, vulnerability testing (119 types), AI finding enhancement, report generation |
-| **Auto Pentest** | 3-stream parallel architecture (see below) with deep analysis and comprehensive 119-type testing |
-| **Recon Only** | Tool-based reconnaissance (3 depth levels) + WAF detection + AI-powered attack surface analysis with technology risk mapping, auth boundary identification, and strategic recommendations |
-| **Prompt Only** | AI-driven mode where the LLM plans and executes the full assessment based on a user prompt or task preset |
-| **Analyze Only** | Passive analysis of provided data without active testing |
-
-### Recon Depth Levels
-
-| Depth | Phases | Includes |
-|-------|--------|----------|
-| **Quick** | 3 | DNS resolution, HTTP probing, basic path discovery |
-| **Medium** | 8 | Quick + subdomain enumeration, URL collection, port scan (top 100), tech detection, web crawling |
-| **Full** | 14 | Medium + full port scan, parameter discovery, JS analysis, directory fuzzing, nuclei scan, screenshots |
-
-When an LLM is configured, recon-only scans include an AI analysis phase that produces structured intelligence: technology-to-CVE mapping, authentication boundary mapping, high-value target prioritization, infrastructure assessment, and strategic P1-P4 recommendations. Falls back to tool-only output when no LLM is available.
-
-### 3-Stream Parallel Architecture (Auto Pentest)
-
-```
-                    ┌─────────────────────┐
-                    │   Auto Pentest      │
-                    │   Target URL(s)     │
-                    └────────┬────────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼
-   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-   │  Stream 1    │ │  Stream 2    │ │  Stream 3    │
-   │  Recon       │ │  Junior Test │ │  Tool Runner │
-   │  ─────────── │ │  ─────────── │ │  ─────────── │
-   │  Crawl pages │ │  Test target │ │  Nuclei scan │
-   │  Find params │ │  AI-priority │ │  Naabu ports │
-   │  Tech detect │ │  3 payloads  │ │  AI decides  │
-   │  WAF detect  │ │  per endpoint│ │  extra tools │
-   └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
-          │                │                │
-          └────────────────┼────────────────┘
-                           ▼
-              ┌─────────────────────┐
-              │  Deep Analysis      │
-              │  119 vuln types     │
-              │  Full payload sets  │
-              │  Chain exploitation │
-              └─────────┬───────────┘
-                        ▼
-              ┌─────────────────────┐
-              │  Report Generation  │
-              │  AI executive brief │
-              │  PoC code per find  │
-              └─────────────────────┘
-```
-
-### Agent Autonomy Modules
-
-| Module | Description |
-|--------|-------------|
-| **Request Engine** | Retry with backoff, per-host rate limiting, circuit breaker, adaptive timeouts |
-| **WAF Detector** | 16 WAF signatures (Cloudflare, AWS, Akamai, Imperva, etc.), 13 bypass techniques, composite WAF-specific evasion (per-WAF technique chaining) |
-| **Strategy Adapter** | Dead endpoint detection, dynamic diminishing returns (scales with payload pool size), 403 bypass, confidence-based pivoting (<30% auto-pivot, 3+ failures force switch), priority recomputation |
-| **Chain Engine** | 10 chain rules (SSRF->internal, SQLi->DB-specific, LFI->config, IDOR pattern transfer) |
-| **Auth Manager** | Multi-user contexts (user_a, user_b, admin), login form detection, session management |
-| **Injection Context** | Auto-detect database type from error signatures (MySQL, Postgres, MSSQL, Oracle, SQLite), select DB-specific payloads |
-| **Cost Tracker** | Per-tier token and cost tracking with configurable budget limits and warning thresholds |
-
-### Scan Features
-
-- **Pause / Resume / Stop** with checkpoints
-- **Manual Validation** - Confirm or reject AI findings
-- **Screenshot Capture** on confirmed findings (Playwright)
-- **Cross-Scan Learning** - Historical success rates influence future priorities
-- **CVE Testing** - Regex detection + AI-generated payloads
-
----
-
 ## LLM-Driven Agent
 
-The LLM-Driven Agent (`llm_agent.py`) is a second-generation autonomous agent where the LLM has full execution control. Unlike the code-driven pipeline of `AutonomousAgent`, the LLM decides what to do at every step — choosing tools, forming hypotheses, and pivoting based on results.
+The LLM-Driven Agent (`backend/core/llm_agent.py`) is the sole autonomous agent. The LLM has full execution control — it decides what to do at every step, choosing tools, forming hypotheses, and pivoting based on results.
 
-### AutonomousAgent vs LLM-Driven Agent
+### 18 Tools
 
-| | AutonomousAgent | LLM-Driven Agent |
-|--|----------------|------------------|
-| **Control** | Code-driven pipeline with LLM advisory | LLM controls execution end-to-end |
-| **Tools** | MCP tools (34+) via sandbox | 13 purpose-built tools with governance |
-| **Reasoning** | Anti-hallucination prompts | KNOW/THINK/TEST/VALIDATE cognitive cycle |
-| **Memory** | Bounded dedup memory | TF-IDF vector search, per-target persistence |
-| **Planning** | Fixed phase progression | Dynamic plan lifecycle with checkpoints |
-| **API** | `/api/v1/agent/*` | `/api/v1/agent-v2/*` |
-
-### 13 Tools
-
-| Tool | Description |
-|------|-------------|
-| `shell_execute` | Execute shell commands in Docker sandbox (nmap, sqlmap, nuclei, httpx, etc.) |
-| `http_request` | Send HTTP requests with full method/header/body control |
-| `browser_navigate` | Navigate headless browser to URL with JS rendering |
-| `browser_extract_links` | Extract all links from current browser page |
-| `browser_extract_forms` | Extract forms with actions, methods, fields, hidden inputs |
-| `browser_screenshot` | Capture full-page screenshot with label |
-| `browser_execute_js` | Execute JavaScript in browser context |
-| `memory_store` | Store observations in persistent memory (6 categories) |
-| `memory_search` | Search stored memories by keyword/semantic similarity |
-| `save_artifact` | Save evidence/data to operation artifacts directory |
-| `report_finding` | Report confirmed vulnerability with evidence, CVSS, CWE, PoC |
-| `update_plan` | Update operation plan at start and checkpoints |
-| `stop` | Terminate operation with reason and summary |
+| # | Tool | Description |
+|---|------|-------------|
+| 1 | `shell_execute` | Execute shell commands in Docker sandbox (nmap, sqlmap, nuclei, httpx, etc.). Output truncated to 30KB. |
+| 2 | `http_request` | Send HTTP requests with full method/header/body control for API testing, IDOR checks, auth bypass |
+| 3 | `browser_navigate` | Navigate headless browser to URL with JS rendering. Returns title, final URL, content summary |
+| 4 | `browser_extract_links` | Extract all links from current browser page (anchors, forms, JavaScript) |
+| 5 | `browser_extract_forms` | Extract forms with actions, methods, fields, hidden inputs. Identifies injection points and CSRF tokens |
+| 6 | `browser_submit_form` | Fill in and submit forms. Tests login, registration, and interactive HTML forms. Preserves hidden fields |
+| 7 | `browser_screenshot` | Capture full-page screenshot for evidence documentation |
+| 8 | `browser_execute_js` | Execute JavaScript in browser context for DOM extraction, XSS testing, cookie reading |
+| 9 | `memory_store` | Store observations in persistent memory (6 categories: recon, finding, credential, observation, hypothesis, evidence) |
+| 10 | `memory_search` | Search stored memories by keyword or semantic similarity |
+| 11 | `save_artifact` | Save evidence/data files to operation artifacts directory |
+| 12 | `report_finding` | Report confirmed vulnerability with evidence, CVSS, CWE, PoC. HIGH/CRITICAL require artifacts |
+| 13 | `update_plan` | Update operation plan at start and checkpoints (20%/40%/60%/80%) |
+| 14 | `get_payloads` | Retrieve curated payloads (100+ vuln types, 526+ payloads including PATT) with WAF bypass variants |
+| 15 | `get_vuln_info` | Get CWE IDs, severity, descriptions, remediation from VulnerabilityRegistry (100+ types) |
+| 16 | `spawn_subagent` | Spawn lightweight FAST-tier sub-agent for parallel recon (max 3 concurrent, 120s timeout, shared budget) |
+| 17 | `create_tool` | Create custom tools at runtime with Python code. AST validation blocks dangerous modules (os, subprocess, sys) |
+| 18 | `stop` | Terminate operation with reason and summary |
 
 ### Cognitive Framework
 
-The agent follows a KNOW/THINK/TEST/VALIDATE cycle:
+The agent follows a KNOW/THINK/TEST/VALIDATE cycle at every step:
 
 ```
 ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌──────────┐
@@ -461,6 +404,23 @@ The agent follows a KNOW/THINK/TEST/VALIDATE cycle:
 | **Validation** | 50–80% | Test hypotheses with crafted requests, collect evidence, verify with negative controls |
 | **Reporting** | 80–100% | Document confirmed findings, save artifacts, generate final summary |
 
+### Sub-Agents (spawn_subagent)
+
+The agent can spawn lightweight sub-agents for parallel recon:
+- **FAST-tier** LLM routing (lowest cost)
+- **Max 3 concurrent** sub-agents
+- **120-second timeout** per sub-agent
+- **Shared budget** — sub-agent steps count against the parent budget
+- **Limited tool set** — sub-agents have access to a subset of tools
+- **Governance-checked** — sub-agents inherit the parent's scope restrictions
+
+### Dynamic Tools (create_tool)
+
+Runtime Python tool creation for one-off analysis:
+- **AST validation** — code is parsed and validated before execution
+- **Blocked modules**: `os`, `subprocess`, `sys`, `shutil`, `socket`, `ctypes`
+- **Allowed modules**: `json`, `re`, `base64`, `urllib.parse`, `hashlib`, `html`, `math`, `collections`, `itertools`, `string`, `binascii`, `hmac`
+
 ### Persistent Memory
 
 - **TF-IDF vector search** with recency boosting (no external dependencies)
@@ -490,9 +450,13 @@ Post-operation quality scoring across 5 dimensions:
 
 ## Governance
 
-Governance scope enforcement (`governance.py`) restricts what agents can do based on configurable scope profiles. Enforcement is immutable — scope cannot be widened after scan creation.
+Governance enforcement uses a **2-layer architecture** controlled by a unified facade (`governance_facade.py`). Scope cannot be widened after scan creation.
 
-### Scope Profiles
+### Layer 1: Scope Enforcement (governance.py)
+
+Controls **what** can be tested — domains, vulnerability types, phases, recon depth.
+
+#### 6 Scope Profiles
 
 | Profile | Use Case | Restrictions |
 |---------|----------|-------------|
@@ -500,24 +464,60 @@ Governance scope enforcement (`governance.py`) restricts what agents can do base
 | **vuln_lab** | Single-vulnerability testing | Tight scope, single vuln type, no subdomain enum |
 | **ctf** | Capture-the-flag challenges | All phases, all vuln types, full recon |
 | **recon_only** | Reconnaissance without exploitation | Recon phases only, no active testing |
+| **bug_bounty** | Bug bounty programs | Scoped to program rules, submission tracking |
 | **custom** | User-defined | Configurable per-field |
 
-### ScanScope Fields
+#### ScanScope Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `profile` | ScopeProfile | Baseline restrictiveness level |
 | `allowed_domains` | FrozenSet | Permitted target domains (empty = all) |
-| `allowed_vuln_types` | FrozenSet | Permitted vulnerability types (empty = all) |
+| `allowed_vuln_types` | FrozenSet | Permitted vulnerability types (None = all) |
 | `allowed_phases` | FrozenSet | Permitted scan phases (empty = all) |
 | `skip_subdomain_enum` | bool | Skip subdomain enumeration |
 | `skip_port_scan` | bool | Skip port scanning |
 | `max_recon_depth` | str | "quick" / "medium" / "full" |
 | `nuclei_template_tags` | Optional[str] | Nuclei template tags for scoping |
+| `include_subdomains` | bool | *.example.com in scope if example.com allowed |
+| `allowed_cidrs` | FrozenSet | CIDR ranges (e.g. "192.168.1.0/24") |
+| `bugbounty_context` | Any | Optional bug bounty context |
 
-### Enforcement Layers
+### Layer 2: Phase-Action Gating (governance_gate.py)
 
-Governance is enforced at multiple levels — tool execution, API requests, scan orchestration, and agent decision-making — ensuring scope constraints cannot be bypassed.
+Controls **when** actions can happen — prevents exploitation during recon, blocks post-exploitation unless explicitly authorized.
+
+#### 7 Action Categories
+
+(ordered from least to most intrusive)
+
+| Category | Description |
+|----------|-------------|
+| `PASSIVE_RECON` | DNS lookups, WHOIS, certificate inspection |
+| `ACTIVE_RECON` | Port scanning, web crawling, tech fingerprinting |
+| `ANALYSIS` | Data analysis, pattern matching, report formatting |
+| `VULNERABILITY_SCAN` | Vulnerability probing, payload injection |
+| `EXPLOITATION` | Exploiting confirmed vulnerabilities |
+| `POST_EXPLOITATION` | Post-exploit actions (data extraction, pivoting) |
+| `REPORTING` | Report generation and documentation |
+
+#### 9 Phases
+
+`initializing`, `passive_recon`, `recon`, `analyzing`, `testing`, `exploitation`, `full_auto`, `reporting`, `completed`
+
+Each phase defines which action categories are allowed and which are denied. For example, the `recon` phase allows passive recon, active recon, analysis, and reporting — but denies vulnerability scanning, exploitation, and post-exploitation.
+
+### 3 Governance Modes
+
+| Mode | Behavior |
+|------|----------|
+| **strict** | Block prohibited actions, record violation |
+| **warn** | Log violation but allow action to proceed |
+| **off** | No enforcement |
+
+### Scope-Aware Prompts
+
+Recon-scoped operations receive a dedicated execution prompt (`execution_prompt_recon.md`) that reinforces recon-only behavior in the LLM's system prompt, complementing the enforcement layers.
 
 ---
 
@@ -547,6 +547,31 @@ Configurable operational security postures that control scan behavior per tool. 
 | ffuf | rate 10, 2 threads | rate 50, 10 threads | rate 150, 40 threads |
 
 Profiles are defined in `config/opsec_profiles.json`. User-supplied flags always override profile defaults.
+
+---
+
+## OSINT Integration
+
+14 API clients in `backend/core/osint/` provide automated intelligence gathering from external sources. The `aggregator.py` module runs parallel multi-source queries.
+
+| Client | File | Source |
+|--------|------|--------|
+| **Shodan** | `shodan_client.py` | Host info, open ports, services, known vulnerabilities |
+| **Censys** | `censys_client.py` | Hosts, certificates, search |
+| **VirusTotal** | `virustotal_client.py` | URL/domain scan, reputation |
+| **SecurityTrails** | `securitytrails.py` | Subdomains, DNS history, associated domains |
+| **BuiltWith** | `builtwith_client.py` | Technology profiling |
+| **NVD** | `nvd_client.py` | CVE data, CVSS scores, affected products |
+| **ExploitDB** | `exploitdb_client.py` | Known exploits, PoC availability |
+| **ZoomEye** | `zoomeye.py` | Open ports, banners, OS fingerprints |
+| **FOFA** | `fofa.py` | Open ports, services, technologies |
+| **PublicWWW** | `publicwww.py` | Sites using specific code/libraries |
+| **GitHub Dork** | `github_dork.py` | Leaked secrets, config files, API keys in repos |
+| **GrayhatWarfare** | `grayhat_warfare.py` | Exposed S3/Azure/GCS buckets |
+| **Have I Been Pwned** | `hibp.py` | Breach history, paste appearances |
+| **DeHashed** | `dehashed.py` | Breach data, exposed credentials |
+
+Each client requires its own API key set via environment variables (e.g., `SHODAN_API_KEY`, `CENSYS_API_ID`).
 
 ---
 
@@ -590,7 +615,7 @@ python3 -m core.mcp_server
 | **blue_team_agent** | Defensive security analysis |
 | **malware_analyst / malware_analysis** | Malware analysis |
 | **replay_attack / replay_attack_specialist** | Replay attack testing |
-| **apt_ttp_profiles** | APT group profiles (APT1, Lazarus, Cozy Bear) with OPSEC decision trees, stealth scoring, and campaign lifecycle |
+| **apt_ttp_profiles** | APT group profiles (APT1, Lazarus, Cozy Bear) with OPSEC decision trees |
 
 ### Task Presets (`prompts/task_library.json`)
 
@@ -606,25 +631,30 @@ python3 -m core.mcp_server
 
 ---
 
-## 119 Vulnerability Types
+## Vulnerability Engine
 
-### Categories
+### 100 Base Types + 19 PATT Extended
 
-| Category | Types | Examples |
-|----------|-------|---------|
-| **Injection** | 38 | XSS (reflected/stored/DOM), SQLi, NoSQLi, Command Injection, SSTI, LDAP, XPath, CRLF, Header Injection, Log Injection, GraphQL Injection |
-| **Inspection** | 21 | Security Headers, CORS, Clickjacking, Info Disclosure, Debug Endpoints, Error Disclosure, Source Code Exposure |
-| **AI-Driven** | 41 | BOLA, BFLA, IDOR, Race Condition, Business Logic, JWT Manipulation, OAuth Flaws, Prototype Pollution, WebSocket Hijacking, Cache Poisoning, HTTP Request Smuggling |
-| **Authentication** | 8 | Auth Bypass, Session Fixation, Credential Stuffing, Password Reset Flaws, MFA Bypass, Default Credentials |
-| **Authorization** | 6 | BOLA, BFLA, IDOR, Privilege Escalation, Forced Browsing, Function-Level Access Control |
-| **File Access** | 5 | LFI, RFI, Path Traversal, File Upload, XXE |
-| **Request Forgery** | 4 | SSRF, CSRF, Cloud Metadata, DNS Rebinding |
-| **Client-Side** | 8 | CORS, Clickjacking, Open Redirect, DOM Clobbering, Prototype Pollution, PostMessage, CSS Injection |
-| **Infrastructure** | 6 | SSL/TLS, HTTP Methods, Subdomain Takeover, Host Header, CNAME Hijacking |
-| **Cloud/Supply** | 4 | Cloud Metadata, S3 Bucket Misconfiguration, Dependency Confusion, Third-Party Script |
-| **PATT Extended** | 19 | Account Takeover, Prompt Injection, SAML Injection, Web Cache Deception, ReDoS, LaTeX Injection, XSLT Injection, SSI Injection, Java RMI, GWT Deserialization, XS-Leak, and more |
+100 vulnerability types across **12 tester categories** in `backend/core/vuln_engine/testers/`:
 
-### PATT Extended Types (19)
+| Category | Module | Examples |
+|----------|--------|---------|
+| **Injection** | `injection.py` | SQLi (error/union/blind/time), NoSQLi, LDAP, XPath, command injection |
+| **Advanced Injection** | `advanced_injection.py` | SSTI, CRLF, header injection, log injection, GraphQL injection |
+| **Authentication** | `auth.py` | Auth bypass, session fixation, credential stuffing, password reset, MFA bypass |
+| **Authorization** | `authorization.py` | BOLA, BFLA, IDOR, privilege escalation, forced browsing |
+| **Client-Side** | `client_side.py` | XSS (reflected/stored/DOM), CORS, clickjacking, open redirect, DOM clobbering, prototype pollution |
+| **Cloud/Supply Chain** | `cloud_supply.py` | Cloud metadata, S3 misconfiguration, dependency confusion, third-party scripts |
+| **Data Exposure** | `data_exposure.py` | Info disclosure, debug endpoints, source code exposure, backup files |
+| **Deserialization** | `deserialization.py` | Insecure deserialization, Java RMI, GWT deserialization |
+| **File Access** | `file_access.py` | LFI, RFI, path traversal, file upload, XXE |
+| **Infrastructure** | `infrastructure.py` | SSL/TLS, HTTP methods, subdomain takeover, host header, CNAME hijacking |
+| **Logic** | `logic.py` | Business logic, race conditions, JWT manipulation, OAuth flaws, cache poisoning |
+| **Request Forgery** | `request_forgery.py` | SSRF, CSRF, cloud metadata, DNS rebinding |
+
+### 19 PATT Extended Types
+
+Conditionally visible when the PATT submodule is initialized:
 
 | Type | Severity | CWE |
 |------|----------|-----|
@@ -648,21 +678,29 @@ python3 -m core.mcp_server
 | Cross-Site Leak (XS-Leak) | Medium | CWE-203 |
 | XSLT Injection | High | CWE-91 |
 
-Each new type includes full AI testing prompts, proof-of-execution requirements, and knowledge base entries. Types are conditionally visible in the Vuln Lab when the PATT submodule is initialized.
-
 ### Payload Engine
 
-- **34,000+ total payloads** - 665 curated + 33,500 from PayloadsAllTheThings
-- **Curated-first ordering** - Curated payloads always tried first, PATT payloads appended (deduplicated)
-- **Available at all scan depths** - Quick (3), standard (10), thorough (20), exhaustive (all) draw from the merged pool
-- **73 XSS stored payloads** + 5 context-specific sets + 2,162 PATT XSS payloads
-- **DB-specific SQLi payloads** - MySQL, PostgreSQL, MSSQL, Oracle, SQLite, MongoDB (auto-selected via error fingerprinting) + 1,537 PATT SQLi payloads
-- **22,582 path traversal payloads** from PATT Intruder wordlists
-- **Polyglot payloads** - Multi-context payloads combining SQL+XSS, Cmd+XSS, SSTI+XSS
-- **Extended XXE** - Parameter entity, blind XXE with external DTD, SVG-based, XInclude
-- **Extended SSRF** - AWS/GCP/Azure/DigitalOcean cloud metadata paths
-- Per-type AI decision prompts with anti-hallucination directives (119 types)
-- WAF-adaptive payload transformation (13 techniques + composite per-WAF evasion)
+- **34,000+ total payloads** — 665 curated + 33,500 from PayloadsAllTheThings
+- **Curated-first ordering** — curated payloads always tried first, PATT payloads appended (deduplicated)
+- **Available at all scan depths** — quick (3), standard (10), thorough (20), exhaustive (all) draw from the merged pool
+- **DB-specific SQLi payloads** — MySQL, PostgreSQL, MSSQL, Oracle, SQLite, MongoDB (auto-selected via error fingerprinting)
+- **Polyglot payloads** — multi-context payloads combining SQL+XSS, Cmd+XSS, SSTI+XSS
+- **WAF-adaptive transformation** — 13 techniques + composite per-WAF evasion
+- Per-type AI decision prompts with anti-hallucination directives
+
+### Top Payload Counts
+
+| Vuln Type | PATT Payloads |
+|-----------|---------------|
+| Path Traversal | 22,582 |
+| LFI | 4,758 |
+| XSS Reflected | 2,162 |
+| Web Cache Deception | 1,125 |
+| SQLi (error+union+blind+time) | 1,537 |
+| Command Injection | 491 |
+| Open Redirect | 305 |
+| SSTI | 183 |
+| XXE | 102 |
 
 ---
 
@@ -704,30 +742,16 @@ python -m backend.core.vuln_engine.patt.cli dump command_injection
 python -m backend.core.vuln_engine.patt.cli update
 ```
 
-### Top Payload Counts
-
-| Vuln Type | PATT Payloads |
-|-----------|---------------|
-| Path Traversal | 22,582 |
-| LFI | 4,758 |
-| XSS Reflected | 2,162 |
-| Web Cache Deception | 1,125 |
-| SQLi (error+union+blind+time) | 1,537 |
-| Command Injection | 491 |
-| Open Redirect | 305 |
-| SSTI | 183 |
-| XXE | 102 |
-
 ---
 
 ## Kali Sandbox System
 
 Each scan runs in its own **isolated Kali Linux Docker container**, providing:
 
-- **Complete Isolation** - No interference between concurrent scans
-- **On-Demand Tools** - 56 tools installed only when needed
-- **Auto Cleanup** - Containers destroyed when scan completes
-- **Resource Limits** - Per-container memory (2GB) and CPU (2 cores) limits
+- **Complete Isolation** — no interference between concurrent scans
+- **On-Demand Tools** — 56 tools installed only when needed
+- **Auto Cleanup** — containers destroyed when scan completes
+- **Resource Limits** — per-container memory (2GB) and CPU (2 cores) limits
 
 ### Pre-Installed Tools (38)
 
@@ -757,10 +781,101 @@ ContainerPool (global coordinator, max 5 concurrent)
   └── KaliSandbox(scan_id="ghi") → docker: sploitai-ghi
 ```
 
-- **TTL enforcement** - Containers auto-destroyed after 60 min
-- **Orphan cleanup** - Stale containers removed on server startup
-- **Graceful fallback** - Falls back to shared container if Docker unavailable
-- **Network** - All containers on `sploitai-network` for inter-container communication
+- **TTL enforcement** — containers auto-destroyed after 60 min
+- **Orphan cleanup** — stale containers removed on server startup
+- **Graceful fallback** — falls back to shared container if Docker unavailable
+- **Network** — all containers on `sploitai-network` for inter-container communication
+
+---
+
+## Anti-Hallucination & Validation
+
+sploit.ai uses a multi-layered validation pipeline to eliminate false positives:
+
+### Validation Pipeline
+
+```
+Finding Candidate
+    │
+    ▼
+┌─────────────────────┐
+│ Negative Controls    │  Send benign/empty requests as controls
+│ Same behavior = FP   │  -60 confidence if same response
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│ Proof of Execution   │  25+ per-vuln-type proof methods
+│ XSS: context check   │  SSRF: metadata markers
+│ SQLi: DB errors       │  BOLA: data comparison
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│ AI Interpretation    │  LLM with anti-hallucination prompts
+│ Per-type system msgs │  17 composable prompt templates
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│ Confidence Scorer    │  0-100 numeric score
+│ ≥90 = confirmed      │  +proof, +impact, +controls
+│ ≥60 = likely          │  -baseline_only, -same_behavior
+│ <60 = rejected        │  Breakdown visible in UI
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│ Validation Judge     │  Final verdict authority
+│ approve / reject     │  Records for adaptive learning
+└─────────────────────┘
+```
+
+### Anti-Hallucination System Prompts
+
+17 composable prompts applied across 8 task contexts (testing, verification, confirmation, strategy, reporting, interpretation, poc_generation, recon_analysis):
+- `anti_hallucination` — core truthfulness directives
+- `proof_of_execution` — require concrete evidence
+- `negative_controls` — compare with benign requests
+- `anti_severity_inflation` — accurate severity ratings
+- `access_control_intelligence` — BOLA/BFLA data comparison methodology
+- `operational_humility` — uncertainty over false confidence
+- `decision_confidence` — cognitive loop with confidence thresholds and adaptive triggers
+
+### Access Control Adaptive Learning
+
+- Records TP/FP outcomes per domain for BOLA/BFLA/IDOR
+- 9 default response patterns, 6 known FP patterns (WSO2, Keycloak, etc.)
+- Historical FP rate influences future confidence scoring
+
+---
+
+## Unified LLM Layer
+
+The unified LLM layer (`backend/core/llm/`) provides 3-tier model routing, native tool calling, structured JSON output, and per-session cost tracking across 6 providers.
+
+### 3-Tier Model Routing
+
+| Tier | Default Model | Task Types | Use Case |
+|------|--------------|------------|----------|
+| **Fast** | Claude Haiku 4.5 | Classification, formatting, simple extraction, status checks, log parsing | High-volume, low-complexity calls |
+| **Balanced** | Claude Sonnet 4.6 | Testing decisions, strategy, analysis, report generation, prompt processing | Core agent reasoning |
+| **Deep** | Claude Opus 4.5 | Exploit validation, chain analysis, zero-day research, complex auth testing, novel attack planning | High-stakes decisions |
+
+Per-tier model overrides are available via environment variables (`LLM_MODEL_FAST`, `LLM_MODEL_BALANCED`, `LLM_MODEL_DEEP`) or the Settings UI.
+
+### 6 Providers
+
+| Provider | Authentication | Models |
+|----------|---------------|--------|
+| **Anthropic** | `ANTHROPIC_API_KEY` | Claude Haiku, Sonnet, Opus |
+| **OpenAI** | `OPENAI_API_KEY` | GPT-4o-mini, GPT-4o |
+| **Google Gemini** | `GEMINI_API_KEY` | Gemini 2.0 Flash, Gemini 2.0 Pro |
+| **AWS Bedrock** | AWS credential chain | Claude models via Bedrock |
+| **Ollama** | Local (no key) | Any Ollama model |
+| **LM Studio** | Local (no key) | Any LM Studio model |
+
+> **OpenRouter**: Supported via `OPENROUTER_API_KEY` environment variable. Requests are routed through the OpenAI-compatible provider — there is no dedicated OpenRouter provider module.
+
+### Cost Tracking
+
+Per-session budget enforcement with configurable limits (default $5.00/scan). Tracks input/output tokens per tier with warning thresholds at 80% budget utilization. Full cost reports available per scan with tier-level breakdowns.
 
 ---
 
@@ -813,95 +928,6 @@ Configure the domain via the `INTERACTSH_DOMAIN` environment variable (defaults 
 
 ---
 
-## Anti-Hallucination & Validation
-
-sploit.ai uses a multi-layered validation pipeline to eliminate false positives:
-
-### Validation Pipeline
-
-```
-Finding Candidate
-    │
-    ▼
-┌─────────────────────┐
-│ Negative Controls    │  Send benign/empty requests as controls
-│ Same behavior = FP   │  -60 confidence if same response
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│ Proof of Execution   │  25+ per-vuln-type proof methods
-│ XSS: context check   │  SSRF: metadata markers
-│ SQLi: DB errors       │  BOLA: data comparison
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│ AI Interpretation    │  LLM with anti-hallucination prompts
-│ Per-type system msgs │  17 composable prompt templates
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│ Confidence Scorer    │  0-100 numeric score
-│ ≥90 = confirmed      │  +proof, +impact, +controls
-│ ≥60 = likely          │  -baseline_only, -same_behavior
-│ <60 = rejected        │  Breakdown visible in UI
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│ Validation Judge     │  Final verdict authority
-│ approve / reject     │  Records for adaptive learning
-└─────────────────────┘
-```
-
-### Anti-Hallucination System Prompts
-
-17 composable prompts applied across 8 task contexts (testing, verification, confirmation, strategy, reporting, interpretation, poc_generation, recon_analysis):
-- `anti_hallucination` - Core truthfulness directives
-- `proof_of_execution` - Require concrete evidence
-- `negative_controls` - Compare with benign requests
-- `anti_severity_inflation` - Accurate severity ratings
-- `access_control_intelligence` - BOLA/BFLA data comparison methodology
-- `operational_humility` - Uncertainty over false confidence
-- `decision_confidence` - Cognitive loop (KNOW/THINK/TEST/VALIDATE) with confidence thresholds (>75% exploit, 40-75% test more, <40% pivot) and adaptive triggers
-
-### Access Control Adaptive Learning
-
-- Records TP/FP outcomes per domain for BOLA/BFLA/IDOR
-- 9 default response patterns, 6 known FP patterns (WSO2, Keycloak, etc.)
-- Historical FP rate influences future confidence scoring
-
----
-
-## Unified LLM Layer
-
-The unified LLM layer (`backend/core/llm/`) provides 3-tier model routing, native tool calling, structured JSON output, and per-session cost tracking across 6 providers.
-
-### 3-Tier Model Routing
-
-| Tier | Default Model | Task Types | Use Case |
-|------|--------------|------------|----------|
-| **Fast** | Claude Haiku 4.5 | Classification, formatting, simple extraction, status checks, log parsing | High-volume, low-complexity calls |
-| **Balanced** | Claude Sonnet 4.6 | Testing decisions, strategy, analysis, report generation, prompt processing | Core agent reasoning |
-| **Deep** | Claude Opus 4.5 | Exploit validation, chain analysis, zero-day research, complex auth testing, novel attack planning, executive reporting, architecture review, threat modeling | High-stakes decisions |
-
-All 18 LLM call sites in the agent use `task_type=` routing. Per-tier model overrides are available via environment variables (`LLM_MODEL_FAST`, `LLM_MODEL_BALANCED`, `LLM_MODEL_DEEP`) or the Settings UI.
-
-### Providers
-
-| Provider | Authentication | Models |
-|----------|---------------|--------|
-| **Anthropic** | `ANTHROPIC_API_KEY` | Claude Haiku, Sonnet, Opus |
-| **OpenAI** | `OPENAI_API_KEY` | GPT-4o-mini, GPT-4o |
-| **Google Gemini** | `GEMINI_API_KEY` | Gemini 2.0 Flash, Gemini 2.0 Pro |
-| **AWS Bedrock** | AWS credential chain | Claude models via Bedrock |
-| **Ollama** | Local (no key) | Any Ollama model |
-| **LM Studio** | Local (no key) | Any LM Studio model |
-
-### Cost Tracking
-
-Per-session budget enforcement with configurable limits (default $5.00/scan). Tracks input/output tokens per tier with warning thresholds at 80% budget utilization. Full cost reports available per scan with tier-level breakdowns.
-
----
-
 ## Vulnerability Enrichment
 
 Automated CVE and exploit cross-referencing for discovered vulnerabilities via NVD and ExploitDB.
@@ -943,33 +969,53 @@ Each entry includes MITRE ATT&CK technique IDs and detection probability profile
 
 ---
 
+## Bug Bounty Support
+
+sploit.ai includes purpose-built support for bug bounty programs:
+
+- **BUG_BOUNTY scope profile** — governance profile that scopes the agent to program rules
+- **`bugbounty.py` API router** — CRUD endpoints for bug bounty submission tracking
+- **`BugBountySubmission` model** — SQLAlchemy model for persisting submissions
+- **`BugBountyPage.tsx`** — dedicated frontend page for managing submissions
+- **Agent prompt injection** — bug bounty instructions injected into the agent's system prompt when the BUG_BOUNTY profile is active
+
+---
+
 ## Web GUI
 
-### Pages
+### 21 Pages
 
 | Page | Route | Description |
 |------|-------|-------------|
 | **Dashboard** | `/` | Stats overview, severity distribution, recent activity feed |
-| **Agent** | `/agent` | Unified agent dashboard — start operations, view status, re-run |
-| **Agent Detail** | `/agent/:id` | Operation detail with decision log, findings, re-run & compare |
-| **Auto Pentest** | `/auto` | One-click autonomous pentest with 3-stream live display |
-| **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (119 types, 11 categories + PATT Extended) |
+| **Agent** | `/agent` | Start operations, view agent status, re-run |
+| **Agent Detail** | `/agent/:operationId` | Operation detail with decision log, findings, re-run & compare |
+| **Operations** | `/operations` | Operations list (redirects to Agent) |
+| **Operation Detail** | `/operations/:id` | Operation detail (redirects to Agent Detail) |
+| **Vuln Lab** | `/vuln-lab` | Per-type vulnerability testing (100+ types, 12 categories + PATT) |
 | **Terminal Agent** | `/terminal` | AI-powered interactive security chat + tool execution |
 | **Sandboxes** | `/sandboxes` | Real-time Docker container monitoring + management |
-| **Compare Scans** | `/compare` | Side-by-side scan comparison |
-| **Scan Details** | `/scan/:id` | Findings with confidence badges, pause/resume/stop |
+| **Scan Details** | `/scan/:scanId` | Findings with confidence badges, pause/resume/stop |
+| **New Scan** | `/scan/new` | Create new scan (redirects to Agent) |
 | **Scheduler** | `/scheduler` | Cron/interval automated scan scheduling |
-| **Reports** | `/reports` | HTML/PDF/JSON report generation and viewing |
+| **Reports** | `/reports` | Report generation and listing |
+| **Report View** | `/reports/:reportId` | HTML report viewer |
 | **Tradecraft** | `/tradecraft` | TTP tradecraft library browser |
+| **Governance** | `/governance` | Governance profiles and violation viewer |
 | **Settings** | `/settings` | LLM providers, model routing, feature toggles |
+| **Compare Scans** | `/compare` | Side-by-side scan comparison |
+| **Prompts** | `/prompts` | Prompt template library |
+| **Task Library** | `/tasks` | Task preset management |
+| **Realtime** | `/realtime` | Realtime interactive agent sessions |
+| **Bug Bounty** | `/bugbounty` | Bug bounty submission tracking |
 
 ### Sandbox Dashboard
 
 Real-time monitoring of per-scan Kali containers:
-- **Pool stats** - Active/max containers, Docker status, TTL
-- **Capacity bar** - Visual utilization indicator
-- **Per-container cards** - Name, scan link, uptime, installed tools, status
-- **Actions** - Health check, destroy (with confirmation), cleanup expired/orphans
+- **Pool stats** — active/max containers, Docker status, TTL
+- **Capacity bar** — visual utilization indicator
+- **Per-container cards** — name, scan link, uptime, installed tools, status
+- **Actions** — health check, destroy (with confirmation), cleanup expired/orphans
 - **5-second auto-polling** for real-time updates
 
 ---
@@ -997,20 +1043,7 @@ http://localhost:8000/api/v1
 | `POST` | `/scans/{id}/resume` | Resume scan |
 | `DELETE` | `/scans/{id}` | Delete scan |
 
-#### AI Agent (V1)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/agent/run` | Launch autonomous agent |
-| `GET` | `/agent/status/{id}` | Get agent status + findings |
-| `GET` | `/agent/by-scan/{scan_id}` | Get agent by scan ID |
-| `POST` | `/agent/stop/{id}` | Stop agent |
-| `POST` | `/agent/pause/{id}` | Pause agent |
-| `POST` | `/agent/resume/{id}` | Resume agent |
-| `GET` | `/agent/findings/{id}` | Get findings with details |
-| `GET` | `/agent/logs/{id}` | Get agent logs |
-
-#### LLM-Driven Agent (V2)
+#### LLM-Driven Agent
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -1026,6 +1059,34 @@ http://localhost:8000/api/v1
 | `GET` | `/agent-v2/operations` | List all agent operations |
 | `POST` | `/agent-v2/{id}/report` | Generate HTML/JSON report |
 | `GET` | `/agent-v2/{id}/report/download` | Download report |
+
+#### Task Library
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/tasks` | List task presets |
+| `POST` | `/tasks` | Create task preset |
+| `PUT` | `/tasks/{id}` | Update task preset |
+| `DELETE` | `/tasks/{id}` | Delete task preset |
+
+#### Realtime Sessions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/realtime/start` | Start realtime interactive session |
+| `POST` | `/realtime/{id}/message` | Send message to running session |
+| `POST` | `/realtime/{id}/stop` | Stop realtime session |
+| `GET` | `/realtime/{id}/status` | Get session status |
+
+#### Bug Bounty
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/bugbounty/submissions` | List bug bounty submissions |
+| `POST` | `/bugbounty/submissions` | Create submission |
+| `GET` | `/bugbounty/submissions/{id}` | Get submission details |
+| `PUT` | `/bugbounty/submissions/{id}` | Update submission |
+| `DELETE` | `/bugbounty/submissions/{id}` | Delete submission |
 
 #### Enrichment
 
@@ -1084,7 +1145,7 @@ http://localhost:8000/api/v1
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/vuln-lab/types` | List 119 vuln types by category (includes PATT Extended when available) |
+| `GET` | `/vuln-lab/types` | List vuln types by category (includes PATT Extended when available) |
 | `POST` | `/vuln-lab/run` | Run per-type vulnerability test |
 | `GET` | `/vuln-lab/challenges` | List challenge runs |
 | `GET` | `/vuln-lab/stats` | Detection rate stats |
@@ -1134,19 +1195,20 @@ Interactive docs available at:
 ANTHROPIC_API_KEY=your-key
 OPENAI_API_KEY=your-key
 GEMINI_API_KEY=your-key
-OPENROUTER_API_KEY=your-key
+OPENROUTER_API_KEY=your-key   # Routed through OpenAI-compatible provider
 
 # AWS Bedrock (uses AWS credential chain - no API key needed)
-# Authenticate via env vars, ~/.aws/credentials, IAM role, or SSO
 AWS_BEDROCK_REGION=us-east-1
 AWS_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6-v1:0
-# AWS_ACCESS_KEY_ID=your-access-key
-# AWS_SECRET_ACCESS_KEY=your-secret-key
-# AWS_PROFILE=default
 
 # Local LLM (optional)
 OLLAMA_BASE_URL=http://localhost:11434
 LMSTUDIO_BASE_URL=http://localhost:1234
+
+# 3-tier model overrides (optional)
+LLM_MODEL_FAST=claude-haiku-4-5-20251001
+LLM_MODEL_BALANCED=claude-sonnet-4-6-20250514
+LLM_MODEL_DEEP=claude-opus-4-5-20250514
 
 # Database
 DATABASE_URL=sqlite+aiosqlite:///./data/sploitai.db
@@ -1161,12 +1223,12 @@ DEBUG=false
 
 AWS Bedrock lets you use Claude models through your AWS account with no separate API key. Authentication uses the standard AWS credential chain:
 
-1. **Environment variables** - `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`
-2. **Shared credentials** - `~/.aws/credentials` (set `AWS_PROFILE` if not default)
-3. **IAM role** - Automatic on EC2/ECS/Lambda
-4. **SSO** - `aws sso login --profile your-profile`
+1. **Environment variables** — `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`
+2. **Shared credentials** — `~/.aws/credentials` (set `AWS_PROFILE` if not default)
+3. **IAM role** — automatic on EC2/ECS/Lambda
+4. **SSO** — `aws sso login --profile your-profile`
 
-Your IAM principal needs the `bedrock:InvokeModel` permission. To enable Bedrock as the default provider, set `default_profile` to `bedrock_claude_default` in `config/config.json`.
+Your IAM principal needs the `bedrock:InvokeModel` permission.
 
 ### config/config.json
 
@@ -1245,9 +1307,6 @@ git submodule update --init
 
 # Check status and payload counts
 python3 -m backend.core.vuln_engine.patt.cli status
-
-# Run PATT integration tests
-pytest tests/test_patt_integration.py -v
 ```
 
 ---
@@ -1265,7 +1324,7 @@ pytest tests/test_patt_integration.py -v
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License — See [LICENSE](LICENSE) for details.
 
 ---
 
@@ -1275,15 +1334,15 @@ MIT License - See [LICENSE](LICENSE) for details.
 |-------|-------------|
 | **Backend** | Python, FastAPI, SQLAlchemy, Pydantic, aiohttp |
 | **Frontend** | React 18, TypeScript, TailwindCSS, Vite |
-| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LMStudio, OpenRouter (3-tier routing, native tool calling, structured JSON) |
+| **AI/LLM** | Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, Ollama, LM Studio (3-tier routing, native tool calling, structured JSON) |
 | **Sandbox** | Docker, Kali Linux, 20 ProjectDiscovery tools, Nmap, SQLMap, Nikto |
 | **Tools** | Nuclei, Naabu, httpx, Subfinder, Katana, tlsx, asnmap, cvemap, mapcidr, alterx, shuffledns, cloudlist, interactsh, FFuf, Dalfox |
 | **Proxy** | mitmproxy (opt-in traffic interception, replay, TLS inspection) |
 | **OOB** | interactsh-server (self-hosted out-of-band interaction server) |
-| **OSINT** | NVD API (CVE lookup, CVSS scores), ExploitDB (exploit cross-reference, PoC availability) |
+| **OSINT** | Shodan, Censys, VirusTotal, SecurityTrails, BuiltWith, NVD, ExploitDB, ZoomEye, FOFA, PublicWWW, GitHub Dork, GrayhatWarfare, HIBP, DeHashed |
 | **Payloads** | PayloadsAllTheThings (33,500+ community payloads via git submodule, 61 mapped categories) |
 | **Infra** | Docker Compose, MCP Protocol (34+ tools), Playwright, APScheduler |
 
 ---
 
-**sploit.ai v3** - *AI-Powered Autonomous Penetration Testing Platform*
+**sploit.ai v3** — *AI-Powered Autonomous Penetration Testing Platform*
