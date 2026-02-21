@@ -4,9 +4,8 @@ sploit.ai - Scan Service
 Orchestrates the entire scan process:
 1. AI-powered prompt processing
 2. REAL reconnaissance with actual tools
-3. AUTONOMOUS endpoint discovery when recon finds little
-4. AI-driven vulnerability testing
-5. Dynamic analysis based on findings
+3. AI-driven vulnerability testing
+4. Dynamic analysis based on findings
 
 GLOBAL AUTHORIZATION NOTICE:
 This is a homologated penetration testing tool.
@@ -29,7 +28,6 @@ from backend.core.recon_integration import ReconIntegration, check_tools_install
 from backend.core.ai_prompt_processor import AIPromptProcessor, AIVulnerabilityAnalyzer
 from backend.core.vuln_engine.engine import DynamicVulnerabilityEngine
 from backend.core.vuln_engine.payload_generator import PayloadGenerator, normalize_vuln_type
-from backend.core.autonomous_scanner import AutonomousScanner
 from backend.core.ai_prompt_processor import TestingPlan
 from backend.core.llm_agent import LLMDrivenAgent
 from backend.core import scan_registry
@@ -239,7 +237,7 @@ class ScanService:
         await ws_manager.broadcast_agent_task(task.scan_id, task.to_dict())
 
     async def execute_scan(self, scan_id: str):
-        """Execute a complete scan with real recon, autonomous discovery, and AI analysis"""
+        """Execute a complete scan with real recon and AI analysis"""
         try:
             # Get scan from database
             result = await self.db.execute(select(Scan).where(Scan.id == scan_id))
@@ -419,116 +417,6 @@ class ScanService:
                 recon_endpoints = scan.total_endpoints
                 recon_urls = len(recon_data.get("urls", []))
                 await ws_manager.broadcast_log(scan_id, "info", f"Recon found: {recon_endpoints} endpoints, {recon_urls} URLs")
-
-            # Phase 1.5: AUTONOMOUS DISCOVERY (if recon found little)
-            endpoints_count = scan.total_endpoints + len(recon_data.get("urls", []))
-
-            if endpoints_count < 10:
-                await ws_manager.broadcast_log(scan_id, "info", "")
-                await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
-                await ws_manager.broadcast_log(scan_id, "info", "AUTONOMOUS DISCOVERY MODE")
-                await ws_manager.broadcast_log(scan_id, "info", "=" * 40)
-                await ws_manager.broadcast_log(scan_id, "warning", "Recon found limited data. Activating autonomous scanner...")
-                await ws_manager.broadcast_progress(scan_id, 20, "Autonomous endpoint discovery...")
-
-                # Create log callback for autonomous scanner
-                async def scanner_log(level: str, message: str):
-                    await ws_manager.broadcast_log(scan_id, level, message)
-
-                for target in targets:
-                    if self._stop_requested:
-                        break
-
-                    # Create autonomous discovery task
-                    discovery_task = await self._create_agent_task(
-                        scan_id=scan_id,
-                        task_type="recon",
-                        task_name=f"Autonomous Discovery: {target.hostname or target.url[:30]}",
-                        description="AI-powered endpoint discovery and vulnerability scanning",
-                        tool_name="autonomous_scanner",
-                        tool_category="ai"
-                    )
-
-                    try:
-                        endpoints_discovered = 0
-                        vulns_discovered = 0
-
-                        async with AutonomousScanner(
-                            scan_id=scan_id,
-                            log_callback=scanner_log,
-                            timeout=15,
-                            max_depth=3,
-                            governance=governance
-                        ) as scanner:
-                            autonomous_results = await scanner.run_autonomous_scan(
-                                target_url=target.url,
-                                recon_data=recon_data
-                            )
-
-                            # Merge autonomous results
-                            for ep in autonomous_results.get("endpoints", []):
-                                if isinstance(ep, dict):
-                                    endpoint = Endpoint(
-                                        scan_id=scan_id,
-                                        target_id=target.id,
-                                        url=ep.get("url", ""),
-                                        method=ep.get("method", "GET"),
-                                        path=ep.get("url", "").split("?")[0].split("/")[-1] or "/"
-                                    )
-                                    self.db.add(endpoint)
-                                    scan.total_endpoints += 1
-                                    endpoints_discovered += 1
-
-                            # Add URLs to recon data
-                            recon_data["urls"] = recon_data.get("urls", []) + [
-                                ep.get("url") for ep in autonomous_results.get("endpoints", [])
-                                if isinstance(ep, dict)
-                            ]
-                            recon_data["directories"] = autonomous_results.get("directories_found", [])
-                            recon_data["parameters"] = autonomous_results.get("parameters_found", [])
-
-                            # Save autonomous vulnerabilities directly
-                            for vuln in autonomous_results.get("vulnerabilities", []):
-                                vuln_severity = self._confidence_to_severity(vuln["confidence"])
-                                db_vuln = Vulnerability(
-                                    scan_id=scan_id,
-                                    title=f"{vuln['type'].replace('_', ' ').title()} on {vuln['endpoint'][:50]}",
-                                    vulnerability_type=vuln["type"],
-                                    severity=vuln_severity,
-                                    description=vuln["evidence"],
-                                    affected_endpoint=vuln["endpoint"],
-                                    poc_payload=vuln["payload"],
-                                    poc_request=str(vuln.get("request", {}))[:5000],
-                                    poc_response=str(vuln.get("response", {}))[:5000]
-                                )
-                                backfill_vulnerability_metadata(db_vuln)
-                                self.db.add(db_vuln)
-                                await self.db.flush()  # Ensure ID is assigned
-                                await VulnEnrichmentService.get_instance().enqueue(db_vuln.id, scan_id)
-                                vulns_discovered += 1
-
-                                # Increment vulnerability count
-                                await self._increment_vulnerability_count(scan, vuln_severity)
-
-                                await ws_manager.broadcast_vulnerability_found(scan_id, {
-                                    "id": db_vuln.id,
-                                    "title": db_vuln.title,
-                                    "severity": db_vuln.severity,
-                                    "type": vuln["type"],
-                                    "endpoint": vuln["endpoint"]
-                                })
-
-                        await self._complete_agent_task(
-                            discovery_task,
-                            items_processed=endpoints_discovered,
-                            items_found=vulns_discovered,
-                            summary=f"Discovered {endpoints_discovered} endpoints, {vulns_discovered} vulnerabilities"
-                        )
-                    except Exception as e:
-                        await self._fail_agent_task(discovery_task, str(e))
-
-                await self.db.commit()
-                await ws_manager.broadcast_log(scan_id, "info", f"Autonomous discovery complete. Total endpoints: {scan.total_endpoints}")
 
             # Check for phase skip before analysis
             skip_target = self._should_skip_phase(scan_id, "recon") or (skip_target if skip_target and PHASE_ORDER.index(skip_target) >= PHASE_ORDER.index("analyzing") else None)

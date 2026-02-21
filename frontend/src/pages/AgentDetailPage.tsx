@@ -58,11 +58,6 @@ function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text)
 }
 
-/** V1 agent IDs are 8-char hex; V2 UUIDs are 36-char */
-function isV1AgentId(id: string): boolean {
-  return /^[a-f0-9]{8}$/.test(id)
-}
-
 export default function AgentDetailPage() {
   const { operationId } = useParams<{ operationId: string }>()
   const navigate = useNavigate()
@@ -90,13 +85,6 @@ export default function AgentDetailPage() {
 
   const statusRef = useRef<string | undefined>(undefined)
   statusRef.current = currentOperation?.status
-
-  // Redirect V1 agent IDs
-  useEffect(() => {
-    if (operationId && isV1AgentId(operationId)) {
-      navigate(`/agent-v1/${operationId}`, { replace: true })
-    }
-  }, [operationId, navigate])
 
   const fetchStatus = useCallback(async () => {
     if (!operationId) return
@@ -131,7 +119,7 @@ export default function AgentDetailPage() {
 
   // Initial fetch
   useEffect(() => {
-    if (!operationId || isV1AgentId(operationId)) return
+    if (!operationId) return
 
     let cancelled = false
     const initialFetch = async () => {
