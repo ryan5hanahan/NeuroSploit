@@ -9,6 +9,8 @@
 # Benchmark suite:
 #   docker compose -f docker-compose.test.yml run --rm test-runner -m benchmark benchmark/
 
+name: sploitai-test
+
 services:
   test-runner:
     build:
