@@ -13,11 +13,10 @@ import { agentV2Api, bugBountyApi } from '../../services/api'
 import type { AgentTask, BugBountyProgram, BugBountyScope } from '../../types'
 
 const SCOPE_OPTIONS = [
-  { value: 'full_auto', label: 'Full Auto' },
+  { value: 'pentest', label: 'Pentest' },
   { value: 'bug_bounty', label: 'Bug Bounty' },
-  { value: 'vuln_lab', label: 'Vuln Lab' },
   { value: 'ctf', label: 'CTF' },
-  { value: 'recon_only', label: 'Recon Only' },
+  { value: 'auto_pwn', label: 'Auto Pwn' },
 ]
 
 const GOVERNANCE_OPTIONS = [
@@ -44,7 +43,7 @@ export default function NewOperationForm() {
   // Target & Objective
   const [target, setTarget] = useState('')
   const [objective, setObjective] = useState('')
-  const [scopeProfile, setScopeProfile] = useState('full_auto')
+  const [scopeProfile, setScopeProfile] = useState('pentest')
   const [governanceMode, setGovernanceMode] = useState('warn')
   const [multiTarget, setMultiTarget] = useState(false)
   const [additionalTargets, setAdditionalTargets] = useState('')

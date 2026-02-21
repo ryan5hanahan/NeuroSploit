@@ -53,24 +53,24 @@ def _make_agent(tmp_path, autonomous=False, max_steps=100, **kwargs):
 
 
 class TestAutonomousModeScope:
-    def test_autonomous_true_sets_scope_to_full_auto(self, tmp_path):
-        """When autonomous=True, governance scope profile must be full_auto."""
+    def test_autonomous_true_sets_scope_to_auto_pwn(self, tmp_path):
+        """When autonomous=True, governance scope profile must be auto_pwn."""
         agent = _make_agent(tmp_path, autonomous=True)
         assert agent.autonomous is True
-        # The scope_profile for autonomous mode must be full_auto
-        assert agent.scope_profile == "full_auto"
+        # The scope_profile for autonomous mode must be auto_pwn
+        assert agent.scope_profile == "auto_pwn"
 
     def test_autonomous_false_preserves_default_scope(self, tmp_path):
         """When autonomous=False, the default scope_profile should apply."""
         agent = _make_agent(tmp_path, autonomous=False)
         assert agent.autonomous is False
-        # Default scope should still be full_auto (or whatever was set)
-        assert agent.scope_profile == "full_auto"
+        # Default scope should be pentest
+        assert agent.scope_profile == "pentest"
 
-    def test_autonomous_true_with_explicit_scope_overrides_to_full_auto(self, tmp_path):
-        """autonomous=True should force scope to full_auto even if another scope was requested."""
+    def test_autonomous_true_with_explicit_scope_overrides_to_auto_pwn(self, tmp_path):
+        """autonomous=True should force scope to auto_pwn."""
         agent = _make_agent(tmp_path, autonomous=True)
-        assert agent.scope_profile == "full_auto"
+        assert agent.scope_profile == "auto_pwn"
 
 
 # ---------------------------------------------------------------------------

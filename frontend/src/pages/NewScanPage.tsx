@@ -27,33 +27,33 @@ interface OperationModeInfo {
 
 const OPERATION_MODES: OperationModeInfo[] = [
   {
-    id: 'full_auto',
-    name: 'Full Auto',
-    icon: <Bot className="w-5 h-5" />,
-    description: 'Complete workflow: Recon -> Analyze -> Test -> Report',
+    id: 'pentest',
+    name: 'Pentest',
+    icon: <Shield className="w-5 h-5" />,
+    description: 'Professional penetration test: Recon → Test → Exploit → Report (PTES/OWASP methodology)',
     color: 'primary'
   },
   {
-    id: 'recon_only',
-    name: 'Recon Only',
-    icon: <Search className="w-5 h-5" />,
-    description: 'Reconnaissance and enumeration only, no vulnerability testing',
-    color: 'blue'
+    id: 'bug_bounty',
+    name: 'Bug Bounty',
+    icon: <Target className="w-5 h-5" />,
+    description: 'Authorized bug bounty testing with strict governance and report quality focus',
+    color: 'green'
   },
   {
-    id: 'prompt_only',
-    name: 'AI Prompt Mode',
-    icon: <Brain className="w-5 h-5" />,
-    description: 'AI decides everything based on your prompt - full autonomy',
-    warning: 'HIGH TOKEN USAGE - The AI will use more API calls to decide what to do',
+    id: 'ctf',
+    name: 'CTF',
+    icon: <Zap className="w-5 h-5" />,
+    description: 'CTF challenge mode — aggressive, creative, post-exploitation enabled',
     color: 'purple'
   },
   {
-    id: 'analyze_only',
-    name: 'Analyze Only',
-    icon: <Target className="w-5 h-5" />,
-    description: 'Analyze provided data without active testing',
-    color: 'green'
+    id: 'auto_pwn',
+    name: 'Auto Pwn',
+    icon: <Bot className="w-5 h-5" />,
+    description: 'Maximum exploitation depth — chaining, pivoting, credential harvesting, 200+ steps',
+    warning: 'HIGH TOKEN USAGE - Autonomous mode with no checkpoints',
+    color: 'red'
   }
 ]
 

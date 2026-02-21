@@ -19,9 +19,14 @@ from backend.core.governance import (
     GovernanceAgent,
     ScanScope,
     ScopeProfile,
+    create_bug_bounty_scope,
+    create_ctf_scope,
+    create_pentest_scope,
+    create_auto_pwn_scope,
+    _create_single_vuln_scope,
+    # Backward-compat aliases
     create_vuln_lab_scope,
     create_full_auto_scope,
-    create_ctf_scope,
     create_recon_only_scope,
 )
 from backend.core.governance_gate import (
@@ -268,11 +273,30 @@ class Governance:
 # ---------------------------------------------------------------------------
 
 _SCOPE_FACTORIES = {
-    "vuln_lab": lambda url, vt: create_vuln_lab_scope(url, vt),
-    "full_auto": lambda url, vt: create_full_auto_scope(url),
+    # New profiles
+    "bug_bounty": lambda url, vt: create_bug_bounty_scope(url),
     "ctf": lambda url, vt: create_ctf_scope(url),
+    "pentest": lambda url, vt: create_pentest_scope(url),
+    "auto_pwn": lambda url, vt: create_auto_pwn_scope(url),
+    # VulnLab helper (single vuln type restriction on pentest profile)
+    "vuln_lab": lambda url, vt: _create_single_vuln_scope(url, vt),
+    # Backward-compatible aliases
+    "full_auto": lambda url, vt: create_pentest_scope(url),
     "recon_only": lambda url, vt: create_recon_only_scope(url),
-    # bug_bounty scopes are built via governance_bridge, not this factory
+    "custom": lambda url, vt: create_pentest_scope(url),
+}
+
+# Profile → default governance mode
+_PROFILE_DEFAULT_MODE: Dict[str, str] = {
+    "bug_bounty": "strict",
+    "ctf": "off",
+    "pentest": "warn",
+    "auto_pwn": "off",
+    # Backward-compat aliases
+    "full_auto": "warn",
+    "recon_only": "strict",
+    "vuln_lab": "warn",
+    "custom": "warn",
 }
 
 
@@ -293,7 +317,7 @@ def create_governance(
     Args:
         scan_id: The scan identifier.
         target_url: The primary target URL (for domain scoping).
-        scope_profile: One of "vuln_lab", "full_auto", "ctf", "recon_only".
+        scope_profile: One of "bug_bounty", "ctf", "pentest", "auto_pwn" (or legacy aliases).
         vuln_type: Required for vuln_lab profile (the specific vuln type to test).
         governance_mode: Phase gate mode — "strict", "warn", or "off".
         task_category: Task category for phase ceiling (recon, vulnerability, etc.).
@@ -312,12 +336,16 @@ def create_governance(
     # Load action classification overrides from config
     _load_classification_overrides(gov_config)
 
-    # Resolve governance mode: scan config > explicit param > "warn"
-    effective_mode = gov_config.get("mode", governance_mode)
+    # Resolve governance mode: scan config > explicit param > profile default > "warn"
+    profile_default_mode = _PROFILE_DEFAULT_MODE.get(scope_profile, "warn")
+    effective_mode = gov_config.get("mode", governance_mode or profile_default_mode)
 
-    # Force strict mode for recon_only — this is the final backstop.
-    # Even if the prompt fails to deter the agent, the GovernanceGate blocks the tool call.
-    if scope_profile == "recon_only":
+    # Force governance mode for specific profiles (cannot be overridden)
+    if scope_profile in ("ctf", "auto_pwn"):
+        effective_mode = "off"
+    elif scope_profile == "bug_bounty":
+        effective_mode = "strict"
+    elif scope_profile == "recon_only":
         effective_mode = "strict"
 
     # 1. Create scope layer

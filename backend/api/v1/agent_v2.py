@@ -55,8 +55,8 @@ class AgentV2StartRequest(BaseModel):
     )
     max_steps: int = Field(default=100, ge=10, le=500, description="Maximum steps")
     scope_profile: str = Field(
-        default="full_auto",
-        description="Governance scope (full_auto, vuln_lab, ctf, recon_only)",
+        default="pentest",
+        description="Governance scope (bug_bounty, ctf, pentest, auto_pwn)",
     )
     auth_type: Optional[str] = Field(
         default=None,

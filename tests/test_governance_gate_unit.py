@@ -399,7 +399,7 @@ class TestPhasePolicy:
 
     def test_all_expected_phases_present(self):
         expected = {"recon", "passive_recon", "initializing", "analyzing",
-                    "testing", "exploitation", "full_auto", "reporting", "completed"}
+                    "testing", "exploitation", "full_auto", "post_exploitation", "reporting", "completed"}
         assert expected == set(DEFAULT_PHASE_POLICY.keys())
 
     def test_each_phase_has_allowed_and_denied(self):
@@ -407,12 +407,15 @@ class TestPhasePolicy:
             assert "allowed" in rules, f"{phase} missing 'allowed'"
             assert "denied" in rules, f"{phase} missing 'denied'"
 
-    def test_post_exploitation_always_denied(self):
-        """POST_EXPLOITATION should be denied in every phase."""
+    def test_post_exploitation_denied_except_post_exploitation_phase(self):
+        """POST_EXPLOITATION should be denied in every phase except post_exploitation."""
         for phase, rules in DEFAULT_PHASE_POLICY.items():
             denied = [c.value if hasattr(c, 'value') else str(c)
                       for c in rules["denied"]]
-            assert "post_exploitation" in denied, f"{phase} should deny post_exploitation"
+            if phase == "post_exploitation":
+                assert "post_exploitation" not in denied, "post_exploitation phase should allow post_exploitation"
+            else:
+                assert "post_exploitation" in denied, f"{phase} should deny post_exploitation"
 
 
 # ===================================================================
@@ -429,6 +432,18 @@ class TestTaskCategoryPhaseCeiling:
 
     def test_full_auto_ceiling(self):
         assert TASK_CATEGORY_PHASE_CEILING["full_auto"] == "full_auto"
+
+    def test_auto_pwn_ceiling(self):
+        assert TASK_CATEGORY_PHASE_CEILING["auto_pwn"] == "post_exploitation"
+
+    def test_ctf_ceiling(self):
+        assert TASK_CATEGORY_PHASE_CEILING["ctf"] == "post_exploitation"
+
+    def test_pentest_ceiling(self):
+        assert TASK_CATEGORY_PHASE_CEILING["pentest"] == "exploitation"
+
+    def test_bug_bounty_ceiling(self):
+        assert TASK_CATEGORY_PHASE_CEILING["bug_bounty"] == "exploitation"
 
     def test_all_ceilings_are_valid_phases(self):
         for cat, ceiling in TASK_CATEGORY_PHASE_CEILING.items():

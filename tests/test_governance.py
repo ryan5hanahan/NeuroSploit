@@ -3,12 +3,13 @@ Tests for backend.core.governance — GovernanceAgent scope enforcement.
 
 Covers:
   - ScanScope immutability
-  - Factory functions (vuln_lab, full_auto, recon_only)
+  - Factory functions (pentest, auto_pwn, bug_bounty, ctf, single_vuln)
   - GovernanceAgent enforcement methods
   - Defense-in-depth filtering
   - Audit trail / violation recording
-  - Integration with AutonomousAgent constructor
+  - Integration with LLMDrivenAgent constructor
   - Edge cases (empty types, unknown types, domain matching)
+  - Backward-compatible aliases
 """
 
 import asyncio
@@ -17,6 +18,12 @@ from backend.core.governance import (
     GovernanceAgent,
     ScanScope,
     ScopeProfile,
+    create_pentest_scope,
+    create_auto_pwn_scope,
+    create_bug_bounty_scope,
+    create_ctf_scope,
+    _create_single_vuln_scope,
+    # Backward-compat aliases
     create_vuln_lab_scope,
     create_full_auto_scope,
     create_recon_only_scope,
@@ -33,7 +40,7 @@ from backend.core.governance import (
 def _custom_scope(**kwargs):
     """Helper to build a ScanScope with sensible defaults for test."""
     defaults = dict(
-        profile=ScopeProfile.CUSTOM,
+        profile=ScopeProfile.PENTEST,
         allowed_domains=frozenset(),
         allowed_vuln_types=frozenset(),
         allowed_phases=frozenset(),
@@ -70,17 +77,17 @@ class TestScanScopeImmutability:
     """ScanScope is frozen — agent code must not modify it."""
 
     def test_frozen_cannot_set_attribute(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         with pytest.raises(AttributeError):
             scope.skip_port_scan = False
 
     def test_frozen_cannot_delete_attribute(self):
-        scope = create_full_auto_scope("https://example.com")
+        scope = create_pentest_scope("https://example.com")
         with pytest.raises(AttributeError):
             del scope.profile
 
     def test_frozen_allowed_types_is_frozenset(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         assert isinstance(scope.allowed_vuln_types, frozenset)
         assert isinstance(scope.allowed_domains, frozenset)
 
@@ -91,73 +98,147 @@ class TestScanScopeImmutability:
 
 class TestFactoryFunctions:
 
-    # --- create_vuln_lab_scope ---
+    # --- _create_single_vuln_scope (VulnLab) ---
 
-    def test_vuln_lab_scope_profile(self):
-        scope = create_vuln_lab_scope("https://juice.shop", "xss_reflected")
-        assert scope.profile == ScopeProfile.VULN_LAB
+    def test_single_vuln_scope_profile(self):
+        scope = _create_single_vuln_scope("https://juice.shop", "xss_reflected")
+        assert scope.profile == ScopeProfile.PENTEST
 
-    def test_vuln_lab_scope_single_type(self):
-        scope = create_vuln_lab_scope("https://juice.shop", "xss_reflected")
+    def test_single_vuln_scope_single_type(self):
+        scope = _create_single_vuln_scope("https://juice.shop", "xss_reflected")
         assert scope.allowed_vuln_types == frozenset({"xss_reflected"})
 
-    def test_vuln_lab_scope_domain(self):
-        scope = create_vuln_lab_scope("https://demo.juice-shop.example.com/path", "lfi")
+    def test_single_vuln_scope_domain(self):
+        scope = _create_single_vuln_scope("https://demo.juice-shop.example.com/path", "lfi")
         assert scope.allowed_domains == frozenset({"demo.juice-shop.example.com"})
 
-    def test_vuln_lab_scope_skips_port_and_subdomain(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+    def test_single_vuln_scope_skips_port_and_subdomain(self):
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         assert scope.skip_port_scan is True
         assert scope.skip_subdomain_enum is True
 
-    def test_vuln_lab_scope_quick_recon(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+    def test_single_vuln_scope_quick_recon(self):
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         assert scope.max_recon_depth == "quick"
 
-    def test_vuln_lab_scope_nuclei_tags_xss(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_scope_nuclei_tags_xss(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         assert scope.nuclei_template_tags == "xss"
 
-    def test_vuln_lab_scope_nuclei_tags_sqli(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+    def test_single_vuln_scope_nuclei_tags_sqli(self):
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         assert scope.nuclei_template_tags == "sqli"
 
-    def test_vuln_lab_scope_nuclei_tags_unknown_type(self):
-        scope = create_vuln_lab_scope("https://example.com", "some_custom_type")
+    def test_single_vuln_scope_nuclei_tags_unknown_type(self):
+        scope = _create_single_vuln_scope("https://example.com", "some_custom_type")
         assert scope.nuclei_template_tags is None
 
-    # --- create_full_auto_scope ---
+    # --- create_pentest_scope ---
 
-    def test_full_auto_scope_profile(self):
-        scope = create_full_auto_scope("https://example.com")
-        assert scope.profile == ScopeProfile.FULL_AUTO
+    def test_pentest_scope_profile(self):
+        scope = create_pentest_scope("https://example.com")
+        assert scope.profile == ScopeProfile.PENTEST
 
-    def test_full_auto_scope_all_types_allowed(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_scope_all_types_allowed(self):
+        scope = create_pentest_scope("https://example.com")
         assert scope.allowed_vuln_types is None  # None = all allowed
 
-    def test_full_auto_scope_no_skips(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_scope_no_skips(self):
+        scope = create_pentest_scope("https://example.com")
         assert scope.skip_port_scan is False
         assert scope.skip_subdomain_enum is False
 
-    def test_full_auto_scope_full_recon(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_scope_full_recon(self):
+        scope = create_pentest_scope("https://example.com")
         assert scope.max_recon_depth == "full"
 
-    def test_full_auto_scope_no_nuclei_tags(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_scope_no_nuclei_tags(self):
+        scope = create_pentest_scope("https://example.com")
         assert scope.nuclei_template_tags is None
 
-    # --- create_recon_only_scope ---
+    # --- create_auto_pwn_scope ---
 
-    def test_recon_only_scope_profile(self):
+    def test_auto_pwn_scope_profile(self):
+        scope = create_auto_pwn_scope("https://example.com")
+        assert scope.profile == ScopeProfile.AUTO_PWN
+
+    def test_auto_pwn_scope_all_types_allowed(self):
+        scope = create_auto_pwn_scope("https://example.com")
+        assert scope.allowed_vuln_types is None
+
+    def test_auto_pwn_scope_full_recon(self):
+        scope = create_auto_pwn_scope("https://example.com")
+        assert scope.max_recon_depth == "full"
+
+    def test_auto_pwn_scope_includes_subdomains(self):
+        scope = create_auto_pwn_scope("https://example.com")
+        assert scope.include_subdomains is True
+
+    # --- create_bug_bounty_scope ---
+
+    def test_bug_bounty_scope_profile(self):
+        scope = create_bug_bounty_scope("https://example.com")
+        assert scope.profile == ScopeProfile.BUG_BOUNTY
+
+    def test_bug_bounty_scope_full_recon(self):
+        scope = create_bug_bounty_scope("https://example.com")
+        assert scope.max_recon_depth == "full"
+
+    def test_bug_bounty_scope_includes_subdomains(self):
+        scope = create_bug_bounty_scope("https://example.com")
+        assert scope.include_subdomains is True
+
+    # --- create_ctf_scope ---
+
+    def test_ctf_scope_profile(self):
+        scope = create_ctf_scope("https://example.com")
+        assert scope.profile == ScopeProfile.CTF
+
+    def test_ctf_scope_skips_port_and_subdomain(self):
+        scope = create_ctf_scope("https://example.com")
+        assert scope.skip_port_scan is True
+        assert scope.skip_subdomain_enum is True
+
+    def test_ctf_scope_no_subdomain_inheritance(self):
+        scope = create_ctf_scope("https://example.com")
+        assert scope.include_subdomains is False
+
+    def test_ctf_scope_medium_recon(self):
+        scope = create_ctf_scope("https://example.com")
+        assert scope.max_recon_depth == "medium"
+
+    # --- Backward-compat aliases ---
+
+    def test_create_recon_only_scope_profile(self):
         scope = create_recon_only_scope("https://example.com")
-        assert scope.profile == ScopeProfile.RECON_ONLY
+        assert scope.profile == ScopeProfile.PENTEST
 
     def test_recon_only_scope_phases(self):
         scope = create_recon_only_scope("https://example.com")
         assert scope.allowed_phases == frozenset({"recon", "report"})
+
+
+# ===================================================================
+# Backward-compatible aliases: ScopeProfile.from_str()
+# ===================================================================
+
+class TestScopeProfileFromStr:
+
+    def test_new_profiles(self):
+        assert ScopeProfile.from_str("bug_bounty") == ScopeProfile.BUG_BOUNTY
+        assert ScopeProfile.from_str("ctf") == ScopeProfile.CTF
+        assert ScopeProfile.from_str("pentest") == ScopeProfile.PENTEST
+        assert ScopeProfile.from_str("auto_pwn") == ScopeProfile.AUTO_PWN
+
+    def test_legacy_aliases(self):
+        assert ScopeProfile.from_str("full_auto") == ScopeProfile.PENTEST
+        assert ScopeProfile.from_str("recon_only") == ScopeProfile.PENTEST
+        assert ScopeProfile.from_str("vuln_lab") == ScopeProfile.PENTEST
+        assert ScopeProfile.from_str("custom") == ScopeProfile.PENTEST
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError):
+            ScopeProfile.from_str("nonexistent")
 
 
 # ===================================================================
@@ -205,39 +286,39 @@ class TestNucleiTagMapping:
 
 class TestFilterVulnTypes:
 
-    def test_vuln_lab_filters_to_single_type(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_filters_to_single_type(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         result = gov.filter_vuln_types(ALL_100_VULN_TYPES)
         assert result == ["xss_reflected"]
 
-    def test_full_auto_passes_all_through(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_passes_all_through(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         result = gov.filter_vuln_types(ALL_100_VULN_TYPES)
         assert result == ALL_100_VULN_TYPES
 
     def test_filter_records_violation_when_blocking(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         gov = GovernanceAgent(scope)
         gov.filter_vuln_types(["sqli_error", "xss_reflected", "lfi"])
         assert len(gov._violations) == 1
         assert "Blocked 2/3" in gov._violations[0].detail
 
     def test_filter_no_violation_when_nothing_blocked(self):
-        scope = create_vuln_lab_scope("https://example.com", "sqli_error")
+        scope = _create_single_vuln_scope("https://example.com", "sqli_error")
         gov = GovernanceAgent(scope)
         gov.filter_vuln_types(["sqli_error"])
         assert len(gov._violations) == 0
 
     def test_filter_empty_input(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         result = gov.filter_vuln_types([])
         assert result == []
 
     def test_filter_no_matching_types(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         result = gov.filter_vuln_types(["sqli_error", "lfi", "ssrf"])
         assert result == []
@@ -257,8 +338,8 @@ class TestFilterVulnTypes:
 
 class TestScopeAttackPlan:
 
-    def test_vuln_lab_scopes_plan_to_single_type(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_scopes_plan_to_single_type(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {"priority_vulns": ["sqli_error", "xss_reflected", "lfi", "ssrf"]}
         scoped = gov.scope_attack_plan(plan)
@@ -266,21 +347,21 @@ class TestScopeAttackPlan:
 
     def test_scope_attack_plan_ensures_allowed_types_present(self):
         """Even if AI omitted the allowed type, it gets added."""
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {"priority_vulns": ["sqli_error", "lfi"]}  # xss_reflected missing
         scoped = gov.scope_attack_plan(plan)
         assert "xss_reflected" in scoped["priority_vulns"]
 
-    def test_full_auto_preserves_plan(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_preserves_plan(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         plan = {"priority_vulns": ["sqli_error", "xss_reflected"]}
         scoped = gov.scope_attack_plan(plan)
         assert scoped["priority_vulns"] == ["sqli_error", "xss_reflected"]
 
     def test_scope_attack_plan_preserves_other_keys(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {
             "priority_vulns": ["sqli_error", "xss_reflected"],
@@ -292,7 +373,7 @@ class TestScopeAttackPlan:
         assert scoped["attack_vectors"] == ["test param for XSS"]
 
     def test_scope_attack_plan_does_not_mutate_original(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {"priority_vulns": ["sqli_error", "xss_reflected", "lfi"]}
         gov.scope_attack_plan(plan)
@@ -305,8 +386,8 @@ class TestScopeAttackPlan:
 
 class TestConstrainAnalysisPrompt:
 
-    def test_vuln_lab_appends_constraint(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_appends_constraint(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         prompt = "Analyze this target."
         constrained = gov.constrain_analysis_prompt(prompt)
@@ -314,8 +395,8 @@ class TestConstrainAnalysisPrompt:
         assert "xss_reflected" in constrained
         assert constrained.startswith("Analyze this target.")
 
-    def test_full_auto_no_constraint(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_no_constraint(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         prompt = "Analyze this target."
         constrained = gov.constrain_analysis_prompt(prompt)
@@ -337,33 +418,33 @@ class TestConstrainAnalysisPrompt:
 
 class TestBooleanChecks:
 
-    def test_vuln_lab_skips_port_scan(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_skips_port_scan(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         assert gov.should_port_scan() is False
 
-    def test_vuln_lab_skips_subdomain_enum(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_single_vuln_skips_subdomain_enum(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         assert gov.should_enumerate_subdomains() is False
 
-    def test_full_auto_allows_port_scan(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_allows_port_scan(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         assert gov.should_port_scan() is True
 
-    def test_full_auto_allows_subdomain_enum(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_allows_subdomain_enum(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         assert gov.should_enumerate_subdomains() is True
 
-    def test_nuclei_tags_vuln_lab_xss(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+    def test_nuclei_tags_single_vuln_xss(self):
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         assert gov.get_nuclei_template_tags() == "xss"
 
-    def test_nuclei_tags_full_auto_none(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_nuclei_tags_pentest_none(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         assert gov.get_nuclei_template_tags() is None
 
@@ -375,18 +456,17 @@ class TestBooleanChecks:
 class TestIsUrlInScope:
 
     def test_same_domain_in_scope(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         assert gov.is_url_in_scope("https://example.com/path") is True
 
     def test_different_domain_out_of_scope(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         assert gov.is_url_in_scope("https://evil.com/path") is False
 
-    def test_full_auto_all_domains_in_scope_when_empty(self):
-        # full_auto has a domain set, so only that domain is in scope
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_scoped_to_target_domain(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         assert gov.is_url_in_scope("https://example.com/api") is True
         assert gov.is_url_in_scope("https://other.com/api") is False
@@ -397,9 +477,8 @@ class TestIsUrlInScope:
         assert gov.is_url_in_scope("https://anything.com") is True
 
     def test_malformed_url(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
-        # urlparse handles odd strings, but hostname may be empty
         assert gov.is_url_in_scope("not-a-url") is False
 
 
@@ -410,10 +489,10 @@ class TestIsUrlInScope:
 class TestAuditTrail:
 
     def test_summary_structure(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         summary = gov.get_summary()
-        assert summary["scope_profile"] == "vuln_lab"
+        assert summary["scope_profile"] == "pentest"
         assert "xss_reflected" in summary["allowed_vuln_types"]
         assert summary["skip_port_scan"] is True
         assert summary["skip_subdomain_enum"] is True
@@ -421,17 +500,16 @@ class TestAuditTrail:
         assert summary["violations"] == []
 
     def test_violations_accumulate(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
-        # Trigger violations
         gov.filter_vuln_types(["sqli_error", "xss_reflected"])
         gov.scope_attack_plan({"priority_vulns": ["sqli_error", "lfi"]})
         summary = gov.get_summary()
         assert summary["violations_count"] == 2
         assert len(summary["violations"]) == 2
 
-    def test_full_auto_no_violations(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_no_violations(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
         gov.filter_vuln_types(ALL_100_VULN_TYPES)
         gov.scope_attack_plan({"priority_vulns": ALL_100_VULN_TYPES})
@@ -462,7 +540,7 @@ class TestLogCallback:
         async def log_cb(level, msg):
             messages.append((level, msg))
 
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope, log_callback=log_cb)
         await gov._emit("info", "test message")
         assert len(messages) == 1
@@ -470,9 +548,8 @@ class TestLogCallback:
 
     @pytest.mark.asyncio
     async def test_emit_without_callback(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
-        # Should not raise
         await gov._emit("info", "test message")
 
 
@@ -481,19 +558,17 @@ class TestLogCallback:
 # ===================================================================
 
 class TestDefenseInDepth:
-    """Simulates the full pipeline: AI prompt → plan scoping → final filter."""
+    """Simulates the full pipeline: AI prompt -> plan scoping -> final filter."""
 
     def test_all_layers_enforce_scope(self):
         """Even if AI ignores the constraint, data-level filters catch it."""
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
 
-        # Layer 1: Prompt constraint
         prompt = gov.constrain_analysis_prompt("Analyze target")
         assert "xss_reflected" in prompt
         assert "SCOPE CONSTRAINT" in prompt
 
-        # Layer 2: AI returns 10 types (ignoring constraint)
         ai_plan = {"priority_vulns": [
             "sqli_error", "xss_reflected", "lfi", "ssrf", "idor",
             "csrf", "xxe", "ssti", "rfi", "command_injection"
@@ -501,16 +576,14 @@ class TestDefenseInDepth:
         scoped_plan = gov.scope_attack_plan(ai_plan)
         assert scoped_plan["priority_vulns"] == ["xss_reflected"]
 
-        # Layer 3: Defense-in-depth final filter
         final = gov.filter_vuln_types(scoped_plan["priority_vulns"])
         assert final == ["xss_reflected"]
 
-        # Verify violations recorded
         summary = gov.get_summary()
         assert summary["violations_count"] >= 1
 
-    def test_full_auto_all_layers_pass_through(self):
-        scope = create_full_auto_scope("https://example.com")
+    def test_pentest_all_layers_pass_through(self):
+        scope = create_pentest_scope("https://example.com")
         gov = GovernanceAgent(scope)
 
         prompt = gov.constrain_analysis_prompt("Analyze")
@@ -539,6 +612,11 @@ class TestAgentGovernanceIntegration:
             GovernanceAgent,
             ScanScope,
             ScopeProfile,
+            create_pentest_scope,
+            create_auto_pwn_scope,
+            create_bug_bounty_scope,
+            create_ctf_scope,
+            _create_single_vuln_scope,
             create_vuln_lab_scope,
             create_full_auto_scope,
             create_recon_only_scope,
@@ -559,20 +637,18 @@ class TestAgentGovernanceIntegration:
 class TestEdgeCases:
 
     def test_scope_with_bare_ip(self):
-        scope = create_vuln_lab_scope("http://192.168.1.1:8080", "sqli_error")
-        # Explicit port → both hostname and host:port are in allowed_domains
+        scope = _create_single_vuln_scope("http://192.168.1.1:8080", "sqli_error")
         assert scope.allowed_domains == frozenset({"192.168.1.1", "192.168.1.1:8080"})
         gov = GovernanceAgent(scope)
         assert gov.is_url_in_scope("http://192.168.1.1:8080/api") is True
         assert gov.is_url_in_scope("http://192.168.1.2/api") is False
 
     def test_scope_with_localhost(self):
-        scope = create_vuln_lab_scope("http://localhost:3000", "xss_reflected")
-        # Explicit port → both hostname and host:port are in allowed_domains
+        scope = _create_single_vuln_scope("http://localhost:3000", "xss_reflected")
         assert scope.allowed_domains == frozenset({"localhost", "localhost:3000"})
 
     def test_multiple_filter_calls_accumulate_violations(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         gov.filter_vuln_types(["sqli_error", "xss_reflected"])
         gov.filter_vuln_types(["lfi", "ssrf", "xss_reflected"])
@@ -588,20 +664,20 @@ class TestEdgeCases:
         assert set(result) == {"xss_reflected", "sqli_error", "lfi"}
 
     def test_duplicate_types_in_input(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         result = gov.filter_vuln_types(["xss_reflected", "xss_reflected", "sqli_error"])
         assert result == ["xss_reflected", "xss_reflected"]
 
     def test_scope_attack_plan_empty_priority_vulns(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {"priority_vulns": []}
         scoped = gov.scope_attack_plan(plan)
         assert "xss_reflected" in scoped["priority_vulns"]
 
     def test_scope_attack_plan_missing_priority_vulns_key(self):
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         gov = GovernanceAgent(scope)
         plan = {"other_key": "value"}
         scoped = gov.scope_attack_plan(plan)

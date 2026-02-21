@@ -173,15 +173,15 @@ class TestScanServiceGovernance:
         assert isinstance(gov, Governance)
         assert gov.governance_mode == "strict"
 
-    def test_create_governance_called_with_full_auto_scope(self):
-        """full_auto scan_type creates full_auto governance."""
+    def test_create_governance_called_with_pentest_scope(self):
+        """pentest scan_type creates pentest governance."""
         from backend.core.governance_facade import create_governance
 
         gov = create_governance(
             scan_id="scan-gov-002",
             target_url="https://example.com",
-            scope_profile="full_auto",
-            task_category="full_auto",
+            scope_profile="pentest",
+            task_category="pentest",
         )
         from backend.core.governance_facade import Governance
         assert isinstance(gov, Governance)

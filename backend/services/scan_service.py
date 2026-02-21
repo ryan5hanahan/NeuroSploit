@@ -278,24 +278,43 @@ class ScanService:
 
             # Map scan type to governance scope profile and task category
             _SCAN_TYPE_SCOPE = {
-                "recon": "recon_only",
-                "recon_only": "recon_only",
-                "full_auto": "full_auto",
-                "full": "full_auto",
-                "vuln_lab": "vuln_lab",
+                # New profiles
+                "bug_bounty": "bug_bounty",
                 "ctf": "ctf",
+                "pentest": "pentest",
+                "auto_pwn": "auto_pwn",
+                # Backward-compatible aliases
+                "recon": "pentest",
+                "recon_only": "recon_only",
+                "full_auto": "pentest",
+                "full": "pentest",
+                "vuln_lab": "vuln_lab",
             }
             _SCAN_TYPE_TASK = {
+                # New profiles
+                "bug_bounty": "bug_bounty",
+                "ctf": "ctf",
+                "pentest": "pentest",
+                "auto_pwn": "auto_pwn",
+                # Backward-compatible aliases
                 "recon": "recon",
                 "recon_only": "recon",
-                "full_auto": "full_auto",
-                "full": "full_auto",
+                "full_auto": "pentest",
+                "full": "pentest",
                 "vuln_lab": "vulnerability",
-                "ctf": "full_auto",
             }
-            scan_type_str = getattr(scan, "scan_type", "full_auto") or "full_auto"
-            scope_profile = _SCAN_TYPE_SCOPE.get(scan_type_str, "full_auto")
-            task_category = _SCAN_TYPE_TASK.get(scan_type_str, "full_auto")
+            # Profile → default governance mode
+            _PROFILE_GOVERNANCE_MODE = {
+                "bug_bounty": "strict",
+                "ctf": "off",
+                "pentest": "warn",
+                "auto_pwn": "off",
+                "recon_only": "strict",
+                "vuln_lab": "warn",
+            }
+            scan_type_str = getattr(scan, "scan_type", "pentest") or "pentest"
+            scope_profile = _SCAN_TYPE_SCOPE.get(scan_type_str, "pentest")
+            task_category = _SCAN_TYPE_TASK.get(scan_type_str, "pentest")
 
             # Create governance facade for phase tracking
             primary_target = targets[0].url if targets else ""
@@ -303,7 +322,7 @@ class ScanService:
                 scan_id=scan_id,
                 target_url=primary_target,
                 scope_profile=scope_profile,
-                governance_mode="strict" if scope_profile == "recon_only" else "warn",
+                governance_mode=_PROFILE_GOVERNANCE_MODE.get(scope_profile, "warn"),
                 task_category=task_category,
                 scan_config=scan.config if hasattr(scan, "config") and scan.config else None,
             )

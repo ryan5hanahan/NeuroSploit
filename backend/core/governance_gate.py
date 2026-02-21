@@ -132,6 +132,18 @@ DEFAULT_PHASE_POLICY: Dict[str, Dict[str, List[str]]] = {
             ActionCategory.POST_EXPLOITATION,
         ],
     },
+    "post_exploitation": {
+        "allowed": [
+            ActionCategory.PASSIVE_RECON,
+            ActionCategory.ACTIVE_RECON,
+            ActionCategory.ANALYSIS,
+            ActionCategory.VULNERABILITY_SCAN,
+            ActionCategory.EXPLOITATION,
+            ActionCategory.POST_EXPLOITATION,
+            ActionCategory.REPORTING,
+        ],
+        "denied": [],
+    },
     "reporting": {
         "allowed": [
             ActionCategory.REPORTING,
@@ -169,6 +181,11 @@ TASK_CATEGORY_PHASE_CEILING: Dict[str, str] = {
     "reporting": "reporting",
     "custom": "full_auto",
     "full_auto": "full_auto",
+    # Profile-driven ceilings
+    "auto_pwn": "post_exploitation",
+    "ctf": "post_exploitation",
+    "pentest": "exploitation",
+    "bug_bounty": "exploitation",
 }
 
 
@@ -181,21 +198,23 @@ PHASE_RANK: Dict[str, int] = {
     "testing": 4,
     "exploitation": 5,
     "full_auto": 6,
-    "reporting": 7,
-    "completed": 8,
+    "post_exploitation": 7,
+    "reporting": 8,
+    "completed": 9,
 }
 
 
 # Valid phase transitions — prevents arbitrary phase jumping
 # Each key maps to the set of phases it is allowed to transition TO.
 VALID_PHASE_TRANSITIONS: Dict[str, set] = {
-    "initializing": {"passive_recon", "recon", "analyzing", "full_auto", "reporting", "completed"},
+    "initializing": {"passive_recon", "recon", "analyzing", "full_auto", "post_exploitation", "reporting", "completed"},
     "passive_recon": {"recon", "analyzing", "reporting", "completed"},
     "recon": {"analyzing", "testing", "full_auto", "reporting", "completed"},
     "analyzing": {"testing", "exploitation", "full_auto", "reporting", "completed"},
     "testing": {"exploitation", "full_auto", "reporting", "completed"},
-    "exploitation": {"reporting", "completed"},
-    "full_auto": {"reporting", "completed"},
+    "exploitation": {"post_exploitation", "reporting", "completed"},
+    "full_auto": {"post_exploitation", "reporting", "completed"},
+    "post_exploitation": {"reporting", "completed"},
     "reporting": {"completed"},
     "completed": set(),  # Terminal state — no transitions allowed
 }

@@ -30,7 +30,7 @@ router = APIRouter()
 class GovernanceProfileCreate(BaseModel):
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
-    scope_profile: str = "full_auto"
+    scope_profile: str = "pentest"
     governance_mode: str = "warn"
     allowed_vuln_types: List[str] = []
     include_subdomains: bool = True

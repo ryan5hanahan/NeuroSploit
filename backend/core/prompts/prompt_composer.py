@@ -6,7 +6,7 @@ runtime context (target, objective, plan state, memory overview).
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 
 _PROMPT_DIR = Path(__file__).parent
@@ -56,11 +56,8 @@ def compose_agent_system_prompt(
     """
     system_template = _read_template("agent_system_prompt.md")
 
-    # Select execution prompt based on scope — recon gets focused guidance
-    if governance_context and governance_context.get("scope_profile") == "recon_only":
-        execution_template = _read_template("execution_prompt_recon.md")
-    else:
-        execution_template = _read_template("execution_prompt_general.md")
+    # Select execution prompt based on scope profile
+    execution_template = _select_execution_template(governance_context)
 
     # Format memory overview section
     if memory_overview:
@@ -192,9 +189,42 @@ def compose_reflection_prompt(
     )
 
 
+# ---------------------------------------------------------------------------
+# Profile → execution template mapping
+# ---------------------------------------------------------------------------
+
+_PROFILE_TEMPLATE: Dict[str, str] = {
+    "bug_bounty": "execution_prompt_bug_bounty.md",
+    "ctf": "execution_prompt_ctf.md",
+    "pentest": "execution_prompt_pentest.md",
+    "auto_pwn": "execution_prompt_auto_pwn.md",
+    # Backward-compat aliases
+    "full_auto": "execution_prompt_pentest.md",
+    "recon_only": "execution_prompt_recon.md",
+    "vuln_lab": "execution_prompt_general.md",
+    "custom": "execution_prompt_general.md",
+}
+
+
+def _select_execution_template(governance_context: Optional[Dict[str, Any]]) -> str:
+    """Select the correct execution template based on scope profile."""
+    if not governance_context:
+        return _read_template("execution_prompt_general.md")
+
+    profile = governance_context.get("scope_profile", "pentest")
+    template_name = _PROFILE_TEMPLATE.get(profile, "execution_prompt_general.md")
+    template = _read_template(template_name)
+
+    # Fall back to general template if profile-specific one doesn't exist
+    if not template:
+        template = _read_template("execution_prompt_general.md")
+
+    return template
+
+
 def _build_governance_section(governance_context: Dict[str, Any]) -> str:
     """Build the governance scope restriction section for the system prompt."""
-    scope_profile = governance_context.get("scope_profile", "full_auto")
+    scope_profile = governance_context.get("scope_profile", "pentest")
     governance_mode = governance_context.get("governance_mode", "warn")
     allowed_phases = governance_context.get("allowed_phases", [])
 
@@ -208,35 +238,109 @@ def _build_governance_section(governance_context: Dict[str, Any]) -> str:
     if allowed_phases:
         lines.append(f"**Allowed Phases**: {', '.join(sorted(allowed_phases))}")
 
-    if scope_profile == "recon_only":
-        lines.extend([
-            "",
-            "### RECON ONLY — STRICT ENFORCEMENT",
-            "",
-            "You are authorized for **reconnaissance and OSINT ONLY**.",
-            "",
-            "**Your mission**: Gather intelligence about the target:",
-            "- DNS records, zone information, MX/NS/TXT records",
-            "- IP addresses, CIDR ranges, hosting provider",
-            "- Geographic location and infrastructure details",
-            "- Technologies, frameworks, and versions in use",
-            "- Subdomains and related domains",
-            "- Endpoints, API paths, and site structure",
-            "- Authentication mechanisms (identify, do NOT test)",
-            "- Forms and input points (map, do NOT submit)",
-            "",
-            "**STRICTLY FORBIDDEN** (will be BLOCKED by governance):",
-            "- Login attempts or credential testing of ANY kind",
-            "- Password guessing, brute force, or default credential testing",
-            "- Form submission (browser_submit_form is blocked)",
-            "- SQL injection, XSS, or any payload testing",
-            "- Vulnerability scanners (nuclei, nikto, dalfox)",
-            "- Exploitation tools (sqlmap, hydra, commix)",
-            "- Any active exploitation or attack attempts",
-            "- POST requests with credential data to login endpoints",
-            "",
-            "Any exploitation attempt **WILL BE BLOCKED** by the governance layer. "
-            "Do not waste steps attempting actions that will be rejected.",
-        ])
+    # Per-profile governance guidance
+    _PROFILE_GOVERNANCE_BUILDERS = {
+        "bug_bounty": _bug_bounty_governance_section,
+        "ctf": _ctf_governance_section,
+        "pentest": _pentest_governance_section,
+        "auto_pwn": _auto_pwn_governance_section,
+        "recon_only": _recon_only_governance_section,
+    }
+
+    builder = _PROFILE_GOVERNANCE_BUILDERS.get(scope_profile)
+    if builder:
+        lines.extend(builder())
 
     return "\n".join(lines)
+
+
+def _bug_bounty_governance_section() -> List[str]:
+    """Governance section for bug bounty profile."""
+    return [
+        "",
+        "### BUG BOUNTY — STRICT GOVERNANCE",
+        "",
+        "You are testing under an **authorized bug bounty program** with strict governance.",
+        "",
+        "**Requirements**:",
+        "- Follow program scope rules exactly — out-of-scope assets are BLOCKED",
+        "- Report quality matters: clear PoC, reproduction steps, impact assessment",
+        "- De-duplicate findings: same root cause = one report",
+        "- Respect per-asset severity caps",
+        "- No denial-of-service, no accessing real user data",
+        "- No post-exploitation (credential harvesting, lateral movement)",
+        "",
+        "All actions are monitored. Governance violations will be flagged.",
+    ]
+
+
+def _ctf_governance_section() -> List[str]:
+    """Governance section for CTF profile."""
+    return [
+        "",
+        "### CTF MODE — GOVERNANCE OFF",
+        "",
+        "You are solving a **CTF challenge**. Governance enforcement is disabled.",
+        "Be creative and aggressive — your only goal is to capture the flag.",
+        "Post-exploitation is enabled: credential harvesting, pivoting, and",
+        "lateral movement are all permitted.",
+    ]
+
+
+def _pentest_governance_section() -> List[str]:
+    """Governance section for pentest profile."""
+    return [
+        "",
+        "### PENTEST — WARN MODE",
+        "",
+        "Professional penetration test with **warn** governance.",
+        "Follow PTES/OWASP methodology. Actions that exceed the current phase",
+        "will generate warnings but are not blocked. Document everything with",
+        "evidence for the report.",
+    ]
+
+
+def _auto_pwn_governance_section() -> List[str]:
+    """Governance section for auto_pwn profile."""
+    return [
+        "",
+        "### AUTO PWN — GOVERNANCE OFF",
+        "",
+        "Maximum exploitation depth. Governance enforcement is disabled.",
+        "Chain vulnerabilities, harvest credentials, pivot laterally,",
+        "and achieve maximum impact. Post-exploitation is enabled.",
+        "No checkpoints — execute autonomously.",
+    ]
+
+
+def _recon_only_governance_section() -> List[str]:
+    """Governance section for recon_only (legacy) profile."""
+    return [
+        "",
+        "### RECON ONLY — STRICT ENFORCEMENT",
+        "",
+        "You are authorized for **reconnaissance and OSINT ONLY**.",
+        "",
+        "**Your mission**: Gather intelligence about the target:",
+        "- DNS records, zone information, MX/NS/TXT records",
+        "- IP addresses, CIDR ranges, hosting provider",
+        "- Geographic location and infrastructure details",
+        "- Technologies, frameworks, and versions in use",
+        "- Subdomains and related domains",
+        "- Endpoints, API paths, and site structure",
+        "- Authentication mechanisms (identify, do NOT test)",
+        "- Forms and input points (map, do NOT submit)",
+        "",
+        "**STRICTLY FORBIDDEN** (will be BLOCKED by governance):",
+        "- Login attempts or credential testing of ANY kind",
+        "- Password guessing, brute force, or default credential testing",
+        "- Form submission (browser_submit_form is blocked)",
+        "- SQL injection, XSS, or any payload testing",
+        "- Vulnerability scanners (nuclei, nikto, dalfox)",
+        "- Exploitation tools (sqlmap, hydra, commix)",
+        "- Any active exploitation or attack attempts",
+        "- POST requests with credential data to login endpoints",
+        "",
+        "Any exploitation attempt **WILL BE BLOCKED** by the governance layer. "
+        "Do not waste steps attempting actions that will be rejected.",
+    ]

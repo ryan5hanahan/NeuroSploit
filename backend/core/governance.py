@@ -70,13 +70,38 @@ _VULN_TYPE_TO_NUCLEI_TAG: Dict[str, str] = {
 
 
 class ScopeProfile(str, Enum):
-    """Scope profile — determines baseline restrictiveness."""
-    VULN_LAB = "vuln_lab"
-    FULL_AUTO = "full_auto"
-    RECON_ONLY = "recon_only"
-    CTF = "ctf"
+    """Scope profile — determines baseline restrictiveness.
+
+    4 purpose-driven profiles:
+      BUG_BOUNTY — authorized bug bounty testing (strict governance)
+      CTF        — CTF challenges (governance off, post-exploit enabled)
+      PENTEST    — professional penetration test (warn governance)
+      AUTO_PWN   — maximum exploitation depth (governance off, post-exploit)
+
+    Backward-compat aliases kept as class attributes below.
+    """
     BUG_BOUNTY = "bug_bounty"
-    CUSTOM = "custom"
+    CTF = "ctf"
+    PENTEST = "pentest"
+    AUTO_PWN = "auto_pwn"
+
+    # Backward-compatible aliases (old names → new profiles)
+    # These are NOT enum members — they resolve via __init_subclass__
+    @classmethod
+    def from_str(cls, value: str) -> "ScopeProfile":
+        """Resolve a profile string, supporting legacy aliases."""
+        _ALIASES = {
+            "full_auto": cls.PENTEST,
+            "recon_only": cls.PENTEST,
+            "vuln_lab": cls.PENTEST,
+            "custom": cls.PENTEST,
+        }
+        try:
+            return cls(value)
+        except ValueError:
+            if value in _ALIASES:
+                return _ALIASES[value]
+            raise
 
 
 @dataclass(frozen=True)
@@ -376,27 +401,8 @@ def _scope_domains(target_url: str) -> FrozenSet[str]:
     return frozenset({domain})
 
 
-def create_vuln_lab_scope(target_url: str, vuln_type: str) -> ScanScope:
-    """Tight scope for VulnLab single-vulnerability tests."""
-    return ScanScope(
-        profile=ScopeProfile.VULN_LAB,
-        allowed_domains=_scope_domains(target_url),
-        allowed_vuln_types=frozenset({vuln_type}),
-        allowed_phases=frozenset(),  # all phases allowed (recon needed to find endpoints)
-        skip_subdomain_enum=True,
-        skip_port_scan=True,
-        max_recon_depth="quick",
-        nuclei_template_tags=_nuclei_tags_for_vuln_type(vuln_type),
-    )
-
-
-def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
-    """Permissive scope for full-auto scans — all types, same-domain.
-
-    Accepts a single URL or a list of URLs. If any target URL includes an
-    explicit port (e.g. :33000), testing is scoped to that port only and
-    port scanning / subdomain enum is skipped.
-    """
+def _parse_urls(target_url: "str | list[str]") -> tuple:
+    """Parse target URL(s) into domains set and explicit-port flag."""
     urls = [target_url] if isinstance(target_url, str) else target_url
     all_domains: set = set()
     any_explicit_port = False
@@ -404,9 +410,55 @@ def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
         all_domains.update(_scope_domains(u))
         if _has_explicit_port(u):
             any_explicit_port = True
+    return frozenset(all_domains), any_explicit_port
+
+
+def create_bug_bounty_scope(target_url: "str | list[str]") -> ScanScope:
+    """Bug bounty scope — strict governance, full recon, no post-exploitation.
+
+    Per-program vuln type restrictions and severity caps are applied via
+    bugbounty_context (set by governance_bridge), not here.
+    """
+    domains, any_explicit_port = _parse_urls(target_url)
     return ScanScope(
-        profile=ScopeProfile.FULL_AUTO,
-        allowed_domains=frozenset(all_domains),
+        profile=ScopeProfile.BUG_BOUNTY,
+        allowed_domains=domains,
+        allowed_vuln_types=None,          # Per-program filtering via bugbounty_context
+        allowed_phases=frozenset(),       # all phases allowed
+        skip_subdomain_enum=any_explicit_port,
+        skip_port_scan=any_explicit_port,
+        max_recon_depth="full",
+        nuclei_template_tags=None,
+        include_subdomains=True,
+    )
+
+
+def create_ctf_scope(target_url: "str | list[str]") -> ScanScope:
+    """CTF scope — governance off, no subdomain/port enum, post-exploit enabled."""
+    domains, _ = _parse_urls(target_url)
+    return ScanScope(
+        profile=ScopeProfile.CTF,
+        allowed_domains=domains,
+        allowed_vuln_types=None,          # ALL types allowed
+        allowed_phases=frozenset(),       # all phases allowed
+        skip_subdomain_enum=True,
+        skip_port_scan=True,
+        max_recon_depth="medium",
+        nuclei_template_tags=None,
+        include_subdomains=False,
+    )
+
+
+def create_pentest_scope(target_url: "str | list[str]") -> ScanScope:
+    """Professional pentest scope — warn governance, full recon, all vuln types.
+
+    Replaces the old full_auto scope. Supports explicit port detection to
+    skip subdomain/port enumeration when targeting specific ports.
+    """
+    domains, any_explicit_port = _parse_urls(target_url)
+    return ScanScope(
+        profile=ScopeProfile.PENTEST,
+        allowed_domains=domains,
         allowed_vuln_types=None,         # None = all allowed
         allowed_phases=frozenset(),      # all allowed
         skip_subdomain_enum=any_explicit_port,
@@ -416,36 +468,67 @@ def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
     )
 
 
-def create_ctf_scope(target_url: "str | list[str]") -> ScanScope:
-    """Permissive scope for CTF challenges — all vuln types, medium recon."""
-    urls = [target_url] if isinstance(target_url, str) else target_url
-    all_domains: set = set()
-    for u in urls:
-        all_domains.update(_scope_domains(u))
+def create_auto_pwn_scope(target_url: "str | list[str]") -> ScanScope:
+    """Max exploitation scope — governance off, everything enabled, post-exploit."""
+    domains, any_explicit_port = _parse_urls(target_url)
     return ScanScope(
-        profile=ScopeProfile.CTF,
-        allowed_domains=frozenset(all_domains),
-        allowed_vuln_types=None,          # None = ALL types allowed
-        allowed_phases=frozenset(),       # all phases allowed
-        skip_subdomain_enum=True,
-        skip_port_scan=True,
-        max_recon_depth="medium",
-        nuclei_template_tags=None,        # run all Nuclei templates
+        profile=ScopeProfile.AUTO_PWN,
+        allowed_domains=domains,
+        allowed_vuln_types=None,         # None = all allowed
+        allowed_phases=frozenset(),      # all allowed
+        skip_subdomain_enum=any_explicit_port,
+        skip_port_scan=any_explicit_port,
+        max_recon_depth="full",
+        nuclei_template_tags=None,
+        include_subdomains=True,
     )
 
 
-def create_recon_only_scope(target_url: "str | list[str]") -> ScanScope:
-    """Recon-only scope — no vulnerability testing phases."""
-    urls = [target_url] if isinstance(target_url, str) else target_url
-    all_domains: set = set()
-    any_explicit_port = False
-    for u in urls:
-        all_domains.update(_scope_domains(u))
-        if _has_explicit_port(u):
-            any_explicit_port = True
+# ---------------------------------------------------------------------------
+# Internal helper for VulnLab API (creates PENTEST with single vuln type)
+# ---------------------------------------------------------------------------
+
+def _create_single_vuln_scope(target_url: str, vuln_type: str) -> ScanScope:
+    """Tight scope for VulnLab single-vulnerability tests.
+
+    Creates a PENTEST-profile scope with a single vuln type restriction.
+    """
     return ScanScope(
-        profile=ScopeProfile.RECON_ONLY,
-        allowed_domains=frozenset(all_domains),
+        profile=ScopeProfile.PENTEST,
+        allowed_domains=_scope_domains(target_url),
+        allowed_vuln_types=frozenset({vuln_type}),
+        allowed_phases=frozenset(),
+        skip_subdomain_enum=True,
+        skip_port_scan=True,
+        max_recon_depth="quick",
+        nuclei_template_tags=_nuclei_tags_for_vuln_type(vuln_type),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases (deprecated — will be removed in future)
+# ---------------------------------------------------------------------------
+
+def create_vuln_lab_scope(target_url: str, vuln_type: str) -> ScanScope:
+    """Deprecated: use _create_single_vuln_scope() instead."""
+    return _create_single_vuln_scope(target_url, vuln_type)
+
+
+def create_full_auto_scope(target_url: "str | list[str]") -> ScanScope:
+    """Deprecated: use create_pentest_scope() instead."""
+    return create_pentest_scope(target_url)
+
+
+def create_recon_only_scope(target_url: "str | list[str]") -> ScanScope:
+    """Deprecated: use create_pentest_scope() with strict governance instead.
+
+    Recon-only behavior is now achieved via governance mode (strict) + phase
+    ceiling, not a dedicated scope profile.
+    """
+    domains, any_explicit_port = _parse_urls(target_url)
+    return ScanScope(
+        profile=ScopeProfile.PENTEST,
+        allowed_domains=domains,
         allowed_vuln_types=frozenset(),
         allowed_phases=frozenset({"recon", "report"}),
         skip_subdomain_enum=any_explicit_port,

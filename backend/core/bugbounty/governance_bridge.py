@@ -159,7 +159,7 @@ def build_scan_scope_from_program(
         allowed_phases=frozenset(),  # all phases allowed
         skip_subdomain_enum=False,
         skip_port_scan=False,
-        max_recon_depth="medium",
+        max_recon_depth="full",
         nuclei_template_tags=None,
         include_subdomains=True,
         allowed_cidrs=frozenset(allowed_cidrs),

@@ -23,7 +23,7 @@ class GovernanceProfileRecord(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Scope settings
-    scope_profile: Mapped[str] = mapped_column(String(20), default="full_auto")
+    scope_profile: Mapped[str] = mapped_column(String(20), default="pentest")
     governance_mode: Mapped[str] = mapped_column(String(10), default="warn")
     allowed_vuln_types: Mapped[Optional[list]] = mapped_column(JSON, default=list)
     include_subdomains: Mapped[bool] = mapped_column(Boolean, default=True)

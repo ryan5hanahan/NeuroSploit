@@ -9,6 +9,7 @@ Covers:
   - Backward compatibility (self.governance.scope works)
   - create_governance() factory for all profiles
   - Violation callback mechanism
+  - New profiles: bug_bounty, pentest, auto_pwn
 """
 
 import pytest
@@ -16,9 +17,13 @@ from unittest.mock import MagicMock
 from backend.core.governance import (
     GovernanceAgent,
     ScopeProfile,
+    create_pentest_scope,
+    create_auto_pwn_scope,
+    create_bug_bounty_scope,
+    create_ctf_scope,
+    _create_single_vuln_scope,
     create_vuln_lab_scope,
     create_full_auto_scope,
-    create_ctf_scope,
     create_recon_only_scope,
 )
 from backend.core.governance_gate import (
@@ -36,7 +41,7 @@ from backend.core.governance_facade import (
 # ---------------------------------------------------------------------------
 
 def _make_facade(
-    scope_profile="full_auto",
+    scope_profile="pentest",
     target="https://example.com",
     vuln_type=None,
     governance_mode="strict",
@@ -44,13 +49,17 @@ def _make_facade(
 ):
     """Build a Governance facade for testing."""
     if scope_profile == "vuln_lab":
-        scope = create_vuln_lab_scope(target, vuln_type or "xss_reflected")
+        scope = _create_single_vuln_scope(target, vuln_type or "xss_reflected")
     elif scope_profile == "ctf":
         scope = create_ctf_scope(target)
     elif scope_profile == "recon_only":
         scope = create_recon_only_scope(target)
+    elif scope_profile == "bug_bounty":
+        scope = create_bug_bounty_scope(target)
+    elif scope_profile == "auto_pwn":
+        scope = create_auto_pwn_scope(target)
     else:
-        scope = create_full_auto_scope(target)
+        scope = create_pentest_scope(target)
 
     agent = GovernanceAgent(scope)
 
@@ -82,8 +91,8 @@ class TestScopeDelegation:
         result = gov.filter_vuln_types(ALL_VULN_TYPES)
         assert result == ["xss_reflected"]
 
-    def test_filter_vuln_types_full_auto(self):
-        gov = _make_facade(scope_profile="full_auto")
+    def test_filter_vuln_types_pentest(self):
+        gov = _make_facade(scope_profile="pentest")
         result = gov.filter_vuln_types(ALL_VULN_TYPES)
         assert result == ALL_VULN_TYPES
 
@@ -100,8 +109,8 @@ class TestScopeDelegation:
         assert "SCOPE CONSTRAINT" in result
         assert "xss_reflected" in result
 
-    def test_constrain_analysis_prompt_full_auto(self):
-        gov = _make_facade(scope_profile="full_auto")
+    def test_constrain_analysis_prompt_pentest(self):
+        gov = _make_facade(scope_profile="pentest")
         result = gov.constrain_analysis_prompt("Analyze target.")
         assert result == "Analyze target."
 
@@ -109,8 +118,8 @@ class TestScopeDelegation:
         gov_lab = _make_facade(scope_profile="vuln_lab", vuln_type="xss_reflected")
         assert gov_lab.should_port_scan() is False
 
-        gov_auto = _make_facade(scope_profile="full_auto")
-        assert gov_auto.should_port_scan() is True
+        gov_pentest = _make_facade(scope_profile="pentest")
+        assert gov_pentest.should_port_scan() is True
 
     def test_should_enumerate_subdomains(self):
         gov_lab = _make_facade(scope_profile="vuln_lab", vuln_type="xss_reflected")
@@ -133,18 +142,18 @@ class TestScopeDelegation:
 
 class TestBackwardCompat:
 
-    def test_scope_property_returns_scan_scope(self):
-        gov = _make_facade(scope_profile="full_auto")
-        assert gov.scope.profile == ScopeProfile.FULL_AUTO
+    def test_scope_property_returns_scan_scope_pentest(self):
+        gov = _make_facade(scope_profile="pentest")
+        assert gov.scope.profile == ScopeProfile.PENTEST
         assert isinstance(gov.scope.allowed_domains, frozenset)
 
     def test_scope_property_vuln_lab(self):
         gov = _make_facade(scope_profile="vuln_lab", vuln_type="sqli_error")
-        assert gov.scope.profile == ScopeProfile.VULN_LAB
+        assert gov.scope.profile == ScopeProfile.PENTEST
         assert gov.scope.allowed_vuln_types == frozenset({"sqli_error"})
 
     def test_scope_property_is_immutable(self):
-        gov = _make_facade(scope_profile="full_auto")
+        gov = _make_facade(scope_profile="pentest")
         with pytest.raises(AttributeError):
             gov.scope.skip_port_scan = True
 
@@ -205,7 +214,7 @@ class TestNoPhaseGate:
 
     def test_set_phase_is_noop(self):
         gov = _make_facade(governance_mode="off")
-        gov.set_phase("recon")  # should not raise
+        gov.set_phase("recon")
         assert gov.current_phase == "unknown"
 
     def test_governance_mode_is_off(self):
@@ -225,16 +234,50 @@ class TestCTFMode:
 
     def test_ctf_scope_with_gate_off(self):
         gov = _make_facade(scope_profile="ctf", governance_mode="off")
-        # Scope still works
         assert gov.scope.profile == ScopeProfile.CTF
         assert gov.is_url_in_scope("https://example.com/api") is True
         assert gov.is_url_in_scope("https://other.com") is False
-        # Phase gate is off
         decision = gov.check_action("sqlmap")
         assert decision.allowed is True
 
     def test_ctf_all_vuln_types_pass(self):
         gov = _make_facade(scope_profile="ctf", governance_mode="off")
+        result = gov.filter_vuln_types(ALL_VULN_TYPES)
+        assert result == ALL_VULN_TYPES
+
+
+# ===================================================================
+# Bug Bounty mode
+# ===================================================================
+
+class TestBugBountyMode:
+
+    def test_bug_bounty_scope_profile(self):
+        gov = _make_facade(scope_profile="bug_bounty", governance_mode="strict")
+        assert gov.scope.profile == ScopeProfile.BUG_BOUNTY
+
+    def test_bug_bounty_full_recon(self):
+        gov = _make_facade(scope_profile="bug_bounty")
+        assert gov.scope.max_recon_depth == "full"
+
+    def test_bug_bounty_all_vuln_types_pass(self):
+        gov = _make_facade(scope_profile="bug_bounty", governance_mode="strict")
+        result = gov.filter_vuln_types(ALL_VULN_TYPES)
+        assert result == ALL_VULN_TYPES
+
+
+# ===================================================================
+# Auto Pwn mode
+# ===================================================================
+
+class TestAutoPwnMode:
+
+    def test_auto_pwn_scope_profile(self):
+        gov = _make_facade(scope_profile="auto_pwn", governance_mode="off")
+        assert gov.scope.profile == ScopeProfile.AUTO_PWN
+
+    def test_auto_pwn_all_vuln_types_pass(self):
+        gov = _make_facade(scope_profile="auto_pwn", governance_mode="off")
         result = gov.filter_vuln_types(ALL_VULN_TYPES)
         assert result == ALL_VULN_TYPES
 
@@ -266,15 +309,15 @@ class TestUnifiedViolations:
         gov = _make_facade(scope_profile="vuln_lab", vuln_type="xss_reflected",
                            governance_mode="strict")
         gov.set_phase("recon")
-        gov.check_action("sqlmap")  # phase violation
-        gov.filter_vuln_types(["sqli_error", "xss_reflected"])  # scope violation
+        gov.check_action("sqlmap")
+        gov.filter_vuln_types(["sqli_error", "xss_reflected"])
         violations = gov.get_violations()
         layers = {v.layer for v in violations}
         assert "scope" in layers
         assert "phase" in layers
 
     def test_no_violations_when_all_allowed(self):
-        gov = _make_facade(scope_profile="full_auto", governance_mode="strict")
+        gov = _make_facade(scope_profile="pentest", governance_mode="strict")
         gov.set_phase("full_auto")
         gov.check_action("nmap")
         gov.filter_vuln_types(ALL_VULN_TYPES)
@@ -323,7 +366,7 @@ class TestViolationCallback:
 
     def test_callback_fires_on_phase_violation(self):
         violations = []
-        scope = create_full_auto_scope("https://example.com")
+        scope = create_pentest_scope("https://example.com")
         agent = GovernanceAgent(scope)
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
         gov = Governance(
@@ -337,7 +380,7 @@ class TestViolationCallback:
 
     def test_callback_fires_on_scope_violation(self):
         violations = []
-        scope = create_vuln_lab_scope("https://example.com", "xss_reflected")
+        scope = _create_single_vuln_scope("https://example.com", "xss_reflected")
         agent = GovernanceAgent(scope)
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
         gov = Governance(
@@ -350,7 +393,7 @@ class TestViolationCallback:
 
     def test_db_persist_fn_fires(self):
         persisted = []
-        scope = create_full_auto_scope("https://example.com")
+        scope = create_pentest_scope("https://example.com")
         agent = GovernanceAgent(scope)
         gate = GovernanceGate(scan_id="t1", governance_mode="strict")
         gov = Governance(
@@ -368,12 +411,12 @@ class TestViolationCallback:
 
 class TestCreateGovernanceFactory:
 
-    def test_full_auto_profile(self):
+    def test_pentest_profile(self):
         gov = create_governance(
             scan_id="t1", target_url="https://example.com",
-            scope_profile="full_auto", governance_mode="warn",
+            scope_profile="pentest", governance_mode="warn",
         )
-        assert gov.scope.profile == ScopeProfile.FULL_AUTO
+        assert gov.scope.profile == ScopeProfile.PENTEST
         assert gov.governance_mode == "warn"
 
     def test_vuln_lab_profile(self):
@@ -382,7 +425,7 @@ class TestCreateGovernanceFactory:
             scope_profile="vuln_lab", vuln_type="sqli_error",
             governance_mode="strict",
         )
-        assert gov.scope.profile == ScopeProfile.VULN_LAB
+        assert gov.scope.profile == ScopeProfile.PENTEST
         assert gov.scope.allowed_vuln_types == frozenset({"sqli_error"})
 
     def test_ctf_profile_gate_off(self):
@@ -394,23 +437,50 @@ class TestCreateGovernanceFactory:
         assert gov.governance_mode == "off"
         assert gov.check_action("sqlmap").allowed is True
 
-    def test_recon_only_profile(self):
+    def test_bug_bounty_profile(self):
         gov = create_governance(
             scan_id="t1", target_url="https://example.com",
-            scope_profile="recon_only", governance_mode="strict",
+            scope_profile="bug_bounty",
         )
-        assert gov.scope.profile == ScopeProfile.RECON_ONLY
+        assert gov.scope.profile == ScopeProfile.BUG_BOUNTY
+        # Bug bounty forces strict mode
+        assert gov.governance_mode == "strict"
+
+    def test_auto_pwn_profile(self):
+        gov = create_governance(
+            scan_id="t1", target_url="https://example.com",
+            scope_profile="auto_pwn",
+        )
+        assert gov.scope.profile == ScopeProfile.AUTO_PWN
+        # Auto pwn forces off mode
+        assert gov.governance_mode == "off"
 
     def test_unknown_profile_falls_back(self):
         gov = create_governance(
             scan_id="t1", target_url="https://example.com",
             scope_profile="nonexistent",
         )
-        assert gov.scope.profile == ScopeProfile.FULL_AUTO
+        assert gov.scope.profile == ScopeProfile.PENTEST
+
+    def test_full_auto_alias(self):
+        gov = create_governance(
+            scan_id="t1", target_url="https://example.com",
+            scope_profile="full_auto",
+        )
+        assert gov.scope.profile == ScopeProfile.PENTEST
+
+    def test_recon_only_alias(self):
+        gov = create_governance(
+            scan_id="t1", target_url="https://example.com",
+            scope_profile="recon_only",
+        )
+        # recon_only forces strict mode
+        assert gov.governance_mode == "strict"
 
     def test_scan_config_overrides_mode(self):
         gov = create_governance(
             scan_id="t1", target_url="https://example.com",
+            scope_profile="pentest",
             governance_mode="strict",
             scan_config={"governance": {"mode": "warn"}},
         )
@@ -421,6 +491,5 @@ class TestCreateGovernanceFactory:
             scan_id="t1", target_url="https://example.com",
             governance_mode="strict", task_category="recon",
         )
-        # Phase gate should have ceiling
-        gov.set_phase("exploitation")  # should clamp
+        gov.set_phase("exploitation")
         assert gov.current_phase == "recon"

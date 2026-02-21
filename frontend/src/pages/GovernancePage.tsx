@@ -12,7 +12,7 @@ import type { GovernanceOverview, GovernanceViolation, GovernanceProfile } from 
 // Phase policy matrix data for visualization
 const PHASES = [
   'initializing', 'passive_recon', 'recon', 'analyzing',
-  'testing', 'exploitation', 'full_auto', 'reporting', 'completed',
+  'testing', 'exploitation', 'full_auto', 'post_exploitation', 'reporting', 'completed',
 ]
 const ACTION_CATEGORIES = [
   'passive_recon', 'active_recon', 'analysis',
@@ -26,11 +26,12 @@ const PHASE_POLICY: Record<string, string[]> = {
   testing: ['passive_recon', 'active_recon', 'analysis', 'vulnerability_scan', 'reporting'],
   exploitation: ['passive_recon', 'active_recon', 'analysis', 'vulnerability_scan', 'exploitation', 'reporting'],
   full_auto: ['passive_recon', 'active_recon', 'analysis', 'vulnerability_scan', 'exploitation', 'reporting'],
+  post_exploitation: ['passive_recon', 'active_recon', 'analysis', 'vulnerability_scan', 'exploitation', 'post_exploitation', 'reporting'],
   reporting: ['reporting', 'analysis'],
   completed: ['reporting', 'analysis'],
 }
 
-const SCOPE_PROFILES = ['vuln_lab', 'full_auto', 'ctf', 'recon_only', 'custom']
+const SCOPE_PROFILES = ['bug_bounty', 'ctf', 'pentest', 'auto_pwn']
 const GOV_MODES = ['strict', 'warn', 'off']
 const RECON_DEPTHS = ['quick', 'medium', 'full']
 const FALLBACK_POLICIES = ['allow', 'warn', 'deny']

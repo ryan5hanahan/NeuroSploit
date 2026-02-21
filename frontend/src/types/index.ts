@@ -188,7 +188,7 @@ export interface ScanAgentTask {
 }
 
 // Agent types
-export type AgentMode = 'full_auto' | 'recon_only' | 'prompt_only' | 'analyze_only' | 'auto_pentest'
+export type AgentMode = 'bug_bounty' | 'ctf' | 'pentest' | 'auto_pwn'
 
 export interface AgentTask {
   id: string

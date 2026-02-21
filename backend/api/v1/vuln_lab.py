@@ -538,7 +538,7 @@ async def _run_lab_test(
             governance = create_governance(
                 scan_id=scan_id,
                 target_url=target,
-                scope_profile="ctf" if ctf_mode else "vuln_lab",
+                scope_profile="ctf" if ctf_mode else "pentest",
                 vuln_type=vuln_type if not ctf_mode else None,
                 governance_mode="off" if ctf_mode else "warn",
                 log_callback=log_callback,

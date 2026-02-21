@@ -128,7 +128,7 @@ class LLMDrivenAgent(AgentInterface):
             self.skip_checkpoints = False
 
         self.max_steps = max_steps
-        self.scope_profile = "full_auto"
+        self.scope_profile = "auto_pwn" if autonomous else "pentest"
         self.additional_targets = additional_targets or []
         self.subdomain_discovery = subdomain_discovery
         self.operation_id = operation_id or str(uuid.uuid4())
@@ -938,14 +938,20 @@ class LLMDrivenAgent(AgentInterface):
     def _build_governance_context(self) -> Optional[Dict[str, Any]]:
         """Build governance context dict for system prompt injection.
 
-        Returns None if no governance restrictions apply (full_auto).
+        Always returns context so prompt_composer can select the correct
+        profile-specific execution template.
         """
         gov = self.executor.governance
         if not gov:
-            return None
+            # No governance object — use the agent's scope_profile
+            return {
+                "scope_profile": self.scope_profile,
+                "governance_mode": "off",
+                "allowed_phases": [],
+            }
 
         # Extract scope profile
-        scope_profile = "full_auto"
+        scope_profile = self.scope_profile
         allowed_phases = []
         governance_mode = "off"
 
@@ -957,10 +963,6 @@ class LLMDrivenAgent(AgentInterface):
 
         if hasattr(gov, 'governance_mode'):
             governance_mode = gov.governance_mode
-
-        # Only inject governance section for restricted scopes
-        if scope_profile == "full_auto" and governance_mode != "strict":
-            return None
 
         return {
             "scope_profile": scope_profile,

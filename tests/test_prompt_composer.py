@@ -84,7 +84,9 @@ class TestPromptBudgetWarnings:
         """Under 60% usage, prompt does not include urgent budget warnings."""
         prompt = _base_prompt(current_step=30, max_steps=100)
         # Should not have critical budget warning at 30%
-        assert "CRITICAL" not in prompt or "budget" not in prompt.lower()
+        # Note: "CRITICAL" may appear in execution templates (e.g. severity levels)
+        # so check specifically for budget-related critical warnings
+        assert "CRITICAL BUDGET" not in prompt.upper()
 
     def test_high_step_count_reflected(self):
         """High step count (90%) is reflected somewhere in prompt."""
@@ -241,11 +243,11 @@ class TestComposeReflectionPrompt:
     def test_reflection_prompt_is_string(self):
         """compose_reflection_prompt returns a non-empty string."""
         prompt = compose_reflection_prompt(
-            target="https://example.com",
             current_step=50,
             max_steps=100,
             findings_count=3,
-            recent_actions=["Scanned /api/login", "Found XSS candidate"],
+            tools_used={"nmap": 2, "nuclei": 1},
+            memory_summary="Scanned /api/login, Found XSS candidate",
             plan_snapshot="Phase: Testing",
         )
         assert isinstance(prompt, str)
@@ -254,23 +256,84 @@ class TestComposeReflectionPrompt:
     def test_reflection_prompt_mentions_findings(self):
         """Reflection prompt includes findings count."""
         prompt = compose_reflection_prompt(
-            target="https://example.com",
             current_step=25,
             max_steps=100,
             findings_count=5,
-            recent_actions=[],
+            tools_used={},
+            memory_summary="",
             plan_snapshot="",
         )
         assert "5" in prompt or "finding" in prompt.lower()
 
-    def test_reflection_prompt_mentions_target(self):
-        """Reflection prompt includes target URL."""
+    def test_reflection_prompt_mentions_step(self):
+        """Reflection prompt includes step information."""
         prompt = compose_reflection_prompt(
-            target="https://target-for-reflection.com",
             current_step=25,
             max_steps=100,
             findings_count=0,
-            recent_actions=[],
+            tools_used={},
+            memory_summary="",
             plan_snapshot="",
         )
-        assert "target-for-reflection.com" in prompt or "target" in prompt.lower()
+        assert "25" in prompt or "step" in prompt.lower()
+
+
+# ===========================================================================
+# New profile template selection
+# ===========================================================================
+
+class TestProfileTemplateSelection:
+    """Each scope profile selects the correct execution template."""
+
+    def test_pentest_profile_uses_pentest_template(self):
+        """Pentest scope uses the pentest execution template."""
+        prompt = _base_prompt(
+            governance_context={
+                "scope_profile": "pentest",
+                "governance_mode": "warn",
+            }
+        )
+        # Pentest template has OWASP/PTES methodology references
+        assert "OWASP" in prompt or "PTES" in prompt or "Penetration Test" in prompt
+
+    def test_ctf_profile_uses_ctf_template(self):
+        """CTF scope uses the CTF execution template."""
+        prompt = _base_prompt(
+            governance_context={
+                "scope_profile": "ctf",
+                "governance_mode": "off",
+            }
+        )
+        assert "CTF" in prompt or "flag" in prompt.lower()
+
+    def test_bug_bounty_profile_uses_bug_bounty_template(self):
+        """Bug bounty scope uses the bug bounty execution template."""
+        prompt = _base_prompt(
+            governance_context={
+                "scope_profile": "bug_bounty",
+                "governance_mode": "strict",
+            }
+        )
+        assert "bounty" in prompt.lower() or "bug bounty" in prompt.lower()
+
+    def test_auto_pwn_profile_uses_auto_pwn_template(self):
+        """Auto pwn scope uses the auto pwn execution template."""
+        prompt = _base_prompt(
+            governance_context={
+                "scope_profile": "auto_pwn",
+                "governance_mode": "off",
+            }
+        )
+        assert "autonomous" in prompt.lower() or "auto" in prompt.lower() or "exploitation" in prompt.lower()
+
+    def test_governance_section_generated_per_profile(self):
+        """Each profile generates its own governance section."""
+        for profile in ["bug_bounty", "ctf", "pentest", "auto_pwn"]:
+            prompt = _base_prompt(
+                governance_context={
+                    "scope_profile": profile,
+                    "governance_mode": "warn",
+                }
+            )
+            assert "Scope Profile" in prompt
+            assert profile in prompt
